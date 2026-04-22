@@ -8,15 +8,17 @@ import Testing
 private actor RecordingTransport: HTTPTransport {
     private(set) var requests: [HTTPRequest] = []
     private let responseBody: String
+    private let statusCode: Int
 
-    init(responseBody: String = #"{"choices":[{"text":"remote hello"}]}"#) {
+    init(responseBody: String = #"{"choices":[{"text":"remote hello"}]}"#, statusCode: Int = 200) {
         self.responseBody = responseBody
+        self.statusCode = statusCode
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
         let body = responseBody.data(using: .utf8) ?? Data()
-        return HTTPResponse(statusCode: 200, body: body)
+        return HTTPResponse(statusCode: statusCode, body: body)
     }
 }
 
@@ -151,6 +153,68 @@ private actor RecordingTransport: HTTPTransport {
 
     #expect(deltas == ["he", "y"])
     #expect(completed?.message.content.text == "hey")
+}
+
+@Test func remoteBackendFailsOnProviderHTTPError() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: #"{"error":"nope"}"#, statusCode: 500)
+    )
+    let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail on non-2xx provider response.")
+    } catch {
+        #expect(error as? BackendError == .providerFailed("HTTP 500"))
+    }
+}
+
+@Test func remoteBackendFailsWhenNonStreamingResponseHasNoText() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: #"{"choices":[{}]}"#)
+    )
+    let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail when response has no text field.")
+    } catch {
+        #expect(error as? BackendError == .mappingFailed("Remote response did not contain text."))
+    }
+}
+
+@Test func remoteBackendFailsWhenStreamingDeltaHasNoText() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    data: {"choices":[{}]}
+
+    data: [DONE]
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail when streaming delta has no text field.")
+    } catch {
+        #expect(error as? BackendError == .mappingFailed("Remote response did not contain text."))
+    }
 }
 
 @Test func remoteBackendRequiresConfigurationAndTransportForAvailability() async throws {

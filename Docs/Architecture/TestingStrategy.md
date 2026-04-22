@@ -8,4 +8,4 @@ Architecture tests must guard module boundaries directly:
 - `Sources/**/*.swift` imports must not bypass target boundaries or leak backend/UI frameworks into lower layers.
 - Every source target must keep the required module docs: `Overview.md`, `Responsibilities.md`, `PublicAPI.md`, `DependencyRules.md`, and `TODO.md`.
 
-Runtime hardening tests should focus on stable public behavior, especially capability matching, routing order, fallback cancellation behavior, model lifecycle state isolation, and installed model record ordering.
+Runtime hardening tests should focus on stable public behavior, especially capability matching, routing order, fallback cancellation behavior, model lifecycle state isolation, installed model record ordering, corrupted manifest handling, and remote provider response/stream mapping failures.

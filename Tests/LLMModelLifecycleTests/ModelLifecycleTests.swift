@@ -16,6 +16,14 @@ private actor InMemoryManifestStore: ManifestStore {
     }
 }
 
+private struct CorruptManifestStore: ManifestStore {
+    func loadManifest(named name: String) async throws -> Data? {
+        Data("{not-json".utf8)
+    }
+
+    func saveManifest(_ data: Data, named name: String) async throws {}
+}
+
 @Test func modelInstallCoordinatorPublishesReadyRecord() async throws {
     let descriptor = ModelDescriptor(
         id: "local-model",
@@ -91,4 +99,15 @@ private actor InMemoryManifestStore: ManifestStore {
 
     #expect(record?.descriptor.id == descriptor.id)
     #expect(record?.installState == .ready)
+}
+
+@Test func installedModelRecordStoreSurfacesCorruptManifestErrors() async throws {
+    let store = InstalledModelRecordStore(manifestStore: CorruptManifestStore())
+
+    do {
+        _ = try await store.load()
+        Issue.record("Expected corrupt installed model manifest to fail decoding.")
+    } catch {
+        #expect(error is DecodingError)
+    }
 }

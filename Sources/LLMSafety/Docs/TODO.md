@@ -1,3 +1,3 @@
 # LLMSafety TODO
 
-- Add policy composition tests for deny, allow, and redaction paths.
+- Add richer tool permission policy tests once tool approval semantics are finalized.

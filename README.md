@@ -6,4 +6,10 @@ The architecture documents in `Docs/Architecture/` are the source of truth. The 
 
 ## Current status
 
-This repository is in the initial scaffold and contract phase. Backend adapters are compile-safe skeletons until their dedicated implementation phases.
+This repository is past the initial scaffold and contract phase. Core contracts, orchestration, lifecycle persistence, backend availability gates, remote transport/stream mapping, optional SwiftUI view models, and an iOS demo app are in place.
+
+## Demo
+
+An iOS demo project is available at `Examples/LLMKitDemo/LLMKitDemo.xcodeproj`.
+
+The demo uses a fake in-app backend so it can run on a simulator or physical device without API keys. It exercises LLMKit routing, streaming chat events, and model lifecycle install state.

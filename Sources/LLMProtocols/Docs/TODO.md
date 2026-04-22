@@ -1,4 +1,4 @@
 # LLMProtocols TODO
 
-- Add contract tests as protocols stabilize.
+- Expand contract tests as backend and service protocols stabilize.
 - Avoid duplicate request/response models.

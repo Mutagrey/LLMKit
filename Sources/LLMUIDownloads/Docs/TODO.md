@@ -1,3 +1,4 @@
 # LLMUIDownloads TODO
 
-- Add install action handling through lifecycle services in the UI phase.
+- Add visible install buttons once UI composition is expanded.
+- Add error presentation styling.

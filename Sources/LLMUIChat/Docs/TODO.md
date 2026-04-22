@@ -1,3 +1,4 @@
 # LLMUIChat TODO
 
-- Add streaming and tool invocation views once chat service behavior stabilizes.
+- Add tool invocation presentation once tool events are finalized.
+- Add visible SwiftUI message list and composer controls.

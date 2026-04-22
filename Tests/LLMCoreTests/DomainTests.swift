@@ -36,3 +36,13 @@ import Testing
     #expect(InstallState.downloading(progress: 0.5) == .downloading(progress: 0.5))
     #expect(LLMError.modelNotInstalled("missing") == .modelNotInstalled("missing"))
 }
+
+@Test func streamedTextAccumulatorAppendsDeltas() {
+    var accumulator = StreamedTextAccumulator()
+
+    accumulator.append("hel")
+    accumulator.append("lo")
+
+    #expect(accumulator.text == "hello")
+    #expect(!accumulator.isEmpty)
+}

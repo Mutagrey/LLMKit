@@ -88,7 +88,7 @@ public struct RemoteBackend: ModelBackend {
                     let httpRequest = try makeGenerationRequest(request)
                     let response = try await send(httpRequest)
                     if let events = try streamEvents(from: response.body), !events.isEmpty {
-                        let text = try yieldGeneration(events, continuation: continuation)
+                        let text = try collectStreamText(events) { continuation.yield(.delta($0)) }
                         continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
                     } else {
                         let text = try decodeTextResponse(response.body)
@@ -111,7 +111,7 @@ public struct RemoteBackend: ModelBackend {
                     let response = try await send(httpRequest)
                     let text: String
                     if let events = try streamEvents(from: response.body), !events.isEmpty {
-                        text = try yieldChat(events, continuation: continuation)
+                        text = try collectStreamText(events) { continuation.yield(.delta($0)) }
                     } else {
                         text = try decodeTextResponse(response.body)
                     }
@@ -183,30 +183,14 @@ public struct RemoteBackend: ModelBackend {
         return SSEParser().parse(text)
     }
 
-    private func yieldGeneration(
-        _ events: [SSEEvent],
-        continuation: AsyncThrowingStream<GenerationEvent, Error>.Continuation
-    ) throws -> String {
-        var accumulated = ""
+    private func collectStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> String {
+        var accumulator = StreamedTextAccumulator()
         for event in events where event.data != "[DONE]" {
             let delta = try decodeTextResponse(Data(event.data.utf8))
-            accumulated += delta
-            continuation.yield(.delta(delta))
+            accumulator.append(delta)
+            yield(delta)
         }
-        return accumulated
-    }
-
-    private func yieldChat(
-        _ events: [SSEEvent],
-        continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
-    ) throws -> String {
-        var accumulated = ""
-        for event in events where event.data != "[DONE]" {
-            let delta = try decodeTextResponse(Data(event.data.utf8))
-            accumulated += delta
-            continuation.yield(.delta(delta))
-        }
-        return accumulated
+        return accumulator.text
     }
 }
 

@@ -13,11 +13,11 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
     }
 
     public func generate(_ request: GenerationRequest) async throws -> GenerationResult {
-        var accumulated = ""
+        var accumulator = StreamedTextAccumulator()
         for try await event in stream(request) {
             switch event {
             case .delta(let text):
-                accumulated += text
+                accumulator.append(text)
             case .completed(let result):
                 return result
             case .failed(let error):
@@ -26,7 +26,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                 break
             }
         }
-        return GenerationResult(text: accumulated)
+        return GenerationResult(text: accumulator.text)
     }
 
     public func stream(_ request: GenerationRequest) -> AsyncThrowingStream<GenerationEvent, Error> {

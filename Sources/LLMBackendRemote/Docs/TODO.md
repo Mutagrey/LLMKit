@@ -1,3 +1,4 @@
 # LLMBackendRemote TODO
 
-- Add concrete provider mappers after transport tests are in place.
+- Add streaming SSE mapping.
+- Add concrete provider-specific mappers only when a provider is selected.

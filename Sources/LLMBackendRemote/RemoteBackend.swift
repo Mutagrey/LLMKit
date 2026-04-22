@@ -84,8 +84,16 @@ public struct RemoteBackend: ModelBackend {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let response = try await sendGeneration(request)
-                    continuation.yield(.completed(GenerationResult(text: response, model: request.model)))
+                    continuation.yield(.started(request.model))
+                    let httpRequest = try makeGenerationRequest(request)
+                    let response = try await send(httpRequest)
+                    if let events = try streamEvents(from: response.body), !events.isEmpty {
+                        let text = try yieldGeneration(events, continuation: continuation)
+                        continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
+                    } else {
+                        let text = try decodeTextResponse(response.body)
+                        continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -98,8 +106,16 @@ public struct RemoteBackend: ModelBackend {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let response = try await sendChat(request)
-                    let message = ChatMessage(role: .assistant, content: MessageContent(text: response))
+                    continuation.yield(.started(request.model))
+                    let httpRequest = try makeChatRequest(request)
+                    let response = try await send(httpRequest)
+                    let text: String
+                    if let events = try streamEvents(from: response.body), !events.isEmpty {
+                        text = try yieldChat(events, continuation: continuation)
+                    } else {
+                        text = try decodeTextResponse(response.body)
+                    }
+                    let message = ChatMessage(role: .assistant, content: MessageContent(text: text))
                     continuation.yield(.completed(ChatResult(message: message, model: request.model)))
                     continuation.finish()
                 } catch {
@@ -109,23 +125,21 @@ public struct RemoteBackend: ModelBackend {
         }
     }
 
-    private func sendGeneration(_ request: BackendGenerationRequest) async throws -> String {
-        let httpRequest = try makeRequest(
+    private func makeGenerationRequest(_ request: BackendGenerationRequest) throws -> HTTPRequest {
+        try makeRequest(
             path: configuration?.generationPath,
-            body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.prompt, stream: false)
+            body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.prompt, stream: request.model.supportsStreaming)
         )
-        return try await send(httpRequest)
     }
 
-    private func sendChat(_ request: BackendChatRequest) async throws -> String {
+    private func makeChatRequest(_ request: BackendChatRequest) throws -> HTTPRequest {
         let messages = request.request.messages.map {
             RemoteChatMessage(role: $0.role.rawValue, content: $0.content.text)
         }
-        let httpRequest = try makeRequest(
+        return try makeRequest(
             path: configuration?.chatPath,
-            body: RemoteChatRequest(model: request.model.id.rawValue, messages: messages, stream: false)
+            body: RemoteChatRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
         )
-        return try await send(httpRequest)
     }
 
     private func makeRequest<T: Encodable>(path: String?, body: T) throws -> HTTPRequest {
@@ -143,7 +157,7 @@ public struct RemoteBackend: ModelBackend {
         )
     }
 
-    private func send(_ request: HTTPRequest) async throws -> String {
+    private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         guard let transport else {
             throw LLMError.unavailable
         }
@@ -151,11 +165,48 @@ public struct RemoteBackend: ModelBackend {
         guard 200..<300 ~= response.statusCode else {
             throw BackendError.providerFailed("HTTP \(response.statusCode)")
         }
-        let body = try decoder.decode(RemoteTextResponse.self, from: response.body)
+        return response
+    }
+
+    private func decodeTextResponse(_ data: Data) throws -> String {
+        let body = try decoder.decode(RemoteTextResponse.self, from: data)
         guard let text = body.textValue else {
             throw BackendError.mappingFailed("Remote response did not contain text.")
         }
         return text
+    }
+
+    private func streamEvents(from data: Data) throws -> [SSEEvent]? {
+        guard let text = String(data: data, encoding: .utf8), text.contains("data:") else {
+            return nil
+        }
+        return SSEParser().parse(text)
+    }
+
+    private func yieldGeneration(
+        _ events: [SSEEvent],
+        continuation: AsyncThrowingStream<GenerationEvent, Error>.Continuation
+    ) throws -> String {
+        var accumulated = ""
+        for event in events where event.data != "[DONE]" {
+            let delta = try decodeTextResponse(Data(event.data.utf8))
+            accumulated += delta
+            continuation.yield(.delta(delta))
+        }
+        return accumulated
+    }
+
+    private func yieldChat(
+        _ events: [SSEEvent],
+        continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
+    ) throws -> String {
+        var accumulated = ""
+        for event in events where event.data != "[DONE]" {
+            let delta = try decodeTextResponse(Data(event.data.utf8))
+            accumulated += delta
+            continuation.yield(.delta(delta))
+        }
+        return accumulated
     }
 }
 
@@ -186,12 +237,13 @@ private struct RemoteTextResponse: Decodable {
 
         let text: String?
         let message: Message?
+        let delta: Message?
     }
 
     let text: String?
     let choices: [Choice]?
 
     var textValue: String? {
-        text ?? choices?.first?.text ?? choices?.first?.message?.content
+        text ?? choices?.first?.text ?? choices?.first?.message?.content ?? choices?.first?.delta?.content
     }
 }

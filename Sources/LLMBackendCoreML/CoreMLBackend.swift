@@ -5,11 +5,17 @@ import LLMProtocols
 
 public struct CoreMLBackend: ModelBackend {
     public let backendKind: BackendKind = .coreML
+    private let compatibilityChecker: CoreMLModelCompatibilityChecker
 
-    public init() {}
+    public init(compatibilityChecker: CoreMLModelCompatibilityChecker = CoreMLModelCompatibilityChecker()) {
+        self.compatibilityChecker = compatibilityChecker
+    }
 
     public func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
-        descriptor.backend == backendKind ? .unsupported : .unsupported
+        guard descriptor.backend == backendKind else {
+            return .unsupported
+        }
+        return compatibilityChecker.isCompatible(descriptor) ? .available : .unsupported
     }
 
     public func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
@@ -17,7 +23,10 @@ public struct CoreMLBackend: ModelBackend {
     }
 
     public func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
-        throw LLMError.unavailable
+        guard await availability(for: descriptor).status == .available else {
+            throw LLMError.unavailable
+        }
+        return LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
     }
 
     public func unloadModel(_ handle: LoadedModelHandle) async {}

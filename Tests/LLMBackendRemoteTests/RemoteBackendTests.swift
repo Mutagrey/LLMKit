@@ -70,6 +70,89 @@ private actor RecordingTransport: HTTPTransport {
     #expect(requests.first?.url.absoluteString == "https://example.com/v1/chat/completions")
 }
 
+@Test func remoteBackendParsesStreamingGenerationEvents() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    data: {"choices":[{"text":"hel"}]}
+
+    data: {"choices":[{"text":"lo"}]}
+
+    data: [DONE]
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    var deltas: [String] = []
+    var completed: GenerationResult?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["hel", "lo"])
+    #expect(completed?.text == "hello")
+}
+
+@Test func remoteBackendParsesStreamingChatEvents() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    data: {"choices":[{"delta":{"content":"he"}}]}
+
+    data: {"choices":[{"delta":{"content":"y"}}]}
+
+    data: [DONE]
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.chat],
+        supportsStreaming: true,
+        isRemote: true
+    )
+    let message = ChatMessage(role: .user, content: MessageContent(text: "hello"))
+
+    var deltas: [String] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .toolCallRequested, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["he", "y"])
+    #expect(completed?.message.content.text == "hey")
+}
+
 @Test func remoteBackendRequiresConfigurationAndTransportForAvailability() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)

@@ -1,3 +1,3 @@
 # LLMBackendCoreML TODO
 
-- Add model loading and tokenizer adapter details in the Core ML backend phase.
+- Add concrete Core ML model loading and tokenizer adapter details.

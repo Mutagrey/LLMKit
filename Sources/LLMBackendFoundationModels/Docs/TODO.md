@@ -1,3 +1,3 @@
 # LLMBackendFoundationModels TODO
 
-- Add real Foundation Models integration with availability gates in its backend phase.
+- Add real Foundation Models request mapping behind platform availability checks.

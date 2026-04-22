@@ -5,11 +5,25 @@ import LLMProtocols
 
 public struct MLXBackend: ModelBackend {
     public let backendKind: BackendKind = .mlx
+    private let runtimeAvailable: Bool
+    private let supportMatrix: MLXModelSupportMatrix
 
-    public init() {}
+    public init(runtimeAvailable: Bool = false, supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix()) {
+        self.runtimeAvailable = runtimeAvailable
+        self.supportMatrix = supportMatrix
+    }
 
     public func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
-        descriptor.backend == backendKind ? .unsupported : .unsupported
+        guard descriptor.backend == backendKind else {
+            return .unsupported
+        }
+        guard supportMatrix.supports(descriptor.family) else {
+            return .unsupported
+        }
+        guard runtimeAvailable else {
+            return BackendAvailability(status: .unavailable(reason: "MLX runtime is not configured."))
+        }
+        return .available
     }
 
     public func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
@@ -17,7 +31,10 @@ public struct MLXBackend: ModelBackend {
     }
 
     public func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
-        throw LLMError.unavailable
+        guard await availability(for: descriptor).status == .available else {
+            throw LLMError.unavailable
+        }
+        return LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
     }
 
     public func unloadModel(_ handle: LoadedModelHandle) async {}

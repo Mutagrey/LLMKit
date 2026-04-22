@@ -1,6 +1,29 @@
 import LLMCore
+import LLMProtocols
 import LLMSessions
 import Testing
+
+private actor InMemorySessionStore: SessionStore {
+    private var snapshots: [SessionID: SessionSnapshot] = [:]
+    private(set) var savedSnapshots: [SessionSnapshot] = []
+
+    init(snapshots: [SessionSnapshot] = []) {
+        self.snapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+    }
+
+    func loadSession(id: SessionID) async throws -> SessionSnapshot? {
+        snapshots[id]
+    }
+
+    func saveSession(_ snapshot: SessionSnapshot) async throws {
+        snapshots[snapshot.id] = snapshot
+        savedSnapshots.append(snapshot)
+    }
+
+    func deleteSession(id: SessionID) async throws {
+        snapshots[id] = nil
+    }
+}
 
 @Test func sessionCoordinatorAppendsMessages() async throws {
     let coordinator = SessionCoordinator()
@@ -11,4 +34,44 @@ import Testing
 
     #expect(updated.messages.count == 1)
     #expect(updated.messages.first?.content.text == "Hello")
+}
+
+@Test func conversationTranscriptAppendingReturnsNewTranscript() {
+    let original = ConversationTranscript()
+    let message = ChatMessage(role: .user, content: MessageContent(text: "Hello"))
+
+    let updated = original.appending(message)
+
+    #expect(original.messages.isEmpty)
+    #expect(updated.messages.map(\.content.text) == ["Hello"])
+}
+
+@Test func sessionTruncationPolicyKeepsMostRecentMessages() {
+    let transcript = ConversationTranscript(messages: [
+        ChatMessage(role: .user, content: MessageContent(text: "one")),
+        ChatMessage(role: .assistant, content: MessageContent(text: "two")),
+        ChatMessage(role: .user, content: MessageContent(text: "three"))
+    ])
+
+    let window = SessionTruncationPolicy(maxMessages: 2).apply(to: transcript)
+
+    #expect(window.messages.map(\.content.text) == ["two", "three"])
+}
+
+@Test func sessionCoordinatorLoadsSnapshotFromStoreBeforeAppending() async throws {
+    let sessionID: SessionID = "stored-session"
+    let existing = ChatMessage(role: .user, content: MessageContent(text: "Existing"))
+    let stored = SessionSnapshot(
+        id: sessionID,
+        descriptor: SessionDescriptor(id: sessionID, title: "Stored"),
+        messages: [existing]
+    )
+    let store = InMemorySessionStore(snapshots: [stored])
+    let coordinator = SessionCoordinator(store: store)
+    let appended = ChatMessage(role: .assistant, content: MessageContent(text: "Reply"))
+
+    let updated = try await coordinator.append(appended, to: sessionID)
+
+    #expect(updated.messages.map(\.content.text) == ["Existing", "Reply"])
+    #expect(await store.savedSnapshots.last?.messages.map(\.content.text) == ["Existing", "Reply"])
 }

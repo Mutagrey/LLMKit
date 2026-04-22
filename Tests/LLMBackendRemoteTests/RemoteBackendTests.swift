@@ -51,6 +51,33 @@ private actor RecordingTransport: HTTPTransport {
     #expect(requests.first?.headers["Authorization"] == "Bearer token")
 }
 
+@Test func remoteBackendMapsGenerationRequestBody() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let transport = RecordingTransport()
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+
+    #expect(body["model"] as? String == "remote-model")
+    #expect(body["prompt"] as? String == "hello")
+    #expect(body["stream"] as? Bool == true)
+}
+
 @Test func remoteBackendSendsChatRequestThroughTransport() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url)
@@ -70,6 +97,41 @@ private actor RecordingTransport: HTTPTransport {
     let requests = await transport.requests
     #expect(completed?.message.content.text == "chat hello")
     #expect(requests.first?.url.absoluteString == "https://example.com/v1/chat/completions")
+}
+
+@Test func remoteBackendMapsChatRequestBody() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let transport = RecordingTransport(responseBody: #"{"choices":[{"message":{"content":"chat hello"}}]}"#)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "remote-chat",
+        displayName: "Remote Chat",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.chat],
+        supportsStreaming: true,
+        isRemote: true
+    )
+    let messages = [
+        ChatMessage(role: .system, content: MessageContent(text: "be concise")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ]
+
+    for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: messages), model: model)) {}
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let mappedMessages = try #require(body["messages"] as? [[String: String]])
+
+    #expect(body["model"] as? String == "remote-chat")
+    #expect(body["stream"] as? Bool == true)
+    #expect(mappedMessages == [
+        ["role": "system", "content": "be concise"],
+        ["role": "user", "content": "hello"]
+    ])
 }
 
 @Test func remoteBackendParsesStreamingGenerationEvents() async throws {
@@ -226,4 +288,9 @@ private actor RecordingTransport: HTTPTransport {
 
     #expect(unavailable.status != .available)
     #expect(available.status == .available)
+}
+
+private func requestBodyDictionary(_ request: HTTPRequest) throws -> [String: Any] {
+    let bodyData = try #require(request.body)
+    return try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
 }

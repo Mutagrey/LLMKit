@@ -77,6 +77,71 @@ private struct FailingBackend: ModelBackend {
     }
 }
 
+private struct UnavailableBackend: ModelBackend {
+    let backendKind: BackendKind
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        BackendAvailability(status: .unavailable(reason: "test unavailable"))
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(GenerationResult(text: "should not execute", model: request.model)))
+            continuation.finish()
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let message = ChatMessage(role: .assistant, content: MessageContent(text: "should not execute"))
+            continuation.yield(.completed(ChatResult(message: message, model: request.model)))
+            continuation.finish()
+        }
+    }
+}
+
+private struct CancellingBackend: ModelBackend {
+    let backendKind: BackendKind
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        .available
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.failed(.cancelled))
+            continuation.finish()
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.failed(.cancelled))
+            continuation.finish()
+        }
+    }
+}
+
 @Test func executionPlannerFiltersOfflineOnlyRequests() {
     let local = ModelDescriptor(id: "local", displayName: "Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
     let remote = ModelDescriptor(id: "remote", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
@@ -132,6 +197,40 @@ private struct FailingBackend: ModelBackend {
 
     #expect(result.text == "remote")
     #expect(result.model?.id == "remote")
+}
+
+@Test func generationServiceSkipsUnavailableBackend() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        UnavailableBackend(backendKind: .coreML),
+        StreamingBackend(backendKind: .remote, responseText: "available")
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+
+    let result = try await service.generate(GenerationRequest(prompt: "hi", requirements: ExecutionRequirements(requiredCapabilities: [.completion])))
+
+    #expect(result.text == "available")
+    #expect(result.model?.id == "remote")
+}
+
+@Test func generationServiceDoesNotFallbackAfterCancellation() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        CancellingBackend(backendKind: .coreML),
+        StreamingBackend(backendKind: .remote, responseText: "should not execute")
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+
+    do {
+        _ = try await service.generate(GenerationRequest(prompt: "hi", requirements: ExecutionRequirements(requiredCapabilities: [.completion])))
+        Issue.record("Expected cancellation to stop fallback.")
+    } catch {
+        #expect(error as? LLMError == .cancelled)
+    }
 }
 
 @Test func routerPrioritizesPreferredModelInPlan() async throws {

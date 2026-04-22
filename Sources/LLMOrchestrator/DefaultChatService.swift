@@ -39,6 +39,12 @@ public struct DefaultChatService: ChatService {
                 candidate = fallback.nextCandidate(after: model, in: plan)
                 continue
             }
+            let availability = await backend.availability(for: model)
+            guard availability.status == .available else {
+                lastError = LLMError.unavailable
+                candidate = fallback.nextCandidate(after: model, in: plan)
+                continue
+            }
 
             let backendRequest = BackendChatRequest(request: request, model: model, traceID: .generated())
             do {
@@ -47,6 +53,9 @@ public struct DefaultChatService: ChatService {
                     switch event {
                     case .failed(let error):
                         lastError = error
+                        guard fallback.shouldFallback(after: error) else {
+                            throw error
+                        }
                         shouldTryNextCandidate = true
                     case .completed:
                         continuation.yield(event)
@@ -61,6 +70,9 @@ public struct DefaultChatService: ChatService {
                 }
             } catch {
                 lastError = error
+                guard fallback.shouldFallback(after: error) else {
+                    throw error
+                }
             }
 
             candidate = fallback.nextCandidate(after: model, in: plan)

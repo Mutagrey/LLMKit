@@ -67,7 +67,7 @@ Read first:
 - Docs/Architecture/LLMKit_Master_Architecture_Blueprint.md
 - Docs/Architecture/LLMKit_Package_Scaffold_and_Target_Graph.md
 - Docs/Architecture/LLMKit_Module_File_Map.md
-- Docs/Architecture/LLMKit_Starter_Package.swift
+- Package.swift
 
 Proceed with phase 1 only.
 

@@ -17,6 +17,18 @@ let package = Package(
             targets: [
                 "LLMCore",
                 "LLMProtocols",
+                "LLMSessions",
+                "LLMPrompting",
+                "LLMTools",
+                "LLMSafety",
+                "LLMObservability"
+            ]
+        ),
+        .library(
+            name: "LLMKitRuntime",
+            targets: [
+                "LLMCore",
+                "LLMProtocols",
                 "LLMOrchestrator",
                 "LLMSessions",
                 "LLMPrompting",
@@ -25,7 +37,8 @@ let package = Package(
                 "LLMObservability",
                 "LLMModelLifecycle",
                 "LLMStorage",
-                "LLMDeviceProfiling"
+                "LLMDeviceProfiling",
+                "LLMNetworking"
             ]
         ),
         .library(
@@ -121,67 +134,77 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "LLMCore"
+            name: "LLMCore",
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMProtocols",
             dependencies: [
                 "LLMCore"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMSessions",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMPrompting",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMTools",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMSafety",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMObservability",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMStorage",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMDeviceProfiling",
             dependencies: [
                 "LLMCore"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMNetworking",
             dependencies: [
                 "LLMCore"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMModelLifecycle",
@@ -190,7 +213,8 @@ let package = Package(
                 "LLMProtocols",
                 "LLMStorage",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMOrchestrator",
@@ -204,7 +228,8 @@ let package = Package(
                 "LLMObservability",
                 "LLMModelLifecycle",
                 "LLMDeviceProfiling"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMBackendFoundationModels",
@@ -212,7 +237,8 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMBackendCoreML",
@@ -221,7 +247,8 @@ let package = Package(
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMBackendMLX",
@@ -230,7 +257,8 @@ let package = Package(
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMBackendRemote",
@@ -239,7 +267,8 @@ let package = Package(
                 "LLMProtocols",
                 "LLMNetworking",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMUIChat",
@@ -250,7 +279,8 @@ let package = Package(
                 "LLMSessions",
                 "LLMTools",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .target(
             name: "LLMUIDownloads",
@@ -259,7 +289,8 @@ let package = Package(
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability"
-            ]
+            ],
+            exclude: ["Docs"]
         ),
         .testTarget(
             name: "LLMCoreTests",

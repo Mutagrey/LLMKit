@@ -1,0 +1,56 @@
+import Foundation
+
+public enum DownloadState: Hashable, Codable, Sendable {
+    case notStarted
+    case downloading(progress: Double)
+    case downloaded
+    case failed(String)
+}
+
+public enum InstallState: Hashable, Codable, Sendable {
+    case notInstalled
+    case downloading(progress: Double)
+    case downloaded
+    case verifying
+    case compiling
+    case ready
+    case warming
+    case active
+    case failed(String)
+    case evicted(EvictionReason)
+}
+
+public enum WarmupState: Hashable, Codable, Sendable {
+    case notStarted
+    case warming
+    case warm
+    case failed(String)
+}
+
+public enum EvictionReason: Hashable, Codable, Sendable {
+    case storagePressure
+    case userRequested
+    case policy
+    case unknown
+}
+
+public struct InstalledModelRecord: Hashable, Codable, Sendable, Identifiable {
+    public var id: ModelID { descriptor.id }
+
+    public let descriptor: ModelDescriptor
+    public let installState: InstallState
+    public let installedAt: Date?
+
+    public init(descriptor: ModelDescriptor, installState: InstallState, installedAt: Date? = nil) {
+        self.descriptor = descriptor
+        self.installState = installState
+        self.installedAt = installedAt
+    }
+}
+
+public enum ModelInstallEvent: Equatable, Sendable {
+    case stateChanged(ModelID, InstallState)
+    case progress(ModelID, Double)
+    case completed(InstalledModelRecord)
+    case failed(ModelID, LLMError)
+}

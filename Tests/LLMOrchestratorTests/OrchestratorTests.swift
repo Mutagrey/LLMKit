@@ -152,6 +152,59 @@ private struct CancellingBackend: ModelBackend {
     #expect(plan.candidates.map(\.id) == ["local"])
 }
 
+@Test func executionPlannerRequiresAllRequestedCapabilities() {
+    let completionOnly = ModelDescriptor(
+        id: "completion-only",
+        displayName: "Completion Only",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let chatAndTools = ModelDescriptor(
+        id: "chat-tools",
+        displayName: "Chat Tools",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.chat, .toolCalling],
+        isRemote: true
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat, .toolCalling])
+
+    let plan = ExecutionPlanner().plan(models: [completionOnly, chatAndTools], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["chat-tools"])
+}
+
+@Test func executionPlannerPrefersOfflineModelsWhenRequested() {
+    let local = ModelDescriptor(id: "local", displayName: "Z Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "A Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let requirements = ExecutionRequirements(requiredCapabilities: [.completion], executionMode: .preferOffline)
+
+    let plan = ExecutionPlanner().plan(models: [remote, local], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["local", "remote"])
+}
+
+@Test func modelRouterThrowsUnsupportedCapabilitiesWhenNoCandidateMatches() async throws {
+    let descriptor = ModelDescriptor(
+        id: "completion-only",
+        displayName: "Completion Only",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let catalog = DefaultModelCatalog(models: [descriptor])
+    let router = ModelRouter(catalog: catalog)
+    let requirements = ExecutionRequirements(requiredCapabilities: [.embeddings])
+
+    do {
+        _ = try await router.plan(requirements: requirements)
+        Issue.record("Expected router to reject unsupported capabilities.")
+    } catch let error as LLMError {
+        #expect(error == .unsupportedCapabilities([.embeddings]))
+    }
+}
+
 @Test func defaultGenerationServiceRoutesToBackend() async throws {
     let descriptor = ModelDescriptor(
         id: "remote",
@@ -266,4 +319,24 @@ private struct CancellingBackend: ModelBackend {
 
     #expect(completed?.message.content.text == "chat fallback")
     #expect(completed?.model?.id == "remote")
+}
+
+@Test func chatServiceDoesNotFallbackAfterCancellation() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        CancellingBackend(backendKind: .coreML),
+        StreamingBackend(backendKind: .remote, responseText: "should not execute")
+    ])
+    let service = DefaultChatService(router: ModelRouter(catalog: catalog), registry: registry)
+    let userMessage = ChatMessage(role: .user, content: MessageContent(text: "hi"))
+    let request = ChatRequest(messages: [userMessage], requirements: ExecutionRequirements(requiredCapabilities: [.chat]))
+
+    do {
+        for try await _ in service.send(request) {}
+        Issue.record("Expected cancellation to stop chat fallback.")
+    } catch {
+        #expect(error as? LLMError == .cancelled)
+    }
 }

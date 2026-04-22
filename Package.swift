@@ -363,6 +363,10 @@ let package = Package(
         .testTarget(
             name: "LLMUIDownloadsTests",
             dependencies: ["LLMUIDownloads"]
+        ),
+        .testTarget(
+            name: "LLMArchitectureTests",
+            dependencies: []
         )
     ]
 )

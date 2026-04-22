@@ -35,6 +35,44 @@ private actor InMemoryManifestStore: ManifestStore {
     #expect(try await coordinator.state(for: descriptor.id) == .ready)
 }
 
+@Test func installStateMachineDefaultsToNotInstalledAndIsolatesModels() async {
+    let first: ModelID = "first-model"
+    let second: ModelID = "second-model"
+    let stateMachine = InstallStateMachine()
+
+    #expect(await stateMachine.state(for: first) == .notInstalled)
+
+    await stateMachine.transition(modelID: first, to: .downloading(progress: 0.5))
+
+    #expect(await stateMachine.state(for: first) == .downloading(progress: 0.5))
+    #expect(await stateMachine.state(for: second) == .notInstalled)
+}
+
+@Test func modelInstallCoordinatorReturnsInstalledModelsSortedByDisplayName() async throws {
+    let zModel = ModelDescriptor(
+        id: "z-model",
+        displayName: "Z Model",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let aModel = ModelDescriptor(
+        id: "a-model",
+        displayName: "A Model",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let coordinator = ModelInstallCoordinator()
+
+    for try await _ in coordinator.install(zModel) {}
+    for try await _ in coordinator.install(aModel) {}
+
+    let installed = try await coordinator.installedModels()
+
+    #expect(installed.map(\.descriptor.id) == [aModel.id, zModel.id])
+}
+
 @Test func modelInstallCoordinatorPersistsInstalledRecords() async throws {
     let descriptor = ModelDescriptor(
         id: "persisted-model",

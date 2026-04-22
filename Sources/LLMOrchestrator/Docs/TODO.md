@@ -1,3 +1,4 @@
 # LLMOrchestrator TODO
 
-- Expand fake-backend routing and fallback coverage before real backends execute prompts.
+- Add availability-aware routing once backend availability semantics stabilize.
+- Add richer fallback policy controls for non-recoverable errors before real backends execute prompts.

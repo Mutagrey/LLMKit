@@ -1,3 +1,3 @@
 # LLMStorage TODO
 
-- Add richer manifest error-path tests as persistence behavior grows.
+- Add quota and cleanup policy tests once those primitives are introduced.

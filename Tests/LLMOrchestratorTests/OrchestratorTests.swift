@@ -77,6 +77,36 @@ private struct FailingBackend: ModelBackend {
     }
 }
 
+private struct ThrowingBackend: ModelBackend {
+    let backendKind: BackendKind
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        .available
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: LLMError.executionFailed("stream threw"))
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: LLMError.executionFailed("stream threw"))
+        }
+    }
+}
+
 private struct UnavailableBackend: ModelBackend {
     let backendKind: BackendKind
 
@@ -268,6 +298,39 @@ private struct CancellingBackend: ModelBackend {
     #expect(result.model?.id == "remote")
 }
 
+@Test func generationServiceFallsBackAfterThrownStreamError() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        ThrowingBackend(backendKind: .coreML),
+        StreamingBackend(backendKind: .remote, responseText: "recovered")
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+
+    let result = try await service.generate(GenerationRequest(prompt: "hi", requirements: ExecutionRequirements(requiredCapabilities: [.completion])))
+
+    #expect(result.text == "recovered")
+    #expect(result.model?.id == "remote")
+}
+
+@Test func generationServiceFallsBackFromUnavailablePreferredModel() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [local, remote])
+    let registry = BackendRegistry(backends: [
+        StreamingBackend(backendKind: .coreML, responseText: "local fallback"),
+        UnavailableBackend(backendKind: .remote)
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+    let requirements = ExecutionRequirements(requiredCapabilities: [.completion], preferredModel: "remote")
+
+    let result = try await service.generate(GenerationRequest(prompt: "hi", requirements: requirements))
+
+    #expect(result.text == "local fallback")
+    #expect(result.model?.id == "local")
+}
+
 @Test func generationServiceDoesNotFallbackAfterCancellation() async throws {
     let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
     let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
@@ -318,6 +381,29 @@ private struct CancellingBackend: ModelBackend {
     }
 
     #expect(completed?.message.content.text == "chat fallback")
+    #expect(completed?.model?.id == "remote")
+}
+
+@Test func chatServiceFallsBackAfterThrownStreamError() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        ThrowingBackend(backendKind: .coreML),
+        StreamingBackend(backendKind: .remote, responseText: "chat recovered")
+    ])
+    let service = DefaultChatService(router: ModelRouter(catalog: catalog), registry: registry)
+    let userMessage = ChatMessage(role: .user, content: MessageContent(text: "hi"))
+    let request = ChatRequest(messages: [userMessage], requirements: ExecutionRequirements(requiredCapabilities: [.chat]))
+
+    var completed: ChatResult?
+    for try await event in service.send(request) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    #expect(completed?.message.content.text == "chat recovered")
     #expect(completed?.model?.id == "remote")
 }
 

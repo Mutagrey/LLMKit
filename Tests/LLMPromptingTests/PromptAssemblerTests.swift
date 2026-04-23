@@ -51,6 +51,19 @@ import Testing
     #expect(snapshot.assembledPrompt == "Ada met Ada")
 }
 
+@Test func promptAssemblerAllowsEmptyTemplate() {
+    let template = PromptTemplate(
+        id: "empty",
+        version: PromptVersion("1"),
+        fragments: []
+    )
+
+    let snapshot = PromptAssembler().assemble(template)
+
+    #expect(snapshot.templateID == "empty")
+    #expect(snapshot.assembledPrompt.isEmpty)
+}
+
 @Test func promptRegistryReplacesTemplateWithSameID() async {
     let first = PromptTemplate(
         id: "summary",
@@ -67,4 +80,10 @@ import Testing
     await registry.register(second)
 
     #expect(await registry.template(id: "summary") == second)
+}
+
+@Test func promptRegistryReturnsNilForUnknownTemplate() async {
+    let registry = PromptRegistry()
+
+    #expect(await registry.template(id: "missing") == nil)
 }

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-The initial architecture pass is in hardening. Package targets, module docs, ADRs, core contracts, coordination modules, orchestration, lifecycle/storage, backend skeletons, UI skeletons, and focused tests are present.
+The initial architecture pass is hardened. Package targets, module docs, ADRs, core contracts, coordination modules, orchestration, lifecycle/storage, backend skeletons, UI skeletons, architecture boundary tests, and focused runtime tests are present and verified.
 
 ## Completed
 
@@ -14,12 +14,13 @@ The initial architecture pass is in hardening. Package targets, module docs, ADR
 6. Implement backend skeletons.
 7. Implement UI skeletons.
 8. Add focused tests and verify the package.
+9. Harden boundary, routing/fallback, lifecycle/storage, remote mapping, session, prompting, tools, backend skeleton, and UI view-model behavior.
+10. Synchronize module docs with implemented public behavior.
 
 ## Active
 
-1. Harden dependency boundaries with tests.
-2. Keep module docs synchronized with implementation.
-3. Expand tests only around stable public invariants and routing behavior.
+1. Keep tests and docs synchronized as new behavior is introduced.
+2. Continue to expand tests only around stable public invariants and routing behavior.
 
 ## Later
 

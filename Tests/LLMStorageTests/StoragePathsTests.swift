@@ -21,3 +21,32 @@ import Testing
 
     #expect(loaded == data)
 }
+
+@Test func manifestFileStoreReturnsNilForMissingManifest() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitStorageTests")
+        .appendingPathComponent(UUID().uuidString)
+    let store = ManifestFileStore(directory: directory)
+
+    let loaded = try await store.loadManifest(named: "missing.json")
+    try? FileManager.default.removeItem(at: directory)
+
+    #expect(loaded == nil)
+}
+
+@Test func atomicWriteCoordinatorCreatesParentDirectoriesAndOverwrites() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitStorageTests")
+        .appendingPathComponent(UUID().uuidString)
+    let fileURL = directory
+        .appendingPathComponent("nested", isDirectory: true)
+        .appendingPathComponent("manifest.json")
+    let coordinator = AtomicWriteCoordinator()
+
+    try coordinator.write(Data("first".utf8), to: fileURL)
+    try coordinator.write(Data("second".utf8), to: fileURL)
+    let loaded = try Data(contentsOf: fileURL)
+    try? FileManager.default.removeItem(at: directory)
+
+    #expect(loaded == Data("second".utf8))
+}

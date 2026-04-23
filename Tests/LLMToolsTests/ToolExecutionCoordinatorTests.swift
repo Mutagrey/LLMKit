@@ -1,6 +1,19 @@
 import LLMCore
+import LLMProtocols
 import LLMTools
 import Testing
+
+private struct DefinitionOnlyRegistry: ToolRegistryProviding {
+    let definition: ToolDefinition
+
+    func allTools() async -> [ToolDefinition] {
+        [definition]
+    }
+
+    func executor(for toolName: String) async -> (any ToolExecutor)? {
+        nil
+    }
+}
 
 @Test func toolCoordinatorExecutesRegisteredTool() async throws {
     let definition = ToolDefinition(
@@ -51,6 +64,38 @@ import Testing
         Issue.record("Expected missing required argument to fail validation.")
     } catch {
         #expect(error as? ValidationError == .missingRequiredValue("text"))
+    }
+}
+
+@Test func toolCoordinatorValidatesBeforeMissingExecutorLookupFailure() async throws {
+    let definition = ToolDefinition(
+        name: "echo",
+        description: "Echo input",
+        schema: ToolSchema(requiredArguments: ["text"])
+    )
+    let coordinator = ToolExecutionCoordinator(registry: DefinitionOnlyRegistry(definition: definition))
+
+    do {
+        _ = try await coordinator.execute(ToolInvocation(toolName: "echo"))
+        Issue.record("Expected validation to run before missing executor lookup.")
+    } catch {
+        #expect(error as? ValidationError == .missingRequiredValue("text"))
+    }
+}
+
+@Test func toolCoordinatorFailsWhenExecutorIsMissingForValidInvocation() async throws {
+    let definition = ToolDefinition(
+        name: "echo",
+        description: "Echo input",
+        schema: ToolSchema(requiredArguments: ["text"])
+    )
+    let coordinator = ToolExecutionCoordinator(registry: DefinitionOnlyRegistry(definition: definition))
+
+    do {
+        _ = try await coordinator.execute(ToolInvocation(toolName: "echo", arguments: ToolArguments(values: ["text": "hello"])))
+        Issue.record("Expected missing executor to fail after validation.")
+    } catch {
+        #expect(error as? LLMError == .toolExecutionFailed("Executor not registered: echo"))
     }
 }
 

@@ -190,6 +190,9 @@ public struct RemoteBackend: ModelBackend {
             accumulator.append(delta)
             yield(delta)
         }
+        guard !accumulator.isEmpty else {
+            throw BackendError.mappingFailed("Remote stream did not contain text.")
+        }
         return accumulator.text
     }
 }

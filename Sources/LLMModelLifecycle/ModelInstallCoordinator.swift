@@ -9,11 +9,13 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
 
     public init(
         records: [InstalledModelRecord] = [],
-        stateMachine: InstallStateMachine = InstallStateMachine(),
+        stateMachine: InstallStateMachine? = nil,
         recordStore: InstalledModelRecordStore? = nil
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
-        self.stateMachine = stateMachine
+        self.stateMachine = stateMachine ?? InstallStateMachine(
+            states: Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0.installState) })
+        )
         self.recordStore = recordStore
     }
 

@@ -101,6 +101,24 @@ private struct CorruptManifestStore: ManifestStore {
     #expect(record?.installState == .ready)
 }
 
+@Test func persistedModelInstallCoordinatorRestoresInstallState() async throws {
+    let descriptor = ModelDescriptor(
+        id: "persisted-state-model",
+        displayName: "Persisted State Model",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let store = InstalledModelRecordStore(manifestStore: InMemoryManifestStore())
+    try await store.save([
+        InstalledModelRecord(descriptor: descriptor, installState: .active)
+    ])
+
+    let restored = try await ModelInstallCoordinator.persisted(recordStore: store)
+
+    #expect(try await restored.state(for: descriptor.id) == .active)
+}
+
 @Test func installedModelRecordStorePersistsRecordsSortedByDisplayName() async throws {
     let zModel = ModelDescriptor(
         id: "z-model",

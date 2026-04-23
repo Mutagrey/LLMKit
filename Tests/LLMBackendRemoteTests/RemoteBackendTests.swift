@@ -279,6 +279,34 @@ private actor RecordingTransport: HTTPTransport {
     }
 }
 
+@Test func remoteBackendFailsWhenStreamContainsNoTextDeltas() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    data: [DONE]
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail when stream has no text deltas.")
+    } catch {
+        #expect(error as? BackendError == .mappingFailed("Remote stream did not contain text."))
+    }
+}
+
 @Test func remoteBackendRequiresConfigurationAndTransportForAvailability() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)

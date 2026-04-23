@@ -1,3 +1,3 @@
 # LLMUIChat TODO
 
-- Add tool invocation presentation once tool events are finalized.
+- Refine tool invocation styling once the broader chat theming surface stabilizes.

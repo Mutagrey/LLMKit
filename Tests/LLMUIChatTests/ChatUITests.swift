@@ -32,6 +32,24 @@ private struct FailingChatService: ChatService {
     }
 }
 
+private struct ToolEventsChatService: ChatService {
+    func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let invocation = ToolInvocation(
+                id: "call_weather_1",
+                toolName: "weather",
+                arguments: ToolArguments(structuredValues: ["city": .string("Paris")])
+            )
+            continuation.yield(.toolCallRequested(invocation))
+            continuation.yield(.toolCallCompleted(ToolResult(invocationID: invocation.id, content: #"{"forecast":"sunny"}"#)))
+            continuation.yield(.completed(ChatResult(
+                message: ChatMessage(role: .assistant, content: MessageContent(text: "Sunny in Paris"))
+            )))
+            continuation.finish()
+        }
+    }
+}
+
 private final class RecordingChatService: ChatService, @unchecked Sendable {
     private let lock = NSLock()
     private var recordedRequests: [ChatRequest] = []
@@ -139,4 +157,30 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
     #expect(viewModel.lastErrorMessage == nil)
     #expect(viewModel.streamingText.isEmpty)
     #expect(!viewModel.isStreaming)
+}
+
+@MainActor
+@Test func chatViewModelPresentsToolLifecycleInTranscript() async {
+    let viewModel = ChatViewModel(chatService: ToolEventsChatService())
+
+    await viewModel.send("weather in paris")
+
+    #expect(viewModel.messages.map(\.role) == [.user, .assistant])
+    #expect(viewModel.transcriptItems.count == 3)
+
+    guard case .tool(let toolCall)? = viewModel.transcriptItems[safe: 1]?.content else {
+        Issue.record("Expected transcript to contain a tool presentation item.")
+        return
+    }
+
+    #expect(toolCall.id == "call_weather_1")
+    #expect(toolCall.toolName == "weather")
+    #expect(toolCall.arguments["city"] == .string("Paris"))
+    #expect(toolCall.status == .completed(#"{"forecast":"sunny"}"#))
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }

@@ -54,8 +54,13 @@ public struct ChatScreen: View {
     private var transcript: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(viewModel.messages) { message in
-                    MessageBubble(message: message)
+                ForEach(viewModel.transcriptItems) { item in
+                    switch item.content {
+                    case .message(let message):
+                        MessageBubble(message: message)
+                    case .tool(let toolCall):
+                        ToolActivityCard(toolCall: toolCall)
+                    }
                 }
                 if !viewModel.streamingText.isEmpty {
                     MessageBubble(
@@ -112,6 +117,7 @@ public struct ChatScreen: View {
 @Observable
 public final class ChatViewModel {
     public private(set) var messages: [ChatMessage]
+    public private(set) var transcriptItems: [ChatTranscriptItem]
     public private(set) var isStreaming: Bool
     public private(set) var streamingText: String
     public private(set) var lastErrorMessage: String?
@@ -126,6 +132,7 @@ public final class ChatViewModel {
         requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.chat])
     ) {
         self.messages = messages
+        self.transcriptItems = messages.map(ChatTranscriptItem.message)
         self.chatService = chatService
         self.requirements = requirements
         self.isStreaming = false
@@ -134,7 +141,7 @@ public final class ChatViewModel {
     }
 
     public func append(_ message: ChatMessage) {
-        messages.append(message)
+        appendMessage(message)
     }
 
     public func send(_ text: String) async {
@@ -144,7 +151,7 @@ public final class ChatViewModel {
         }
 
         let userMessage = ChatMessage(role: .user, content: MessageContent(text: trimmed))
-        messages.append(userMessage)
+        appendMessage(userMessage)
         guard let chatService else {
             return
         }
@@ -161,16 +168,20 @@ public final class ChatViewModel {
                     accumulator.append(text)
                     streamingText = accumulator.text
                 case .completed(let result):
-                    messages.append(result.message)
+                    appendMessage(result.message)
                     streamingText = ""
                 case .failed(let error):
                     throw error
-                case .started, .toolCallRequested, .toolCallCompleted:
+                case .toolCallRequested(let invocation):
+                    upsertToolCall(invocation)
+                case .toolCallCompleted(let result):
+                    completeToolCall(result)
+                case .started:
                     break
                 }
             }
             if !accumulator.isEmpty, messages.last?.role != .assistant {
-                messages.append(ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)))
+                appendMessage(ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)))
             }
         } catch {
             lastErrorMessage = String(describing: error)
@@ -178,10 +189,98 @@ public final class ChatViewModel {
         streamingText = ""
         isStreaming = false
     }
+
+    private func appendMessage(_ message: ChatMessage) {
+        messages.append(message)
+        transcriptItems.append(.message(message))
+    }
+
+    private func upsertToolCall(_ invocation: ToolInvocation) {
+        let presentation = ToolCallPresentation(
+            id: invocation.id,
+            toolName: invocation.toolName,
+            arguments: invocation.arguments,
+            status: .running
+        )
+
+        if let index = transcriptItems.firstIndex(where: { $0.toolCallID == invocation.id }) {
+            transcriptItems[index] = .tool(presentation)
+        } else {
+            transcriptItems.append(.tool(presentation))
+        }
+    }
+
+    private func completeToolCall(_ result: ToolResult) {
+        guard let index = transcriptItems.firstIndex(where: { $0.toolCallID == result.invocationID }) else {
+            transcriptItems.append(.tool(ToolCallPresentation(
+                id: result.invocationID,
+                toolName: "Tool",
+                arguments: ToolArguments(),
+                status: result.isError ? .failed(result.content) : .completed(result.content)
+            )))
+            return
+        }
+
+        guard case .tool(let existing) = transcriptItems[index].content else {
+            return
+        }
+
+        transcriptItems[index] = .tool(ToolCallPresentation(
+            id: existing.id,
+            toolName: existing.toolName,
+            arguments: existing.arguments,
+            status: result.isError ? .failed(result.content) : .completed(result.content)
+        ))
+    }
 }
 
 public struct ChatTheme: Hashable, Sendable {
     public init() {}
+}
+
+public struct ChatTranscriptItem: Identifiable, Hashable, Sendable {
+    public enum Content: Hashable, Sendable {
+        case message(ChatMessage)
+        case tool(ToolCallPresentation)
+    }
+
+    public let id: String
+    public let content: Content
+
+    public static func message(_ message: ChatMessage) -> ChatTranscriptItem {
+        ChatTranscriptItem(id: "message:\(message.id.uuidString)", content: .message(message))
+    }
+
+    public static func tool(_ toolCall: ToolCallPresentation) -> ChatTranscriptItem {
+        ChatTranscriptItem(id: "tool:\(toolCall.id.rawValue)", content: .tool(toolCall))
+    }
+
+    fileprivate var toolCallID: ToolCallID? {
+        guard case .tool(let toolCall) = content else {
+            return nil
+        }
+        return toolCall.id
+    }
+}
+
+public struct ToolCallPresentation: Identifiable, Hashable, Sendable {
+    public enum Status: Hashable, Sendable {
+        case running
+        case completed(String)
+        case failed(String)
+    }
+
+    public let id: ToolCallID
+    public let toolName: String
+    public let arguments: ToolArguments
+    public let status: Status
+
+    public init(id: ToolCallID, toolName: String, arguments: ToolArguments, status: Status) {
+        self.id = id
+        self.toolName = toolName
+        self.arguments = arguments
+        self.status = status
+    }
 }
 
 private struct MessageBubble: View {
@@ -214,6 +313,108 @@ private struct MessageBubble: View {
         message.role == .user
             ? AnyShapeStyle(.tint.opacity(0.14))
             : AnyShapeStyle(Color.primary.opacity(0.06))
+    }
+}
+
+private struct ToolActivityCard: View {
+    let toolCall: ToolCallPresentation
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: iconName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(iconColor)
+                    Text(toolCall.toolName)
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Text(statusLabel)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                if !toolCall.arguments.structuredValues.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(argumentLines, id: \.self) { line in
+                            Text(line)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let resultLine {
+                    Text(resultLine)
+                        .font(.footnote)
+                        .foregroundStyle(resultColor)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            Spacer(minLength: 36)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var statusLabel: String {
+        switch toolCall.status {
+        case .running:
+            return "Running"
+        case .completed:
+            return "Completed"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    private var iconName: String {
+        switch toolCall.status {
+        case .running:
+            return "hammer"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        switch toolCall.status {
+        case .running:
+            return .secondary
+        case .completed:
+            return .green
+        case .failed:
+            return .red
+        }
+    }
+
+    private var resultColor: Color {
+        switch toolCall.status {
+        case .running, .completed:
+            return .primary
+        case .failed:
+            return .red
+        }
+    }
+
+    private var argumentLines: [String] {
+        toolCall.arguments.structuredValues
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key): \($0.value.stringValue)" }
+    }
+
+    private var resultLine: String? {
+        switch toolCall.status {
+        case .running:
+            return nil
+        case .completed(let value), .failed(let value):
+            return value
+        }
     }
 }
 

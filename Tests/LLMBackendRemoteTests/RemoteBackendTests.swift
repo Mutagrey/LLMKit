@@ -29,6 +29,23 @@ private actor RecordingTransport: HTTPTransport {
     #expect(configuration.providerID.rawValue == "test")
 }
 
+@Test func openAIConfigurationStoresProviderHeadersAndPaths() {
+    let configuration = RemoteConfiguration.openAI(
+        apiKey: "test-key",
+        organizationID: "org-test",
+        projectID: "proj-test"
+    )
+
+    #expect(configuration.providerID.rawValue == "openai")
+    #expect(configuration.baseURL.absoluteString == "https://api.openai.com/v1")
+    #expect(configuration.generationPath == "chat/completions")
+    #expect(configuration.chatPath == "chat/completions")
+    #expect(configuration.apiStyle == .openAIChatCompletions)
+    #expect(configuration.defaultHeaders["Authorization"] == "Bearer test-key")
+    #expect(configuration.defaultHeaders["OpenAI-Organization"] == "org-test")
+    #expect(configuration.defaultHeaders["OpenAI-Project"] == "proj-test")
+}
+
 @Test func remoteBackendSendsGenerationRequestThroughTransport() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url, defaultHeaders: ["Authorization": "Bearer token"])
@@ -76,6 +93,43 @@ private actor RecordingTransport: HTTPTransport {
     #expect(body["model"] as? String == "remote-model")
     #expect(body["prompt"] as? String == "hello")
     #expect(body["stream"] as? Bool == true)
+}
+
+@Test func openAIGenerationUsesChatCompletionsRequestBody() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let transport = RecordingTransport(responseBody: #"{"choices":[{"message":{"content":"openai hello"}}]}"#)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "gpt-test",
+        displayName: "GPT Test",
+        family: .custom("openai"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    var completed: GenerationResult?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let messages = try #require(body["messages"] as? [[String: String]])
+
+    #expect(completed?.text == "openai hello")
+    #expect(request.url.absoluteString == "https://example.com/v1/chat/completions")
+    #expect(request.headers["Authorization"] == "Bearer token")
+    #expect(body["model"] as? String == "gpt-test")
+    #expect(body["stream"] as? Bool == true)
+    #expect(messages == [["role": "user", "content": "hello"]])
+    #expect(body["prompt"] == nil)
 }
 
 @Test func remoteBackendSendsChatRequestThroughTransport() async throws {
@@ -217,6 +271,89 @@ private actor RecordingTransport: HTTPTransport {
     #expect(completed?.message.content.text == "hey")
 }
 
+@Test func remoteBackendMapsOpenAIUsageAndFinishReason() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    {
+      "choices": [
+        {
+          "message": { "content": "done" },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+        "total_tokens": 10
+      }
+    }
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(id: "gpt-test", displayName: "GPT Test", family: .custom("openai"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let message = ChatMessage(role: .user, content: MessageContent(text: "hello"))
+
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    #expect(completed?.message.content.text == "done")
+    #expect(completed?.usage?.tokens.inputTokens == 7)
+    #expect(completed?.usage?.tokens.outputTokens == 3)
+    #expect(completed?.usage?.tokens.totalTokens == 10)
+    #expect(completed?.finishReason == .stopped)
+}
+
+@Test func remoteBackendSkipsOpenAITerminalStreamChunkWithoutText() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    data: {"choices":[{"delta":{"content":"he"}}]}
+
+    data: {"choices":[{"delta":{"content":"y"}}]}
+
+    data: {"choices":[{"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "gpt-test",
+        displayName: "GPT Test",
+        family: .custom("openai"),
+        backend: .remote,
+        capabilities: [.chat],
+        supportsStreaming: true,
+        isRemote: true
+    )
+    let message = ChatMessage(role: .user, content: MessageContent(text: "hello"))
+
+    var deltas: [String] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .toolCallRequested, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["he", "y"])
+    #expect(completed?.message.content.text == "hey")
+    #expect(completed?.finishReason == .stopped)
+}
+
 @Test func remoteBackendFailsOnProviderHTTPError() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let backend = RemoteBackend(
@@ -230,6 +367,22 @@ private actor RecordingTransport: HTTPTransport {
         Issue.record("Expected remote backend to fail on non-2xx provider response.")
     } catch {
         #expect(error as? BackendError == .providerFailed("HTTP 500"))
+    }
+}
+
+@Test func remoteBackendMapsOpenAIProviderErrorMessage() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: #"{"error":{"message":"invalid api key","type":"invalid_request_error"}}"#, statusCode: 401)
+    )
+    let model = ModelDescriptor(id: "gpt-test", displayName: "GPT Test", family: .custom("openai"), backend: .remote, capabilities: [.completion], isRemote: true)
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail with the provider error message.")
+    } catch {
+        #expect(error as? BackendError == .providerFailed("HTTP 401: invalid api key"))
     }
 }
 

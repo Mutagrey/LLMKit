@@ -4,40 +4,6 @@ import LLMNetworking
 import LLMObservability
 import LLMProtocols
 
-public struct RemoteProviderID: RawRepresentable, Hashable, Codable, Sendable, ExpressibleByStringLiteral {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: String) {
-        self.init(rawValue: value)
-    }
-}
-
-public struct RemoteConfiguration: Hashable, Sendable {
-    public let providerID: RemoteProviderID
-    public let baseURL: URL
-    public let defaultHeaders: [String: String]
-    public let generationPath: String
-    public let chatPath: String
-
-    public init(
-        providerID: RemoteProviderID,
-        baseURL: URL,
-        defaultHeaders: [String: String] = [:],
-        generationPath: String = "completions",
-        chatPath: String = "chat/completions"
-    ) {
-        self.providerID = providerID
-        self.baseURL = baseURL
-        self.defaultHeaders = defaultHeaders
-        self.generationPath = generationPath
-        self.chatPath = chatPath
-    }
-}
-
 public struct RemoteBackend: ModelBackend {
     public let backendKind: BackendKind = .remote
     public let configuration: RemoteConfiguration?
@@ -87,12 +53,22 @@ public struct RemoteBackend: ModelBackend {
                     continuation.yield(.started(request.model))
                     let httpRequest = try makeGenerationRequest(request)
                     let response = try await send(httpRequest)
-                    if let events = try streamEvents(from: response.body), !events.isEmpty {
-                        let text = try collectStreamText(events) { continuation.yield(.delta($0)) }
-                        continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
+                    if let events = streamEvents(from: response.body), !events.isEmpty {
+                        let payload = try collectStreamText(events) { continuation.yield(.delta($0)) }
+                        continuation.yield(.completed(GenerationResult(
+                            text: payload.text,
+                            model: request.model,
+                            usage: payload.usage,
+                            finishReason: payload.finishReason
+                        )))
                     } else {
-                        let text = try decodeTextResponse(response.body)
-                        continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
+                        let payload = try decodeTextPayload(response.body)
+                        continuation.yield(.completed(GenerationResult(
+                            text: payload.text,
+                            model: request.model,
+                            usage: payload.usage,
+                            finishReason: payload.finishReason
+                        )))
                     }
                     continuation.finish()
                 } catch {
@@ -109,14 +85,19 @@ public struct RemoteBackend: ModelBackend {
                     continuation.yield(.started(request.model))
                     let httpRequest = try makeChatRequest(request)
                     let response = try await send(httpRequest)
-                    let text: String
-                    if let events = try streamEvents(from: response.body), !events.isEmpty {
-                        text = try collectStreamText(events) { continuation.yield(.delta($0)) }
+                    let payload: RemoteTextPayload
+                    if let events = streamEvents(from: response.body), !events.isEmpty {
+                        payload = try collectStreamText(events) { continuation.yield(.delta($0)) }
                     } else {
-                        text = try decodeTextResponse(response.body)
+                        payload = try decodeTextPayload(response.body)
                     }
-                    let message = ChatMessage(role: .assistant, content: MessageContent(text: text))
-                    continuation.yield(.completed(ChatResult(message: message, model: request.model)))
+                    let message = ChatMessage(role: .assistant, content: MessageContent(text: payload.text))
+                    continuation.yield(.completed(ChatResult(
+                        message: message,
+                        model: request.model,
+                        usage: payload.usage,
+                        finishReason: payload.finishReason
+                    )))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -126,20 +107,45 @@ public struct RemoteBackend: ModelBackend {
     }
 
     private func makeGenerationRequest(_ request: BackendGenerationRequest) throws -> HTTPRequest {
-        try makeRequest(
-            path: configuration?.generationPath,
-            body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.prompt, stream: request.model.supportsStreaming)
-        )
+        switch configuration?.apiStyle ?? .genericCompletionsAndChat {
+        case .genericCompletionsAndChat:
+            try makeRequest(
+                path: configuration?.generationPath,
+                body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.prompt, stream: request.model.supportsStreaming)
+            )
+        case .openAIChatCompletions:
+            try makeRequest(
+                path: configuration?.generationPath,
+                body: OpenAIChatCompletionRequest(
+                    model: request.model.id.rawValue,
+                    messages: [
+                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt)
+                    ],
+                    stream: request.model.supportsStreaming
+                )
+            )
+        }
     }
 
     private func makeChatRequest(_ request: BackendChatRequest) throws -> HTTPRequest {
-        let messages = request.request.messages.map {
-            RemoteChatMessage(role: $0.role.rawValue, content: $0.content.text)
+        switch configuration?.apiStyle ?? .genericCompletionsAndChat {
+        case .genericCompletionsAndChat:
+            let messages = request.request.messages.map {
+                RemoteChatMessage(role: $0.role.rawValue, content: $0.content.text)
+            }
+            return try makeRequest(
+                path: configuration?.chatPath,
+                body: RemoteChatRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
+            )
+        case .openAIChatCompletions:
+            let messages = request.request.messages.map {
+                OpenAIChatMessage(role: $0.role.rawValue, content: $0.content.text)
+            }
+            return try makeRequest(
+                path: configuration?.chatPath,
+                body: OpenAIChatCompletionRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
+            )
         }
-        return try makeRequest(
-            path: configuration?.chatPath,
-            body: RemoteChatRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
-        )
     }
 
     private func makeRequest<T: Encodable>(path: String?, body: T) throws -> HTTPRequest {
@@ -163,74 +169,64 @@ public struct RemoteBackend: ModelBackend {
         }
         let response = try await transport.send(request)
         guard 200..<300 ~= response.statusCode else {
-            throw BackendError.providerFailed("HTTP \(response.statusCode)")
+            throw BackendError.providerFailed(providerErrorMessage(statusCode: response.statusCode, body: response.body))
         }
         return response
     }
 
-    private func decodeTextResponse(_ data: Data) throws -> String {
+    private func decodeTextPayload(_ data: Data) throws -> RemoteTextPayload {
         let body = try decoder.decode(RemoteTextResponse.self, from: data)
         guard let text = body.textValue else {
             throw BackendError.mappingFailed("Remote response did not contain text.")
         }
-        return text
+        return RemoteTextPayload(
+            text: text,
+            usage: body.usage?.metrics,
+            finishReason: body.finishReasonValue.map(RemoteFinishReasonMapper.map) ?? .completed
+        )
     }
 
-    private func streamEvents(from data: Data) throws -> [SSEEvent]? {
+    private func streamEvents(from data: Data) -> [SSEEvent]? {
         guard let text = String(data: data, encoding: .utf8), text.contains("data:") else {
             return nil
         }
         return SSEParser().parse(text)
     }
 
-    private func collectStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> String {
+    private func collectStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
         var accumulator = StreamedTextAccumulator()
+        var usage: UsageMetrics?
+        var finishReason: StreamFinishReason = .completed
         for event in events where event.data != "[DONE]" {
-            let delta = try decodeTextResponse(Data(event.data.utf8))
-            accumulator.append(delta)
-            yield(delta)
+            let body = try decoder.decode(RemoteTextResponse.self, from: Data(event.data.utf8))
+            if let delta = body.textValue {
+                accumulator.append(delta)
+                yield(delta)
+            } else if !body.isTerminalChunk {
+                throw BackendError.mappingFailed("Remote response did not contain text.")
+            }
+            if let bodyUsage = body.usage?.metrics {
+                usage = bodyUsage
+            }
+            if let bodyFinishReason = body.finishReasonValue {
+                finishReason = RemoteFinishReasonMapper.map(bodyFinishReason)
+            }
         }
         guard !accumulator.isEmpty else {
             throw BackendError.mappingFailed("Remote stream did not contain text.")
         }
-        return accumulator.text
+        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
+    }
+
+    private func providerErrorMessage(statusCode: Int, body: Data) -> String {
+        guard
+            let errorResponse = try? decoder.decode(RemoteProviderErrorResponse.self, from: body),
+            let message = errorResponse.message
+        else {
+            return "HTTP \(statusCode)"
+        }
+        return "HTTP \(statusCode): \(message)"
     }
 }
 
 public enum LLMBackendRemoteNamespace {}
-
-private struct RemoteCompletionRequest: Encodable {
-    let model: String
-    let prompt: String
-    let stream: Bool
-}
-
-private struct RemoteChatRequest: Encodable {
-    let model: String
-    let messages: [RemoteChatMessage]
-    let stream: Bool
-}
-
-private struct RemoteChatMessage: Encodable {
-    let role: String
-    let content: String
-}
-
-private struct RemoteTextResponse: Decodable {
-    struct Choice: Decodable {
-        struct Message: Decodable {
-            let content: String?
-        }
-
-        let text: String?
-        let message: Message?
-        let delta: Message?
-    }
-
-    let text: String?
-    let choices: [Choice]?
-
-    var textValue: String? {
-        text ?? choices?.first?.text ?? choices?.first?.message?.content ?? choices?.first?.delta?.content
-    }
-}

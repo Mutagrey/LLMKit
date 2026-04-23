@@ -194,7 +194,12 @@ public struct RemoteBackend: ModelBackend {
         }
         let response = try await transport.send(request)
         guard 200..<300 ~= response.statusCode else {
-            throw BackendError.providerFailed(providerErrorMessage(statusCode: response.statusCode, body: response.body))
+            throw BackendError.providerFailed(RemoteProviderErrorMapper.message(
+                statusCode: response.statusCode,
+                headers: response.headers,
+                body: response.body,
+                decoder: decoder
+            ))
         }
         return response
     }
@@ -299,15 +304,6 @@ public struct RemoteBackend: ModelBackend {
         return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
     }
 
-    private func providerErrorMessage(statusCode: Int, body: Data) -> String {
-        guard
-            let errorResponse = try? decoder.decode(RemoteProviderErrorResponse.self, from: body),
-            let message = errorResponse.message
-        else {
-            return "HTTP \(statusCode)"
-        }
-        return "HTTP \(statusCode): \(message)"
-    }
 }
 
 public enum LLMBackendRemoteNamespace {}

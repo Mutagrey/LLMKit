@@ -9,16 +9,22 @@ private actor RecordingTransport: HTTPTransport {
     private(set) var requests: [HTTPRequest] = []
     private let responseBody: String
     private let statusCode: Int
+    private let responseHeaders: [String: String]
 
-    init(responseBody: String = #"{"choices":[{"text":"remote hello"}]}"#, statusCode: Int = 200) {
+    init(
+        responseBody: String = #"{"choices":[{"text":"remote hello"}]}"#,
+        statusCode: Int = 200,
+        responseHeaders: [String: String] = [:]
+    ) {
         self.responseBody = responseBody
         self.statusCode = statusCode
+        self.responseHeaders = responseHeaders
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
         let body = responseBody.data(using: .utf8) ?? Data()
-        return HTTPResponse(statusCode: statusCode, body: body)
+        return HTTPResponse(statusCode: statusCode, headers: responseHeaders, body: body)
     }
 }
 
@@ -531,7 +537,11 @@ private actor RecordingTransport: HTTPTransport {
     let url = try #require(URL(string: "https://example.com/v1"))
     let backend = RemoteBackend(
         configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
-        transport: RecordingTransport(responseBody: #"{"error":{"message":"invalid api key","type":"invalid_request_error"}}"#, statusCode: 401)
+        transport: RecordingTransport(
+            responseBody: #"{"error":{"message":"invalid api key","type":"invalid_request_error","code":"invalid_api_key"}}"#,
+            statusCode: 401,
+            responseHeaders: ["x-request-id": "req-openai"]
+        )
     )
     let model = ModelDescriptor(id: "gpt-test", displayName: "GPT Test", family: .custom("openai"), backend: .remote, capabilities: [.completion], isRemote: true)
 
@@ -539,7 +549,26 @@ private actor RecordingTransport: HTTPTransport {
         for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
         Issue.record("Expected remote backend to fail with the provider error message.")
     } catch {
-        #expect(error as? BackendError == .providerFailed("HTTP 401: invalid api key"))
+        #expect(error as? BackendError == .providerFailed("HTTP 401: invalid api key (type=invalid_request_error, code=invalid_api_key, request_id=req-openai)"))
+    }
+}
+
+@Test func remoteBackendMapsAnthropicProviderErrorMessage() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(
+            responseBody: #"{"type":"error","error":{"type":"rate_limit_error","message":"rate limit exceeded"},"request_id":"req-anthropic"}"#,
+            statusCode: 429
+        )
+    )
+    let model = ModelDescriptor(id: "claude-test", displayName: "Claude Test", family: .custom("anthropic"), backend: .remote, capabilities: [.completion], isRemote: true)
+
+    do {
+        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        Issue.record("Expected remote backend to fail with the Anthropic provider error message.")
+    } catch {
+        #expect(error as? BackendError == .providerFailed("HTTP 429: rate limit exceeded (type=rate_limit_error, request_id=req-anthropic)"))
     }
 }
 

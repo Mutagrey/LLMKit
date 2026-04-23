@@ -15,3 +15,5 @@ When a response body contains server-sent events, `RemoteBackend` maps text delt
 OpenAI-compatible response fields for `usage` and `finish_reason`, and Anthropic-compatible fields for `usage` and `stop_reason`, are mapped into `UsageMetrics` and `StreamFinishReason` when present.
 
 Anthropic tool-role message mapping is intentionally unsupported until tool block request/response handling is implemented.
+
+Provider HTTP errors remain surfaced as `BackendError.providerFailed` with a normalized message. When available, provider `message`, `type`, `code`, `param`, and request id fields are included as diagnostic details without exposing provider DTOs publicly.

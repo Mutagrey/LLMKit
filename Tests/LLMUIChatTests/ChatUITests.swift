@@ -50,6 +50,25 @@ private struct ToolEventsChatService: ChatService {
     }
 }
 
+private struct ToolFailureChatService: ChatService {
+    func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let invocation = ToolInvocation(
+                id: "call_weather_1",
+                toolName: "weather",
+                arguments: ToolArguments(structuredValues: ["city": .string("Paris")])
+            )
+            continuation.yield(.toolCallRequested(invocation))
+            continuation.yield(.toolCallCompleted(ToolResult(
+                invocationID: invocation.id,
+                content: "tool failed",
+                isError: true
+            )))
+            continuation.finish(throwing: LLMError.toolExecutionFailed("tool failed"))
+        }
+    }
+}
+
 private final class RecordingChatService: ChatService, @unchecked Sendable {
     private let lock = NSLock()
     private var recordedRequests: [ChatRequest] = []
@@ -142,7 +161,7 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
     await viewModel.send("hi")
 
     #expect(viewModel.messages.map(\.role) == [.user])
-    #expect(viewModel.lastErrorMessage == "executionFailed(\"chat failed\")")
+    #expect(viewModel.lastError == ChatErrorPresentation(title: "Request Failed", message: "chat failed"))
     #expect(viewModel.streamingText.isEmpty)
     #expect(!viewModel.isStreaming)
 }
@@ -177,6 +196,25 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
     #expect(toolCall.toolName == "weather")
     #expect(toolCall.arguments["city"] == .string("Paris"))
     #expect(toolCall.status == .completed(#"{"forecast":"sunny"}"#))
+}
+
+@MainActor
+@Test func chatViewModelMarksFailedToolInTranscript() async {
+    let viewModel = ChatViewModel(chatService: ToolFailureChatService())
+
+    await viewModel.send("weather in paris")
+
+    #expect(viewModel.messages.map(\.role) == [.user])
+    #expect(viewModel.lastError == ChatErrorPresentation(title: "Tool Failed", message: "tool failed"))
+    #expect(viewModel.transcriptItems.count == 2)
+
+    guard case .tool(let toolCall)? = viewModel.transcriptItems[safe: 1]?.content else {
+        Issue.record("Expected transcript to contain a failed tool presentation item.")
+        return
+    }
+
+    #expect(toolCall.id == "call_weather_1")
+    #expect(toolCall.status == .failed("tool failed"))
 }
 
 private extension Array {

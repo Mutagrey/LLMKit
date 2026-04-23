@@ -70,11 +70,8 @@ public struct ChatScreen: View {
                         )
                     )
                 }
-                if let lastErrorMessage = viewModel.lastErrorMessage {
-                    Text(lastErrorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if let lastError = viewModel.lastError {
+                    ErrorNoticeCard(error: lastError)
                 }
             }
             .padding(.horizontal, 16)
@@ -120,7 +117,8 @@ public final class ChatViewModel {
     public private(set) var transcriptItems: [ChatTranscriptItem]
     public private(set) var isStreaming: Bool
     public private(set) var streamingText: String
-    public private(set) var lastErrorMessage: String?
+    public private(set) var lastError: ChatErrorPresentation?
+    public var lastErrorMessage: String? { lastError?.message }
     @ObservationIgnored
     private let chatService: (any ChatService)?
     @ObservationIgnored
@@ -137,7 +135,7 @@ public final class ChatViewModel {
         self.requirements = requirements
         self.isStreaming = false
         self.streamingText = ""
-        self.lastErrorMessage = nil
+        self.lastError = nil
     }
 
     public func append(_ message: ChatMessage) {
@@ -158,7 +156,7 @@ public final class ChatViewModel {
 
         isStreaming = true
         streamingText = ""
-        lastErrorMessage = nil
+        lastError = nil
         var accumulator = StreamedTextAccumulator()
         do {
             let request = ChatRequest(messages: messages, requirements: requirements)
@@ -184,7 +182,7 @@ public final class ChatViewModel {
                 appendMessage(ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)))
             }
         } catch {
-            lastErrorMessage = String(describing: error)
+            lastError = ChatErrorPresentation(error: error)
         }
         streamingText = ""
         isStreaming = false
@@ -236,6 +234,45 @@ public final class ChatViewModel {
 
 public struct ChatTheme: Hashable, Sendable {
     public init() {}
+}
+
+public struct ChatErrorPresentation: Hashable, Sendable {
+    public let title: String
+    public let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+
+    public init(error: Error) {
+        if let error = error as? LLMError {
+            switch error {
+            case .toolExecutionFailed(let message):
+                self.init(title: "Tool Failed", message: message)
+            case .executionFailed(let message):
+                self.init(title: "Request Failed", message: message)
+            case .cancelled:
+                self.init(title: "Cancelled", message: "The request was cancelled.")
+            case .unavailable:
+                self.init(title: "Unavailable", message: "The selected model is currently unavailable.")
+            case .unsupportedCapabilities:
+                self.init(title: "Unsupported", message: "The selected model does not support this request.")
+            case .modelNotInstalled(let modelID):
+                self.init(title: "Model Missing", message: "\(modelID.rawValue) is not installed.")
+            case .downloadFailed(let message):
+                self.init(title: "Download Failed", message: message)
+            case .verificationFailed:
+                self.init(title: "Verification Failed", message: "Model verification failed.")
+            case .compilationFailed:
+                self.init(title: "Compilation Failed", message: "Model compilation failed.")
+            case .invalidStructuredOutput(let message):
+                self.init(title: "Invalid Output", message: message)
+            }
+        } else {
+            self.init(title: "Error", message: error.localizedDescription)
+        }
+    }
 }
 
 public struct ChatTranscriptItem: Identifiable, Hashable, Sendable {
@@ -353,7 +390,11 @@ private struct ToolActivityCard: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: borderWidth)
+            )
 
             Spacer(minLength: 36)
         }
@@ -402,6 +443,37 @@ private struct ToolActivityCard: View {
         }
     }
 
+    private var backgroundColor: Color {
+        switch toolCall.status {
+        case .running:
+            return Color.primary.opacity(0.05)
+        case .completed:
+            return Color.green.opacity(0.08)
+        case .failed:
+            return Color.red.opacity(0.10)
+        }
+    }
+
+    private var borderColor: Color {
+        switch toolCall.status {
+        case .running:
+            return .clear
+        case .completed:
+            return .green.opacity(0.25)
+        case .failed:
+            return .red.opacity(0.35)
+        }
+    }
+
+    private var borderWidth: CGFloat {
+        switch toolCall.status {
+        case .running:
+            return 0
+        case .completed, .failed:
+            return 1
+        }
+    }
+
     private var argumentLines: [String] {
         toolCall.arguments.structuredValues
             .sorted { $0.key < $1.key }
@@ -415,6 +487,34 @@ private struct ToolActivityCard: View {
         case .completed(let value), .failed(let value):
             return value
         }
+    }
+}
+
+private struct ErrorNoticeCard: View {
+    let error: ChatErrorPresentation
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(error.title, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+                Text(error.message)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.35), lineWidth: 1)
+            )
+
+            Spacer(minLength: 36)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

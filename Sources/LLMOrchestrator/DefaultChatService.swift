@@ -168,18 +168,16 @@ public struct DefaultChatService: ChatService {
             do {
                 result = try await tools.execute(invocation)
             } catch let error as LLMError {
-                switch error {
-                case .toolExecutionFailed(let message):
-                    throw LLMError.toolExecutionFailed(message)
-                case .executionFailed(let message):
-                    throw LLMError.toolExecutionFailed(message)
-                case .cancelled:
-                    throw error
-                default:
-                    throw LLMError.toolExecutionFailed(String(describing: error))
+                let mappedError = mapToolExecutionError(error)
+                if case .cancelled = mappedError {
+                    throw mappedError
                 }
+                continuation.yield(.toolCallCompleted(errorResult(for: invocation, error: mappedError)))
+                throw mappedError
             } catch {
-                throw LLMError.toolExecutionFailed(error.localizedDescription)
+                let mappedError = LLMError.toolExecutionFailed(error.localizedDescription)
+                continuation.yield(.toolCallCompleted(errorResult(for: invocation, error: mappedError)))
+                throw mappedError
             }
 
             continuation.yield(.toolCallCompleted(result))
@@ -202,6 +200,32 @@ public struct DefaultChatService: ChatService {
         !message.content.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !message.content.attachments.isEmpty
             || message.toolCallReference != nil
+    }
+
+    private func mapToolExecutionError(_ error: LLMError) -> LLMError {
+        switch error {
+        case .toolExecutionFailed:
+            return error
+        case .executionFailed(let message):
+            return .toolExecutionFailed(message)
+        case .cancelled:
+            return error
+        default:
+            return .toolExecutionFailed(String(describing: error))
+        }
+    }
+
+    private func errorResult(for invocation: ToolInvocation, error: LLMError) -> ToolResult {
+        let message: String
+        switch error {
+        case .toolExecutionFailed(let value), .executionFailed(let value):
+            message = value
+        case .cancelled:
+            message = "cancelled"
+        default:
+            message = String(describing: error)
+        }
+        return ToolResult(invocationID: invocation.id, content: message, isError: true)
     }
 
     private func shouldAttemptFallback(after error: Error) -> Bool {

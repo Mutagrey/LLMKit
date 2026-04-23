@@ -633,13 +633,22 @@ private actor FailingToolService: ToolService {
         requirements: ExecutionRequirements(requiredCapabilities: [.chat, .toolCalling])
     )
 
+    var completedToolResults: [ToolResult] = []
     do {
-        for try await _ in service.send(request) {}
+        for try await event in service.send(request) {
+            if case .toolCallCompleted(let result) = event {
+                completedToolResults.append(result)
+            }
+        }
         Issue.record("Expected tool execution failure to stop chat round-trip.")
     } catch {
         #expect(error as? LLMError == .toolExecutionFailed("tool failed"))
     }
 
     let capturedRequests = await backend.capturedRequests()
+    #expect(completedToolResults.count == 1)
+    #expect(completedToolResults.first?.invocationID == "call_weather_1")
+    #expect(completedToolResults.first?.isError == true)
+    #expect(completedToolResults.first?.content == "tool failed")
     #expect(capturedRequests.count == 1)
 }

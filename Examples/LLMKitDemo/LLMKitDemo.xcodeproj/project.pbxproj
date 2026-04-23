@@ -9,15 +9,15 @@
 /* Begin PBXBuildFile section */
 		0A1000010000000000000001 /* LLMKitDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000001 /* LLMKitDemoApp.swift */; };
 		0A1000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000002 /* ContentView.swift */; };
-		0A1000010000000000000003 /* DemoViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000003 /* DemoViewModel.swift */; };
+		0A1000010000000000000003 /* DemoConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000003 /* DemoConfiguration.swift */; };
 		0A1000010000000000000004 /* DemoEchoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000004 /* DemoEchoBackend.swift */; };
-		0A1000010000000000000005 /* LLMKitFull in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000001 /* LLMKitFull */; };
+		0A1000010000000000000006 /* LLMKitExampleUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000002 /* LLMKitExampleUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0A1000020000000000000001 /* LLMKitDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMKitDemoApp.swift; sourceTree = "<group>"; };
 		0A1000020000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		0A1000020000000000000003 /* DemoViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoViewModel.swift; sourceTree = "<group>"; };
+		0A1000020000000000000003 /* DemoConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfiguration.swift; sourceTree = "<group>"; };
 		0A1000020000000000000004 /* DemoEchoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoEchoBackend.swift; sourceTree = "<group>"; };
 		0A1000030000000000000001 /* LLMKitDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLMKitDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -27,7 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0A1000010000000000000005 /* LLMKitFull in Frameworks */,
+				0A1000010000000000000006 /* LLMKitExampleUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -47,7 +47,7 @@
 			children = (
 				0A1000020000000000000001 /* LLMKitDemoApp.swift */,
 				0A1000020000000000000002 /* ContentView.swift */,
-				0A1000020000000000000003 /* DemoViewModel.swift */,
+				0A1000020000000000000003 /* DemoConfiguration.swift */,
 				0A1000020000000000000004 /* DemoEchoBackend.swift */,
 			);
 			path = LLMKitDemo;
@@ -77,7 +77,7 @@
 			);
 			name = LLMKitDemo;
 			packageProductDependencies = (
-				0A10000F0000000000000001 /* LLMKitFull */,
+				0A10000F0000000000000002 /* LLMKitExampleUI */,
 			);
 			productName = LLMKitDemo;
 			productReference = 0A1000030000000000000001 /* LLMKitDemo.app */;
@@ -127,7 +127,7 @@
 			files = (
 				0A1000010000000000000001 /* LLMKitDemoApp.swift in Sources */,
 				0A1000010000000000000002 /* ContentView.swift in Sources */,
-				0A1000010000000000000003 /* DemoViewModel.swift in Sources */,
+				0A1000010000000000000003 /* DemoConfiguration.swift in Sources */,
 				0A1000010000000000000004 /* DemoEchoBackend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -301,10 +301,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0A10000F0000000000000001 /* LLMKitFull */ = {
+		0A10000F0000000000000002 /* LLMKitExampleUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0A10000E0000000000000001 /* XCLocalSwiftPackageReference "../.." */;
-			productName = LLMKitFull;
+			productName = LLMKitExampleUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

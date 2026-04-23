@@ -124,6 +124,12 @@ let package = Package(
                 "LLMUIChat",
                 "LLMUIDownloads"
             ]
+        ),
+        .library(
+            name: "LLMKitExampleUI",
+            targets: [
+                "LLMExampleUI"
+            ]
         )
     ],
     dependencies: [
@@ -292,6 +298,19 @@ let package = Package(
             ],
             exclude: ["Docs"]
         ),
+        .target(
+            name: "LLMExampleUI",
+            dependencies: [
+                "LLMCore",
+                "LLMProtocols",
+                "LLMOrchestrator",
+                "LLMModelLifecycle",
+                "LLMBackendFoundationModels",
+                "LLMUIChat",
+                "LLMUIDownloads"
+            ],
+            exclude: ["Docs"]
+        ),
         .testTarget(
             name: "LLMCoreTests",
             dependencies: ["LLMCore"]
@@ -363,6 +382,13 @@ let package = Package(
         .testTarget(
             name: "LLMUIDownloadsTests",
             dependencies: ["LLMUIDownloads"]
+        ),
+        .testTarget(
+            name: "LLMExampleUITests",
+            dependencies: [
+                "LLMCore",
+                "LLMExampleUI"
+            ]
         ),
         .testTarget(
             name: "LLMArchitectureTests",

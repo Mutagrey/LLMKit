@@ -170,7 +170,16 @@ private struct PackageManifest {
         "LLMBackendMLX": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendRemote": ["LLMCore", "LLMProtocols", "LLMNetworking", "LLMObservability"],
         "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability"],
-        "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"]
+        "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
+        "LLMExampleUI": [
+            "LLMBackendFoundationModels",
+            "LLMCore",
+            "LLMModelLifecycle",
+            "LLMOrchestrator",
+            "LLMProtocols",
+            "LLMUIChat",
+            "LLMUIDownloads"
+        ]
     ]
 
     for (target, imports) in importsByTarget {
@@ -205,7 +214,12 @@ private struct PackageManifest {
         )
     }
 
-    for target in importsByTarget.keys where !target.hasPrefix("LLMUI") {
+    let swiftUITargets: Set<String> = [
+        "LLMUIChat",
+        "LLMUIDownloads",
+        "LLMExampleUI"
+    ]
+    for target in importsByTarget.keys where !swiftUITargets.contains(target) {
         #expect(
             !importsByTarget[target, default: []].contains("SwiftUI"),
             "\(target) imports SwiftUI outside the UI layer"

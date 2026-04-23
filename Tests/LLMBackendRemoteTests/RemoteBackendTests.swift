@@ -46,6 +46,18 @@ private actor RecordingTransport: HTTPTransport {
     #expect(configuration.defaultHeaders["OpenAI-Project"] == "proj-test")
 }
 
+@Test func anthropicConfigurationStoresProviderHeadersAndPaths() {
+    let configuration = RemoteConfiguration.anthropic(apiKey: "test-key", defaultMaxTokens: 2048)
+
+    #expect(configuration.providerID.rawValue == "anthropic")
+    #expect(configuration.baseURL.absoluteString == "https://api.anthropic.com/v1")
+    #expect(configuration.generationPath == "messages")
+    #expect(configuration.chatPath == "messages")
+    #expect(configuration.apiStyle == .anthropicMessages(defaultMaxTokens: 2048))
+    #expect(configuration.defaultHeaders["x-api-key"] == "test-key")
+    #expect(configuration.defaultHeaders["anthropic-version"] == "2023-06-01")
+}
+
 @Test func remoteBackendSendsGenerationRequestThroughTransport() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url, defaultHeaders: ["Authorization": "Bearer token"])
@@ -132,6 +144,49 @@ private actor RecordingTransport: HTTPTransport {
     #expect(body["prompt"] == nil)
 }
 
+@Test func anthropicGenerationUsesMessagesRequestBody() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"content":[{"type":"text","text":"anthropic hello"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":2}}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", defaultMaxTokens: 512, baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "claude-test",
+        displayName: "Claude Test",
+        family: .custom("anthropic"),
+        backend: .remote,
+        capabilities: [.completion],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    var completed: GenerationResult?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let messages = try #require(body["messages"] as? [[String: String]])
+
+    #expect(completed?.text == "anthropic hello")
+    #expect(completed?.usage?.tokens.inputTokens == 4)
+    #expect(completed?.usage?.tokens.outputTokens == 2)
+    #expect(completed?.usage?.tokens.totalTokens == 6)
+    #expect(completed?.finishReason == .stopped)
+    #expect(request.url.absoluteString == "https://example.com/v1/messages")
+    #expect(request.headers["x-api-key"] == "token")
+    #expect(request.headers["anthropic-version"] == "2023-06-01")
+    #expect(body["model"] as? String == "claude-test")
+    #expect(body["max_tokens"] as? Int == 512)
+    #expect(body["stream"] as? Bool == true)
+    #expect(messages == [["role": "user", "content": "hello"]])
+}
+
 @Test func remoteBackendSendsChatRequestThroughTransport() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url)
@@ -151,6 +206,50 @@ private actor RecordingTransport: HTTPTransport {
     let requests = await transport.requests
     #expect(completed?.message.content.text == "chat hello")
     #expect(requests.first?.url.absoluteString == "https://example.com/v1/chat/completions")
+}
+
+@Test func anthropicChatMapsSystemMessagesToTopLevelSystem() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"content":[{"type":"text","text":"chat hello"}],"stop_reason":"end_turn","usage":{"input_tokens":9,"output_tokens":2}}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", defaultMaxTokens: 256, baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "claude-chat",
+        displayName: "Claude Chat",
+        family: .custom("anthropic"),
+        backend: .remote,
+        capabilities: [.chat],
+        isRemote: true
+    )
+    let messages = [
+        ChatMessage(role: .system, content: MessageContent(text: "be concise")),
+        ChatMessage(role: .developer, content: MessageContent(text: "prefer bullets")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello")),
+        ChatMessage(role: .assistant, content: MessageContent(text: "hi")),
+        ChatMessage(role: .user, content: MessageContent(text: "continue"))
+    ]
+
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: messages), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let mappedMessages = try #require(body["messages"] as? [[String: String]])
+
+    #expect(completed?.message.content.text == "chat hello")
+    #expect(body["system"] as? String == "be concise\n\nprefer bullets")
+    #expect(mappedMessages == [
+        ["role": "user", "content": "hello"],
+        ["role": "assistant", "content": "hi"],
+        ["role": "user", "content": "continue"]
+    ])
 }
 
 @Test func remoteBackendMapsChatRequestBody() async throws {
@@ -186,6 +285,64 @@ private actor RecordingTransport: HTTPTransport {
         ["role": "system", "content": "be concise"],
         ["role": "user", "content": "hello"]
     ])
+}
+
+@Test func anthropicBackendParsesStreamingChatEvents() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    event: message_start
+    data: {"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"he"}}
+
+    event: ping
+    data: {"type":"ping"}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"y"}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = ModelDescriptor(
+        id: "claude-chat",
+        displayName: "Claude Chat",
+        family: .custom("anthropic"),
+        backend: .remote,
+        capabilities: [.chat],
+        supportsStreaming: true,
+        isRemote: true
+    )
+    let message = ChatMessage(role: .user, content: MessageContent(text: "hello"))
+
+    var deltas: [String] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .toolCallRequested, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["he", "y"])
+    #expect(completed?.message.content.text == "hey")
+    #expect(completed?.finishReason == .stopped)
+    #expect(completed?.usage?.tokens.inputTokens == 5)
+    #expect(completed?.usage?.tokens.outputTokens == 3)
+    #expect(completed?.usage?.tokens.totalTokens == 8)
 }
 
 @Test func remoteBackendParsesStreamingGenerationEvents() async throws {
@@ -383,6 +540,23 @@ private actor RecordingTransport: HTTPTransport {
         Issue.record("Expected remote backend to fail with the provider error message.")
     } catch {
         #expect(error as? BackendError == .providerFailed("HTTP 401: invalid api key"))
+    }
+}
+
+@Test func anthropicChatFailsForToolRoleMessages() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: #"{"content":[{"type":"text","text":"unused"}]}"#)
+    )
+    let model = ModelDescriptor(id: "claude-chat", displayName: "Claude Chat", family: .custom("anthropic"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let toolMessage = ChatMessage(role: .tool, content: MessageContent(text: "tool result"))
+
+    do {
+        for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
+        Issue.record("Expected Anthropic mapping to reject tool role messages until tool blocks are supported.")
+    } catch {
+        #expect(error as? BackendError == .mappingFailed("Anthropic Messages mapping does not support tool role messages yet."))
     }
 }
 

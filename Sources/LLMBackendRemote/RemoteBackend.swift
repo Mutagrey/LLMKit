@@ -124,6 +124,19 @@ public struct RemoteBackend: ModelBackend {
                     stream: request.model.supportsStreaming
                 )
             )
+        case .anthropicMessages(let defaultMaxTokens):
+            try makeRequest(
+                path: configuration?.generationPath,
+                body: AnthropicMessagesRequest(
+                    model: request.model.id.rawValue,
+                    messages: [
+                        AnthropicMessage(role: MessageRole.user.rawValue, content: request.request.prompt)
+                    ],
+                    maxTokens: defaultMaxTokens,
+                    stream: request.model.supportsStreaming,
+                    system: nil
+                )
+            )
         }
     }
 
@@ -144,6 +157,18 @@ public struct RemoteBackend: ModelBackend {
             return try makeRequest(
                 path: configuration?.chatPath,
                 body: OpenAIChatCompletionRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
+            )
+        case .anthropicMessages(let defaultMaxTokens):
+            let mapping = try AnthropicMessageMapper.map(request.request.messages)
+            return try makeRequest(
+                path: configuration?.chatPath,
+                body: AnthropicMessagesRequest(
+                    model: request.model.id.rawValue,
+                    messages: mapping.messages,
+                    maxTokens: defaultMaxTokens,
+                    stream: request.model.supportsStreaming,
+                    system: mapping.system
+                )
             )
         }
     }
@@ -175,6 +200,9 @@ public struct RemoteBackend: ModelBackend {
     }
 
     private func decodeTextPayload(_ data: Data) throws -> RemoteTextPayload {
+        if case .anthropicMessages = configuration?.apiStyle {
+            return try decodeAnthropicTextPayload(data)
+        }
         let body = try decoder.decode(RemoteTextResponse.self, from: data)
         guard let text = body.textValue else {
             throw BackendError.mappingFailed("Remote response did not contain text.")
@@ -194,6 +222,9 @@ public struct RemoteBackend: ModelBackend {
     }
 
     private func collectStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
+        if case .anthropicMessages = configuration?.apiStyle {
+            return try collectAnthropicStreamText(events, yield: yield)
+        }
         var accumulator = StreamedTextAccumulator()
         var usage: UsageMetrics?
         var finishReason: StreamFinishReason = .completed
@@ -212,6 +243,56 @@ public struct RemoteBackend: ModelBackend {
                 finishReason = RemoteFinishReasonMapper.map(bodyFinishReason)
             }
         }
+        guard !accumulator.isEmpty else {
+            throw BackendError.mappingFailed("Remote stream did not contain text.")
+        }
+        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
+    }
+
+    private func decodeAnthropicTextPayload(_ data: Data) throws -> RemoteTextPayload {
+        let body = try decoder.decode(AnthropicTextResponse.self, from: data)
+        guard let text = body.textValue else {
+            throw BackendError.mappingFailed("Remote response did not contain text.")
+        }
+        return RemoteTextPayload(
+            text: text,
+            usage: body.usage?.metrics,
+            finishReason: body.stopReason.map(AnthropicFinishReasonMapper.map) ?? .completed
+        )
+    }
+
+    private func collectAnthropicStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
+        var accumulator = StreamedTextAccumulator()
+        var usage: UsageMetrics?
+        var finishReason: StreamFinishReason = .completed
+
+        for event in events {
+            let body = try decoder.decode(AnthropicStreamEvent.self, from: Data(event.data.utf8))
+            switch body.type {
+            case "content_block_delta":
+                guard body.delta?.type == "text_delta", let delta = body.delta?.text else {
+                    continue
+                }
+                accumulator.append(delta)
+                yield(delta)
+            case "message_start":
+                if let bodyUsage = body.message?.usage?.metrics {
+                    usage = bodyUsage
+                }
+            case "message_delta":
+                if let outputUsage = body.usage?.metrics {
+                    usage = RemoteUsageMerger.merge(base: usage, output: outputUsage)
+                }
+                if let stopReason = body.delta?.stopReason {
+                    finishReason = AnthropicFinishReasonMapper.map(stopReason)
+                }
+            case "error":
+                throw BackendError.providerFailed(body.error?.message ?? "Anthropic stream error")
+            default:
+                continue
+            }
+        }
+
         guard !accumulator.isEmpty else {
             throw BackendError.mappingFailed("Remote stream did not contain text.")
         }

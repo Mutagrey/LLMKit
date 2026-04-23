@@ -50,4 +50,23 @@ public extension RemoteConfiguration {
             apiStyle: .openAIChatCompletions
         )
     }
+
+    static func anthropic(
+        apiKey: String,
+        version: String = "2023-06-01",
+        defaultMaxTokens: Int = 1024,
+        baseURL: URL = URL(string: "https://api.anthropic.com/v1")!
+    ) -> RemoteConfiguration {
+        RemoteConfiguration(
+            providerID: "anthropic",
+            baseURL: baseURL,
+            defaultHeaders: [
+                "x-api-key": apiKey,
+                "anthropic-version": version
+            ],
+            generationPath: "messages",
+            chatPath: "messages",
+            apiStyle: .anthropicMessages(defaultMaxTokens: defaultMaxTokens)
+        )
+    }
 }

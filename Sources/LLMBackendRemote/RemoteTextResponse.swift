@@ -73,3 +73,20 @@ enum RemoteFinishReasonMapper {
         }
     }
 }
+
+enum RemoteUsageMerger {
+    static func merge(base: UsageMetrics?, output other: UsageMetrics) -> UsageMetrics {
+        guard let base else {
+            return other
+        }
+        let input = base.tokens.inputTokens
+        let output = other.tokens.outputTokens ?? base.tokens.outputTokens
+        let total: Int?
+        if let input, let output {
+            total = input + output
+        } else {
+            total = base.tokens.totalTokens ?? other.tokens.totalTokens
+        }
+        return UsageMetrics(tokens: TokenUsage(inputTokens: input, outputTokens: output, totalTokens: total), latencyMilliseconds: base.latencyMilliseconds)
+    }
+}

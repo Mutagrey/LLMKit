@@ -52,6 +52,17 @@ private actor RecordingTransport: HTTPTransport {
     #expect(configuration.defaultHeaders["OpenAI-Project"] == "proj-test")
 }
 
+@Test func openAIResponsesConfigurationStoresProviderHeadersAndPaths() {
+    let configuration = RemoteConfiguration.openAIResponses(apiKey: "test-key")
+
+    #expect(configuration.providerID.rawValue == "openai")
+    #expect(configuration.baseURL.absoluteString == "https://api.openai.com/v1")
+    #expect(configuration.generationPath == "responses")
+    #expect(configuration.chatPath == "responses")
+    #expect(configuration.apiStyle == .openAIResponses)
+    #expect(configuration.defaultHeaders["Authorization"] == "Bearer test-key")
+}
+
 @Test func anthropicConfigurationStoresProviderHeadersAndPaths() {
     let configuration = RemoteConfiguration.anthropic(apiKey: "test-key", defaultMaxTokens: 2048)
 
@@ -88,6 +99,24 @@ private actor RecordingTransport: HTTPTransport {
     #expect(descriptor.tags == ["provider:openai", "api:chat-completions", "production"])
 }
 
+@Test func openAIResponsesDescriptorBuildsRemoteModelMetadata() {
+    let descriptor = RemoteModelDescriptors.openAIResponses(
+        id: "gpt-responses-test",
+        supportsTools: true,
+        supportsStructuredOutput: true
+    )
+
+    #expect(descriptor.id.rawValue == "gpt-responses-test")
+    #expect(descriptor.family == .custom("openai"))
+    #expect(descriptor.backend == .remote)
+    #expect(descriptor.isRemote)
+    #expect(descriptor.supportsStreaming)
+    #expect(descriptor.supportsTools)
+    #expect(descriptor.supportsStructuredOutput)
+    #expect(descriptor.capabilities.isSuperset(of: [.chat, .completion, .streaming, .toolCalling, .structuredOutput]))
+    #expect(descriptor.tags == ["provider:openai", "api:responses"])
+}
+
 @Test func anthropicMessagesDescriptorBuildsRemoteModelMetadata() {
     let descriptor = RemoteModelDescriptors.anthropicMessages(
         id: "claude-test",
@@ -106,6 +135,37 @@ private actor RecordingTransport: HTTPTransport {
     #expect(descriptor.capabilities.isSuperset(of: [.chat, .completion, .streaming, .toolCalling, .longContext]))
     #expect(!descriptor.capabilities.contains(.structuredOutput))
     #expect(descriptor.tags == ["provider:anthropic", "api:messages"])
+}
+
+@Test func openAIResponsesGenerationUsesResponsesRequestBody() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"output":[{"type":"message","content":[{"type":"output_text","text":"responses hello"}]}],"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: transport
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-test")
+
+    var completed: GenerationResult?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+
+    #expect(completed?.text == "responses hello")
+    #expect(completed?.usage?.tokens.inputTokens == 4)
+    #expect(completed?.usage?.tokens.outputTokens == 2)
+    #expect(completed?.usage?.tokens.totalTokens == 6)
+    #expect(request.url.absoluteString == "https://example.com/v1/responses")
+    #expect(request.headers["Authorization"] == "Bearer token")
+    #expect(body["model"] as? String == "gpt-responses-test")
+    #expect(body["input"] as? String == "hello")
+    #expect(body["stream"] as? Bool == true)
 }
 
 @Test func remoteBackendSendsGenerationRequestThroughTransport() async throws {
@@ -192,6 +252,43 @@ private actor RecordingTransport: HTTPTransport {
     #expect(body["stream"] as? Bool == true)
     #expect(messages == [["role": "user", "content": "hello"]])
     #expect(body["prompt"] == nil)
+}
+
+@Test func openAIResponsesChatMapsMessagesAndInstructions() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"output":[{"type":"message","content":[{"type":"output_text","text":"chat hello"}]}]}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: transport
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat")
+    let messages = [
+        ChatMessage(role: .system, content: MessageContent(text: "be concise")),
+        ChatMessage(role: .developer, content: MessageContent(text: "prefer bullets")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello")),
+        ChatMessage(role: .assistant, content: MessageContent(text: "hi")),
+        ChatMessage(role: .user, content: MessageContent(text: "continue"))
+    ]
+
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: messages), model: model)) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let mappedMessages = try #require(body["input"] as? [[String: String]])
+
+    #expect(completed?.message.content.text == "chat hello")
+    #expect(body["instructions"] as? String == "be concise\n\nprefer bullets")
+    #expect(mappedMessages == [
+        ["role": "user", "content": "hello"],
+        ["role": "assistant", "content": "hi"],
+        ["role": "user", "content": "continue"]
+    ])
 }
 
 @Test func anthropicGenerationUsesMessagesRequestBody() async throws {
@@ -436,6 +533,49 @@ private actor RecordingTransport: HTTPTransport {
     #expect(completed?.text == "hello")
 }
 
+@Test func openAIResponsesBackendParsesSemanticStreamingChatEvents() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = """
+    event: response.created
+    data: {"type":"response.created","response":{"usage":null}}
+
+    event: response.output_text.delta
+    data: {"type":"response.output_text.delta","delta":"he"}
+
+    event: response.output_text.delta
+    data: {"type":"response.output_text.delta","delta":"y"}
+
+    event: response.completed
+    data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
+
+    """
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat")
+    let message = ChatMessage(role: .user, content: MessageContent(text: "hello"))
+
+    var deltas: [String] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .toolCallRequested, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["he", "y"])
+    #expect(completed?.message.content.text == "hey")
+    #expect(completed?.usage?.tokens.inputTokens == 5)
+    #expect(completed?.usage?.tokens.outputTokens == 3)
+    #expect(completed?.usage?.tokens.totalTokens == 8)
+}
+
 @Test func remoteBackendParsesStreamingChatEvents() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let body = """
@@ -630,6 +770,23 @@ private actor RecordingTransport: HTTPTransport {
         Issue.record("Expected Anthropic mapping to reject tool role messages until tool blocks are supported.")
     } catch {
         #expect(error as? BackendError == .mappingFailed("Anthropic Messages mapping does not support tool role messages yet."))
+    }
+}
+
+@Test func openAIResponsesChatFailsForToolRoleMessages() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"unused"}]}]}"#)
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat")
+    let toolMessage = ChatMessage(role: .tool, content: MessageContent(text: "tool result"))
+
+    do {
+        for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
+        Issue.record("Expected OpenAI Responses mapping to reject tool role messages until tool calls are supported.")
+    } catch {
+        #expect(error as? BackendError == .mappingFailed("OpenAI Responses mapping does not support tool role messages yet."))
     }
 }
 

@@ -53,8 +53,9 @@ public struct RemoteBackend: ModelBackend {
                     continuation.yield(.started(request.model))
                     let httpRequest = try makeGenerationRequest(request)
                     let response = try await send(httpRequest)
-                    if let events = streamEvents(from: response.body), !events.isEmpty {
-                        let payload = try collectStreamText(events) { continuation.yield(.delta($0)) }
+                    let mapper = responseMapper
+                    if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
+                        let payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
                         continuation.yield(.completed(GenerationResult(
                             text: payload.text,
                             model: request.model,
@@ -62,7 +63,7 @@ public struct RemoteBackend: ModelBackend {
                             finishReason: payload.finishReason
                         )))
                     } else {
-                        let payload = try decodeTextPayload(response.body)
+                        let payload = try mapper.decodeTextPayload(response.body)
                         continuation.yield(.completed(GenerationResult(
                             text: payload.text,
                             model: request.model,
@@ -86,10 +87,11 @@ public struct RemoteBackend: ModelBackend {
                     let httpRequest = try makeChatRequest(request)
                     let response = try await send(httpRequest)
                     let payload: RemoteTextPayload
-                    if let events = streamEvents(from: response.body), !events.isEmpty {
-                        payload = try collectStreamText(events) { continuation.yield(.delta($0)) }
+                    let mapper = responseMapper
+                    if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
+                        payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
                     } else {
-                        payload = try decodeTextPayload(response.body)
+                        payload = try mapper.decodeTextPayload(response.body)
                     }
                     let message = ChatMessage(role: .assistant, content: MessageContent(text: payload.text))
                     continuation.yield(.completed(ChatResult(
@@ -122,6 +124,16 @@ public struct RemoteBackend: ModelBackend {
                         OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt)
                     ],
                     stream: request.model.supportsStreaming
+                )
+            )
+        case .openAIResponses:
+            try makeRequest(
+                path: configuration?.generationPath,
+                body: OpenAIResponsesRequest(
+                    model: request.model.id.rawValue,
+                    input: .text(request.request.prompt),
+                    stream: request.model.supportsStreaming,
+                    instructions: nil
                 )
             )
         case .anthropicMessages(let defaultMaxTokens):
@@ -157,6 +169,17 @@ public struct RemoteBackend: ModelBackend {
             return try makeRequest(
                 path: configuration?.chatPath,
                 body: OpenAIChatCompletionRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
+            )
+        case .openAIResponses:
+            let mapping = try OpenAIResponsesMessageMapper.map(request.request.messages)
+            return try makeRequest(
+                path: configuration?.chatPath,
+                body: OpenAIResponsesRequest(
+                    model: request.model.id.rawValue,
+                    input: .messages(mapping.messages),
+                    stream: request.model.supportsStreaming,
+                    instructions: mapping.instructions
+                )
             )
         case .anthropicMessages(let defaultMaxTokens):
             let mapping = try AnthropicMessageMapper.map(request.request.messages)
@@ -204,106 +227,9 @@ public struct RemoteBackend: ModelBackend {
         return response
     }
 
-    private func decodeTextPayload(_ data: Data) throws -> RemoteTextPayload {
-        if case .anthropicMessages = configuration?.apiStyle {
-            return try decodeAnthropicTextPayload(data)
-        }
-        let body = try decoder.decode(RemoteTextResponse.self, from: data)
-        guard let text = body.textValue else {
-            throw BackendError.mappingFailed("Remote response did not contain text.")
-        }
-        return RemoteTextPayload(
-            text: text,
-            usage: body.usage?.metrics,
-            finishReason: body.finishReasonValue.map(RemoteFinishReasonMapper.map) ?? .completed
-        )
+    private var responseMapper: RemoteResponseMapper {
+        RemoteResponseMapper(apiStyle: configuration?.apiStyle, decoder: decoder)
     }
-
-    private func streamEvents(from data: Data) -> [SSEEvent]? {
-        guard let text = String(data: data, encoding: .utf8), text.contains("data:") else {
-            return nil
-        }
-        return SSEParser().parse(text)
-    }
-
-    private func collectStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
-        if case .anthropicMessages = configuration?.apiStyle {
-            return try collectAnthropicStreamText(events, yield: yield)
-        }
-        var accumulator = StreamedTextAccumulator()
-        var usage: UsageMetrics?
-        var finishReason: StreamFinishReason = .completed
-        for event in events where event.data != "[DONE]" {
-            let body = try decoder.decode(RemoteTextResponse.self, from: Data(event.data.utf8))
-            if let delta = body.textValue {
-                accumulator.append(delta)
-                yield(delta)
-            } else if !body.isTerminalChunk {
-                throw BackendError.mappingFailed("Remote response did not contain text.")
-            }
-            if let bodyUsage = body.usage?.metrics {
-                usage = bodyUsage
-            }
-            if let bodyFinishReason = body.finishReasonValue {
-                finishReason = RemoteFinishReasonMapper.map(bodyFinishReason)
-            }
-        }
-        guard !accumulator.isEmpty else {
-            throw BackendError.mappingFailed("Remote stream did not contain text.")
-        }
-        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
-    }
-
-    private func decodeAnthropicTextPayload(_ data: Data) throws -> RemoteTextPayload {
-        let body = try decoder.decode(AnthropicTextResponse.self, from: data)
-        guard let text = body.textValue else {
-            throw BackendError.mappingFailed("Remote response did not contain text.")
-        }
-        return RemoteTextPayload(
-            text: text,
-            usage: body.usage?.metrics,
-            finishReason: body.stopReason.map(AnthropicFinishReasonMapper.map) ?? .completed
-        )
-    }
-
-    private func collectAnthropicStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
-        var accumulator = StreamedTextAccumulator()
-        var usage: UsageMetrics?
-        var finishReason: StreamFinishReason = .completed
-
-        for event in events {
-            let body = try decoder.decode(AnthropicStreamEvent.self, from: Data(event.data.utf8))
-            switch body.type {
-            case "content_block_delta":
-                guard body.delta?.type == "text_delta", let delta = body.delta?.text else {
-                    continue
-                }
-                accumulator.append(delta)
-                yield(delta)
-            case "message_start":
-                if let bodyUsage = body.message?.usage?.metrics {
-                    usage = bodyUsage
-                }
-            case "message_delta":
-                if let outputUsage = body.usage?.metrics {
-                    usage = RemoteUsageMerger.merge(base: usage, output: outputUsage)
-                }
-                if let stopReason = body.delta?.stopReason {
-                    finishReason = AnthropicFinishReasonMapper.map(stopReason)
-                }
-            case "error":
-                throw BackendError.providerFailed(body.error?.message ?? "Anthropic stream error")
-            default:
-                continue
-            }
-        }
-
-        guard !accumulator.isEmpty else {
-            throw BackendError.mappingFailed("Remote stream did not contain text.")
-        }
-        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
-    }
-
 }
 
 public enum LLMBackendRemoteNamespace {}

@@ -28,6 +28,33 @@ struct OpenAIChatMessage: Encodable {
     let content: String
 }
 
+struct OpenAIResponsesRequest: Encodable {
+    let model: String
+    let input: OpenAIResponsesInput
+    let stream: Bool
+    let instructions: String?
+}
+
+enum OpenAIResponsesInput: Encodable {
+    case text(String)
+    case messages([OpenAIResponsesMessage])
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let text):
+            try container.encode(text)
+        case .messages(let messages):
+            try container.encode(messages)
+        }
+    }
+}
+
+struct OpenAIResponsesMessage: Encodable {
+    let role: String
+    let content: String
+}
+
 struct AnthropicMessagesRequest: Encodable {
     let model: String
     let messages: [AnthropicMessage]

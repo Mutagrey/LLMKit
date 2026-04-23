@@ -51,6 +51,31 @@ public extension RemoteConfiguration {
         )
     }
 
+    static func openAIResponses(
+        apiKey: String,
+        organizationID: String? = nil,
+        projectID: String? = nil,
+        baseURL: URL = URL(string: "https://api.openai.com/v1")!
+    ) -> RemoteConfiguration {
+        var headers = [
+            "Authorization": "Bearer \(apiKey)"
+        ]
+        if let organizationID {
+            headers["OpenAI-Organization"] = organizationID
+        }
+        if let projectID {
+            headers["OpenAI-Project"] = projectID
+        }
+        return RemoteConfiguration(
+            providerID: "openai",
+            baseURL: baseURL,
+            defaultHeaders: headers,
+            generationPath: "responses",
+            chatPath: "responses",
+            apiStyle: .openAIResponses
+        )
+    }
+
     static func anthropic(
         apiKey: String,
         version: String = "2023-06-01",

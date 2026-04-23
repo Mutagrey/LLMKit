@@ -23,6 +23,27 @@ public enum RemoteModelDescriptors {
         )
     }
 
+    public static func openAIResponses(
+        id: ModelID,
+        displayName: String? = nil,
+        contextWindowTokens: Int? = nil,
+        supportsTools: Bool = false,
+        supportsStructuredOutput: Bool = false,
+        extraCapabilities: Set<ModelCapability> = [],
+        tags: [String] = []
+    ) -> ModelDescriptor {
+        remoteDescriptor(
+            id: id,
+            displayName: displayName,
+            family: .custom("openai"),
+            contextWindowTokens: contextWindowTokens,
+            supportsTools: supportsTools,
+            supportsStructuredOutput: supportsStructuredOutput,
+            extraCapabilities: extraCapabilities,
+            tags: ["provider:openai", "api:responses"] + tags
+        )
+    }
+
     public static func anthropicMessages(
         id: ModelID,
         displayName: String? = nil,

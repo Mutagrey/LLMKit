@@ -8,4 +8,6 @@ Provider-specific descriptor builders may create core `ModelDescriptor` values, 
 
 Provider integrations must fail explicitly when a core message or event shape cannot be represented without loss in that provider's wire format.
 
+Provider API styles should initially map only the stable text generation/chat surface unless the corresponding core contracts can represent richer events without provider leakage.
+
 Provider error bodies may be decoded privately for diagnostics, but public errors must remain backend-neutral.

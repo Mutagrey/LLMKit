@@ -1,3 +1,4 @@
 # LLMModelLifecycle TODO
 
-- Add integrity verification and downloader implementations after install progress semantics settle.
+- Add checksum integrity verification for downloaded artifacts.
+- Add cancellation and resume policy for interrupted downloads.

@@ -326,5 +326,5 @@ private struct ModelRow: View {
 }
 
 #Preview {
-    LLMKitExampleScreen()
+    LLMKitExampleScreen(configuration: .localQwenSmokeTest())
 }

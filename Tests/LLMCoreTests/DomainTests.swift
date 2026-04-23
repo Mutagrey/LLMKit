@@ -18,6 +18,40 @@ import Testing
     #expect(decoded == descriptor)
 }
 
+@Test func downloadableModelDescriptorCarriesSourceArtifacts() throws {
+    let descriptor = ModelDescriptor(
+        id: "local-qwen",
+        displayName: "Local Qwen",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: 278_000_000
+                )
+            ]
+        ),
+        license: ModelLicense(name: "Apache License 2.0", spdxIdentifier: "Apache-2.0"),
+        quantization: Quantization(format: "MLX 4-bit", bits: 4),
+        estimatedDownloadSizeBytes: 290_000_000
+    )
+
+    let data = try JSONEncoder().encode(descriptor)
+    let decoded = try JSONDecoder().decode(ModelDescriptor.self, from: data)
+
+    #expect(decoded.source?.provider == .huggingFace)
+    #expect(decoded.source?.artifacts.first?.relativePath == "model.safetensors")
+    #expect(decoded.license?.spdxIdentifier == "Apache-2.0")
+    #expect(decoded.quantization?.bits == 4)
+    #expect(decoded == descriptor)
+}
+
 @Test func generationRequestCarriesExecutionRequirements() {
     let requirements = ExecutionRequirements(
         requiredCapabilities: [.completion, .offline],

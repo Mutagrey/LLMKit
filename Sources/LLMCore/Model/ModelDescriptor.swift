@@ -14,6 +14,10 @@ public struct ModelDescriptor: Hashable, Codable, Sendable {
     public let supportsTools: Bool
     public let supportsStructuredOutput: Bool
     public let isRemote: Bool
+    public let source: ModelSource?
+    public let license: ModelLicense?
+    public let quantization: Quantization?
+    public let estimatedDownloadSizeBytes: Int64?
     public let tags: [String]
 
     public init(
@@ -30,6 +34,10 @@ public struct ModelDescriptor: Hashable, Codable, Sendable {
         supportsTools: Bool = false,
         supportsStructuredOutput: Bool = false,
         isRemote: Bool = false,
+        source: ModelSource? = nil,
+        license: ModelLicense? = nil,
+        quantization: Quantization? = nil,
+        estimatedDownloadSizeBytes: Int64? = nil,
         tags: [String] = []
     ) {
         self.id = id
@@ -45,6 +53,10 @@ public struct ModelDescriptor: Hashable, Codable, Sendable {
         self.supportsTools = supportsTools
         self.supportsStructuredOutput = supportsStructuredOutput
         self.isRemote = isRemote
+        self.source = source
+        self.license = license
+        self.quantization = quantization
+        self.estimatedDownloadSizeBytes = estimatedDownloadSizeBytes
         self.tags = tags
     }
 }

@@ -41,6 +41,12 @@ public struct LLMKitExampleConfiguration: Sendable {
         )
     }
 
+    public static func localQwenSmokeTest() -> LLMKitExampleConfiguration {
+        appleIntelligenceOnly(downloadableModels: [
+            LLMKitExampleModels.qwen25HalfBInstructMLX4Bit
+        ])
+    }
+
     func backend(for kind: BackendKind) -> (any ModelBackend)? {
         backends.first { $0.backendKind == kind }
     }

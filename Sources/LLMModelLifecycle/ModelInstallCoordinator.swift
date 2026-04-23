@@ -6,17 +6,23 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
     private var records: [ModelID: InstalledModelRecord]
     private let stateMachine: InstallStateMachine
     private let recordStore: InstalledModelRecordStore?
+    private let artifactRootDirectory: URL?
+    private let artifactDownloader: any ModelArtifactDownloading
 
     public init(
         records: [InstalledModelRecord] = [],
         stateMachine: InstallStateMachine? = nil,
-        recordStore: InstalledModelRecordStore? = nil
+        recordStore: InstalledModelRecordStore? = nil,
+        artifactRootDirectory: URL? = nil,
+        artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader()
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
         self.stateMachine = stateMachine ?? InstallStateMachine(
             states: Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0.installState) })
         )
         self.recordStore = recordStore
+        self.artifactRootDirectory = artifactRootDirectory
+        self.artifactDownloader = artifactDownloader
     }
 
     public static func persisted(recordStore: InstalledModelRecordStore) async throws -> ModelInstallCoordinator {
@@ -40,7 +46,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let record = try await completeInstall(descriptor)
+                    let record = try await completeInstall(descriptor, continuation: continuation)
                     continuation.yield(.stateChanged(descriptor.id, .ready))
                     continuation.yield(.completed(record))
                     continuation.finish()
@@ -51,11 +57,86 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         }
     }
 
-    private func completeInstall(_ descriptor: ModelDescriptor) async throws -> InstalledModelRecord {
+    private func completeInstall(
+        _ descriptor: ModelDescriptor,
+        continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
+    ) async throws -> InstalledModelRecord {
+        try await downloadArtifacts(for: descriptor, continuation: continuation)
         await stateMachine.transition(modelID: descriptor.id, to: .ready)
         let record = InstalledModelRecord(descriptor: descriptor, installState: .ready, installedAt: Date())
         records[descriptor.id] = record
         try await recordStore?.save(Array(records.values))
         return record
+    }
+
+    private func downloadArtifacts(
+        for descriptor: ModelDescriptor,
+        continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
+    ) async throws {
+        guard let source = descriptor.source, !source.artifacts.isEmpty else {
+            return
+        }
+        guard let artifactRootDirectory else {
+            throw LLMError.downloadFailed("No artifact root directory configured for \(descriptor.id.rawValue).")
+        }
+
+        await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: 0))
+        continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0)))
+
+        let usesByteProgress = source.artifacts.allSatisfy { $0.byteCount != nil }
+        let totalUnits = expectedProgressUnits(for: source.artifacts)
+        var completedUnits: Int64 = 0
+
+        for artifact in source.artifacts {
+            let destination = try artifactDestinationURL(
+                rootDirectory: artifactRootDirectory,
+                modelID: descriptor.id,
+                artifact: artifact
+            )
+            let result = try await artifactDownloader.download(artifact, to: destination)
+            completedUnits += usesByteProgress ? (artifact.byteCount ?? result.bytesWritten) : 1
+            let progress = min(Double(completedUnits) / Double(totalUnits), 1)
+            await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: progress))
+            continuation.yield(.progress(descriptor.id, progress))
+        }
+
+        await stateMachine.transition(modelID: descriptor.id, to: .verifying)
+        continuation.yield(.stateChanged(descriptor.id, .verifying))
+    }
+
+    private func expectedProgressUnits(for artifacts: [ModelArtifact]) -> Int64 {
+        let knownBytes = artifacts.compactMap(\.byteCount)
+        let total = knownBytes.reduce(Int64(0), +)
+        if knownBytes.count == artifacts.count, total > 0 {
+            return total
+        }
+        return Int64(max(artifacts.count, 1))
+    }
+
+    private func artifactDestinationURL(
+        rootDirectory: URL,
+        modelID: ModelID,
+        artifact: ModelArtifact
+    ) throws -> URL {
+        guard !artifact.relativePath.hasPrefix("/") else {
+            throw LLMError.downloadFailed("Artifact path must be relative: \(artifact.relativePath).")
+        }
+
+        let pathComponents = artifact.relativePath.split(separator: "/").map(String.init)
+        guard !pathComponents.isEmpty, !pathComponents.contains("..") else {
+            throw LLMError.downloadFailed("Invalid artifact path: \(artifact.relativePath).")
+        }
+
+        let modelDirectory = rootDirectory.appendingPathComponent(safeDirectoryName(for: modelID), isDirectory: true)
+        return pathComponents.reduce(modelDirectory) { url, component in
+            url.appendingPathComponent(component)
+        }
+    }
+
+    private func safeDirectoryName(for modelID: ModelID) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return modelID.rawValue.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? String(scalar) : "_"
+        }.joined()
     }
 }

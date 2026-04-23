@@ -7,6 +7,9 @@
 
 The default `LLMKitExampleScreen()` uses `LLMKitExampleConfiguration.appleIntelligenceOnly()` and can be embedded in an app scene.
 
+`LLMKitExampleConfiguration.localQwenSmokeTest()` adds the downloadable MLX Qwen2.5 0.5B 4-bit descriptor so previews
+and demo hosts can exercise model lifecycle UI before real MLX inference is enabled.
+
 `LLMKitExampleScreen` presents:
 
 - Chat tab for sending prompts through the selected model.

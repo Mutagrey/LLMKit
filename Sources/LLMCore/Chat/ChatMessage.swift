@@ -37,12 +37,30 @@ public struct ChatMessage: Hashable, Codable, Sendable, Identifiable {
     public let role: MessageRole
     public let content: MessageContent
     public let createdAt: Date
+    public let toolCallReference: ToolCallReference?
 
-    public init(id: UUID = UUID(), role: MessageRole, content: MessageContent, createdAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        role: MessageRole,
+        content: MessageContent,
+        createdAt: Date = Date(),
+        toolCallReference: ToolCallReference? = nil
+    ) {
         self.id = id
         self.role = role
         self.content = content
         self.createdAt = createdAt
+        self.toolCallReference = toolCallReference
+    }
+
+    public init(id: UUID = UUID(), role: MessageRole, content: MessageContent, createdAt: Date = Date()) {
+        self.init(
+            id: id,
+            role: role,
+            content: content,
+            createdAt: createdAt,
+            toolCallReference: nil
+        )
     }
 }
 

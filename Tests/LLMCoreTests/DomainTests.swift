@@ -80,3 +80,23 @@ import Testing
     #expect(accumulator.text == "hello")
     #expect(!accumulator.isEmpty)
 }
+
+@Test func toolArgumentsRoundTripStructuredValues() throws {
+    let arguments = ToolArguments(structuredValues: [
+        "city": .string("Paris"),
+        "days": .integer(3),
+        "metric": .boolean(true),
+        "filters": .object([
+            "region": .string("eu")
+        ])
+    ])
+
+    let data = try JSONEncoder().encode(arguments)
+    let decoded = try JSONDecoder().decode(ToolArguments.self, from: data)
+
+    #expect(decoded == arguments)
+    #expect(decoded["city"] == .string("Paris"))
+    #expect(decoded["days"] == .integer(3))
+    #expect(decoded.values["metric"] == "true")
+    #expect(decoded.values["filters"] == #"{"region":"eu"}"#)
+}

@@ -291,6 +291,54 @@ private actor RecordingTransport: HTTPTransport {
     ])
 }
 
+@Test func openAIResponsesChatMapsToolsAndToolResultMessages() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: transport
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat", supportsTools: true)
+    let tool = ToolDefinition(
+        name: "weather",
+        description: "Lookup weather",
+        schema: ToolSchema(requiredArguments: ["city"], argumentDescriptions: ["city": "City name"])
+    )
+    let messages = [
+        ChatMessage(role: .user, content: MessageContent(text: "what is the weather")),
+        ChatMessage(
+            role: .tool,
+            content: MessageContent(text: "{\"forecast\":\"sunny\"}"),
+            toolCallReference: ToolCallReference(id: "call_weather_1", toolName: "weather")
+        )
+    ]
+
+    for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: messages, tools: [tool]), model: model)) {}
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let input = try #require(body["input"] as? [[String: Any]])
+    let tools = try #require(body["tools"] as? [[String: Any]])
+    let firstTool = try #require(tools.first)
+    let parameters = try #require(firstTool["parameters"] as? [String: Any])
+    let properties = try #require(parameters["properties"] as? [String: Any])
+    let city = try #require(properties["city"] as? [String: Any])
+
+    #expect(input.count == 2)
+    #expect(input[0]["role"] as? String == "user")
+    #expect(input[0]["content"] as? String == "what is the weather")
+    #expect(input[1]["type"] as? String == "function_call_output")
+    #expect(input[1]["call_id"] as? String == "call_weather_1")
+    #expect(input[1]["output"] as? String == #"{"forecast":"sunny"}"#)
+    #expect(firstTool["type"] as? String == "function")
+    #expect(firstTool["name"] as? String == "weather")
+    #expect(firstTool["description"] as? String == "Lookup weather")
+    #expect(parameters["type"] as? String == "object")
+    #expect(Set(try #require(parameters["required"] as? [String])) == Set(["city"]))
+    #expect(city["description"] as? String == "City name")
+}
+
 @Test func anthropicGenerationUsesMessagesRequestBody() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let responseBody = #"{"content":[{"type":"text","text":"anthropic hello"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":2}}"#
@@ -397,6 +445,54 @@ private actor RecordingTransport: HTTPTransport {
         ["role": "assistant", "content": "hi"],
         ["role": "user", "content": "continue"]
     ])
+}
+
+@Test func anthropicChatMapsToolsAndToolResultMessages() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let responseBody = #"{"content":[{"type":"text","text":"done"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}"#
+    let transport = RecordingTransport(responseBody: responseBody)
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", defaultMaxTokens: 256, baseURL: url),
+        transport: transport
+    )
+    let model = RemoteModelDescriptors.anthropicMessages(id: "claude-chat", supportsTools: true)
+    let tool = ToolDefinition(
+        name: "weather",
+        description: "Lookup weather",
+        schema: ToolSchema(requiredArguments: ["city"], argumentDescriptions: ["city": "City name"])
+    )
+    let messages = [
+        ChatMessage(role: .user, content: MessageContent(text: "weather")),
+        ChatMessage(
+            role: .tool,
+            content: MessageContent(text: "sunny"),
+            toolCallReference: ToolCallReference(id: "toolu_weather_1", toolName: "weather")
+        )
+    ]
+
+    for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: messages, tools: [tool]), model: model)) {}
+
+    let request = try #require(await transport.requests.first)
+    let body = try requestBodyDictionary(request)
+    let tools = try #require(body["tools"] as? [[String: Any]])
+    let firstTool = try #require(tools.first)
+    let inputSchema = try #require(firstTool["input_schema"] as? [String: Any])
+    let properties = try #require(inputSchema["properties"] as? [String: Any])
+    let city = try #require(properties["city"] as? [String: Any])
+    let mappedMessages = try #require(body["messages"] as? [[String: Any]])
+    let toolResultMessage = try #require(mappedMessages.last)
+    let contentBlocks = try #require(toolResultMessage["content"] as? [[String: Any]])
+    let firstBlock = try #require(contentBlocks.first)
+
+    #expect(firstTool["name"] as? String == "weather")
+    #expect(firstTool["description"] as? String == "Lookup weather")
+    #expect(inputSchema["type"] as? String == "object")
+    #expect(Set(try #require(inputSchema["required"] as? [String])) == Set(["city"]))
+    #expect(city["description"] as? String == "City name")
+    #expect(toolResultMessage["role"] as? String == "user")
+    #expect(firstBlock["type"] as? String == "tool_result")
+    #expect(firstBlock["tool_use_id"] as? String == "toolu_weather_1")
+    #expect(firstBlock["text"] as? String == "sunny")
 }
 
 @Test func remoteBackendMapsChatRequestBody() async throws {
@@ -756,7 +852,7 @@ private actor RecordingTransport: HTTPTransport {
     }
 }
 
-@Test func anthropicChatFailsForToolRoleMessages() async throws {
+@Test func anthropicChatFailsForToolRoleMessagesWithoutReference() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let backend = RemoteBackend(
         configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
@@ -767,13 +863,13 @@ private actor RecordingTransport: HTTPTransport {
 
     do {
         for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
-        Issue.record("Expected Anthropic mapping to reject tool role messages until tool blocks are supported.")
+        Issue.record("Expected Anthropic mapping to reject tool messages without tool call metadata.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("Anthropic Messages mapping does not support tool role messages yet."))
+        #expect(error as? BackendError == .mappingFailed("Anthropic tool messages require a tool call reference."))
     }
 }
 
-@Test func openAIResponsesChatFailsForToolRoleMessages() async throws {
+@Test func openAIResponsesChatFailsForToolRoleMessagesWithoutReference() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let backend = RemoteBackend(
         configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
@@ -784,10 +880,76 @@ private actor RecordingTransport: HTTPTransport {
 
     do {
         for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
-        Issue.record("Expected OpenAI Responses mapping to reject tool role messages until tool calls are supported.")
+        Issue.record("Expected OpenAI Responses mapping to reject tool messages without tool call metadata.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("OpenAI Responses mapping does not support tool role messages yet."))
+        #expect(error as? BackendError == .mappingFailed("OpenAI Responses tool messages require a tool call reference."))
     }
+}
+
+@Test func openAIResponsesBackendParsesToolCallResponse() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = #"{"output":[{"type":"function_call","call_id":"call_weather_1","name":"weather","arguments":"{\"city\":\"Paris\",\"days\":3}"}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}"#
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat", supportsTools: true)
+    let message = ChatMessage(role: .user, content: MessageContent(text: "weather"))
+
+    var requested: [ToolInvocation] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .toolCallRequested(let invocation):
+            requested.append(invocation)
+        case .completed(let result):
+            completed = result
+        case .started, .delta, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(requested.count == 1)
+    #expect(requested.first?.id.rawValue == "call_weather_1")
+    #expect(requested.first?.toolName == "weather")
+    #expect(requested.first?.arguments["city"] == .string("Paris"))
+    #expect(requested.first?.arguments["days"] == .integer(3))
+    #expect(completed?.message.content.text == "")
+    #expect(completed?.finishReason == .toolCall)
+    #expect(completed?.usage?.tokens.totalTokens == 7)
+}
+
+@Test func anthropicBackendParsesToolUseResponse() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let body = #"{"content":[{"type":"tool_use","id":"toolu_weather_1","name":"weather","input":{"city":"Paris","metric":true}}],"stop_reason":"tool_use","usage":{"input_tokens":5,"output_tokens":1}}"#
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
+        transport: RecordingTransport(responseBody: body)
+    )
+    let model = RemoteModelDescriptors.anthropicMessages(id: "claude-chat", supportsTools: true)
+    let message = ChatMessage(role: .user, content: MessageContent(text: "weather"))
+
+    var requested: [ToolInvocation] = []
+    var completed: ChatResult?
+    for try await event in backend.chat(BackendChatRequest(request: ChatRequest(messages: [message]), model: model)) {
+        switch event {
+        case .toolCallRequested(let invocation):
+            requested.append(invocation)
+        case .completed(let result):
+            completed = result
+        case .started, .delta, .toolCallCompleted, .failed:
+            break
+        }
+    }
+
+    #expect(requested.count == 1)
+    #expect(requested.first?.id.rawValue == "toolu_weather_1")
+    #expect(requested.first?.toolName == "weather")
+    #expect(requested.first?.arguments["city"] == .string("Paris"))
+    #expect(requested.first?.arguments["metric"] == .boolean(true))
+    #expect(completed?.message.content.text == "")
+    #expect(completed?.finishReason == .toolCall)
+    #expect(completed?.usage?.tokens.totalTokens == 6)
 }
 
 @Test func remoteBackendFailsWhenNonStreamingResponseHasNoText() async throws {

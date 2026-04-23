@@ -16,9 +16,17 @@ enum AnthropicMessageMapper {
             case .system, .developer:
                 systemParts.append(message.content.text)
             case .user, .assistant:
-                providerMessages.append(AnthropicMessage(role: message.role.rawValue, content: message.content.text))
+                providerMessages.append(AnthropicMessage(role: message.role.rawValue, content: .text(message.content.text)))
             case .tool:
-                throw BackendError.mappingFailed("Anthropic Messages mapping does not support tool role messages yet.")
+                guard let reference = message.toolCallReference else {
+                    throw BackendError.mappingFailed("Anthropic tool messages require a tool call reference.")
+                }
+                providerMessages.append(AnthropicMessage(
+                    role: MessageRole.user.rawValue,
+                    content: .blocks([
+                        .toolResult(toolUseID: reference.id.rawValue, content: message.content.text)
+                    ])
+                ))
             }
         }
 

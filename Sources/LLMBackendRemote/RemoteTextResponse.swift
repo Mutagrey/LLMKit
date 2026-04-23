@@ -5,6 +5,7 @@ struct RemoteTextPayload {
     let text: String
     let usage: UsageMetrics?
     let finishReason: StreamFinishReason
+    let toolInvocations: [ToolInvocation]
 }
 
 struct RemoteTextResponse: Decodable {

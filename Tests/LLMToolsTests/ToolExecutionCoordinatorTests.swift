@@ -23,11 +23,11 @@ private struct DefinitionOnlyRegistry: ToolRegistryProviding {
     )
     let registry = DefaultToolRegistry(entries: [
         (definition, ClosureToolExecutor { invocation in
-            ToolResult(invocationID: invocation.id, content: invocation.arguments.values["text"] ?? "")
+            ToolResult(invocationID: invocation.id, content: invocation.arguments["text"]?.stringValue ?? "")
         })
     ])
     let coordinator = ToolExecutionCoordinator(registry: registry)
-    let invocation = ToolInvocation(toolName: "echo", arguments: ToolArguments(values: ["text": "hello"]))
+    let invocation = ToolInvocation(toolName: "echo", arguments: ToolArguments(structuredValues: ["text": .string("hello")]))
 
     let result = try await coordinator.execute(invocation)
 

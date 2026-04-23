@@ -93,6 +93,9 @@ public struct RemoteBackend: ModelBackend {
                     } else {
                         payload = try mapper.decodeTextPayload(response.body)
                     }
+                    for invocation in payload.toolInvocations {
+                        continuation.yield(.toolCallRequested(invocation))
+                    }
                     let message = ChatMessage(role: .assistant, content: MessageContent(text: payload.text))
                     continuation.yield(.completed(ChatResult(
                         message: message,
@@ -121,9 +124,10 @@ public struct RemoteBackend: ModelBackend {
                 body: OpenAIChatCompletionRequest(
                     model: request.model.id.rawValue,
                     messages: [
-                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt)
+                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt, toolCallID: nil)
                     ],
-                    stream: request.model.supportsStreaming
+                    stream: request.model.supportsStreaming,
+                    tools: nil
                 )
             )
         case .openAIResponses:
@@ -133,7 +137,8 @@ public struct RemoteBackend: ModelBackend {
                     model: request.model.id.rawValue,
                     input: .text(request.request.prompt),
                     stream: request.model.supportsStreaming,
-                    instructions: nil
+                    instructions: nil,
+                    tools: nil
                 )
             )
         case .anthropicMessages(let defaultMaxTokens):
@@ -142,11 +147,12 @@ public struct RemoteBackend: ModelBackend {
                 body: AnthropicMessagesRequest(
                     model: request.model.id.rawValue,
                     messages: [
-                        AnthropicMessage(role: MessageRole.user.rawValue, content: request.request.prompt)
+                        AnthropicMessage(role: MessageRole.user.rawValue, content: .text(request.request.prompt))
                     ],
                     maxTokens: defaultMaxTokens,
                     stream: request.model.supportsStreaming,
-                    system: nil
+                    system: nil,
+                    tools: nil
                 )
             )
         }
@@ -163,12 +169,17 @@ public struct RemoteBackend: ModelBackend {
                 body: RemoteChatRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
             )
         case .openAIChatCompletions:
-            let messages = request.request.messages.map {
-                OpenAIChatMessage(role: $0.role.rawValue, content: $0.content.text)
+            let messages = try request.request.messages.map {
+                try mapOpenAIChatMessage($0)
             }
             return try makeRequest(
                 path: configuration?.chatPath,
-                body: OpenAIChatCompletionRequest(model: request.model.id.rawValue, messages: messages, stream: request.model.supportsStreaming)
+                body: OpenAIChatCompletionRequest(
+                    model: request.model.id.rawValue,
+                    messages: messages,
+                    stream: request.model.supportsStreaming,
+                    tools: RemoteToolDefinitionMapper.openAIChatTools(from: request.request.tools)
+                )
             )
         case .openAIResponses:
             let mapping = try OpenAIResponsesMessageMapper.map(request.request.messages)
@@ -176,9 +187,10 @@ public struct RemoteBackend: ModelBackend {
                 path: configuration?.chatPath,
                 body: OpenAIResponsesRequest(
                     model: request.model.id.rawValue,
-                    input: .messages(mapping.messages),
+                    input: .items(mapping.items),
                     stream: request.model.supportsStreaming,
-                    instructions: mapping.instructions
+                    instructions: mapping.instructions,
+                    tools: RemoteToolDefinitionMapper.openAIResponsesTools(from: request.request.tools)
                 )
             )
         case .anthropicMessages(let defaultMaxTokens):
@@ -190,7 +202,8 @@ public struct RemoteBackend: ModelBackend {
                     messages: mapping.messages,
                     maxTokens: defaultMaxTokens,
                     stream: request.model.supportsStreaming,
-                    system: mapping.system
+                    system: mapping.system,
+                    tools: RemoteToolDefinitionMapper.anthropicTools(from: request.request.tools)
                 )
             )
         }
@@ -229,6 +242,22 @@ public struct RemoteBackend: ModelBackend {
 
     private var responseMapper: RemoteResponseMapper {
         RemoteResponseMapper(apiStyle: configuration?.apiStyle, decoder: decoder)
+    }
+
+    private func mapOpenAIChatMessage(_ message: ChatMessage) throws -> OpenAIChatMessage {
+        switch message.role {
+        case .tool:
+            guard let reference = message.toolCallReference else {
+                throw BackendError.mappingFailed("OpenAI Chat Completions tool messages require a tool call reference.")
+            }
+            return OpenAIChatMessage(
+                role: message.role.rawValue,
+                content: message.content.text,
+                toolCallID: reference.id.rawValue
+            )
+        case .system, .developer, .user, .assistant:
+            return OpenAIChatMessage(role: message.role.rawValue, content: message.content.text, toolCallID: nil)
+        }
     }
 }
 

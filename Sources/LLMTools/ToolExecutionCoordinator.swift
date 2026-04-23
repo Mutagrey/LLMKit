@@ -5,7 +5,7 @@ public struct RequiredArgumentValidator: ToolArgumentValidator {
     public init() {}
 
     public func validate(_ arguments: ToolArguments, for definition: ToolDefinition) throws {
-        for key in definition.schema.requiredArguments where arguments.values[key] == nil {
+        for key in definition.schema.requiredArguments where !arguments.contains(key) {
             throw ValidationError.missingRequiredValue(key)
         }
     }

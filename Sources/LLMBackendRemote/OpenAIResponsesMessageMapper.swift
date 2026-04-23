@@ -2,13 +2,13 @@ import Foundation
 import LLMCore
 
 struct OpenAIResponsesMessageMapping {
-    let messages: [OpenAIResponsesMessage]
+    let items: [OpenAIResponsesInputItem]
     let instructions: String?
 }
 
 enum OpenAIResponsesMessageMapper {
     static func map(_ messages: [ChatMessage]) throws -> OpenAIResponsesMessageMapping {
-        var inputMessages: [OpenAIResponsesMessage] = []
+        var inputItems: [OpenAIResponsesInputItem] = []
         var instructionParts: [String] = []
 
         for message in messages {
@@ -16,14 +16,17 @@ enum OpenAIResponsesMessageMapper {
             case .system, .developer:
                 instructionParts.append(message.content.text)
             case .user, .assistant:
-                inputMessages.append(OpenAIResponsesMessage(role: message.role.rawValue, content: message.content.text))
+                inputItems.append(.message(role: message.role.rawValue, content: message.content.text))
             case .tool:
-                throw BackendError.mappingFailed("OpenAI Responses mapping does not support tool role messages yet.")
+                guard let reference = message.toolCallReference else {
+                    throw BackendError.mappingFailed("OpenAI Responses tool messages require a tool call reference.")
+                }
+                inputItems.append(.functionCallOutput(callID: reference.id.rawValue, output: message.content.text))
             }
         }
 
         return OpenAIResponsesMessageMapping(
-            messages: inputMessages,
+            items: inputItems,
             instructions: instructionParts.isEmpty ? nil : instructionParts.joined(separator: "\n\n")
         )
     }

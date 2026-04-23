@@ -5,6 +5,9 @@ struct AnthropicTextResponse: Decodable {
     struct ContentBlock: Decodable {
         let type: String
         let text: String?
+        let id: String?
+        let name: String?
+        let input: [String: ToolValue]?
     }
 
     let content: [ContentBlock]
@@ -20,6 +23,20 @@ struct AnthropicTextResponse: Decodable {
     var textValue: String? {
         let text = content.compactMap(\.text).joined()
         return text.isEmpty ? nil : text
+    }
+
+    var toolInvocations: [ToolInvocation] {
+        content.compactMap { block in
+            guard block.type == "tool_use" else {
+                return nil
+            }
+            return RemoteToolInvocationMapper.invocation(
+                callID: block.id,
+                fallbackID: nil,
+                toolName: block.name,
+                inputObject: block.input
+            )
+        }
     }
 }
 
@@ -50,11 +67,28 @@ struct AnthropicStreamEvent: Decodable {
         let message: String?
     }
 
+    struct ContentBlock: Decodable {
+        let type: String?
+        let id: String?
+        let name: String?
+        let input: [String: ToolValue]?
+    }
+
     let type: String
     let delta: Delta?
     let message: Message?
     let usage: AnthropicUsage?
     let error: ErrorBody?
+    let contentBlock: ContentBlock?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case delta
+        case message
+        case usage
+        case error
+        case contentBlock = "content_block"
+    }
 }
 
 struct AnthropicUsage: Decodable {

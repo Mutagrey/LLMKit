@@ -9,7 +9,20 @@ struct OpenAIResponsesTextResponse: Decodable {
         }
 
         let type: String?
+        let id: String?
+        let callID: String?
+        let name: String?
+        let arguments: String?
         let content: [ContentPart]?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case id
+            case callID = "call_id"
+            case name
+            case arguments
+            case content
+        }
     }
 
     let output: [OutputItem]?
@@ -37,9 +50,39 @@ struct OpenAIResponsesTextResponse: Decodable {
         let text = textParts.joined()
         return text.isEmpty ? nil : text
     }
+
+    var toolInvocations: [ToolInvocation] {
+        (output ?? []).compactMap { item in
+            guard item.type == "function_call" else {
+                return nil
+            }
+            return try? RemoteToolInvocationMapper.invocation(
+                callID: item.callID,
+                fallbackID: item.id,
+                toolName: item.name,
+                argumentsJSON: item.arguments
+            )
+        }
+    }
 }
 
 struct OpenAIResponsesStreamEvent: Decodable {
+    struct Item: Decodable {
+        let id: String?
+        let type: String?
+        let callID: String?
+        let name: String?
+        let arguments: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case type
+            case callID = "call_id"
+            case name
+            case arguments
+        }
+    }
+
     struct Response: Decodable {
         struct ErrorBody: Decodable {
             let code: String?
@@ -69,8 +112,24 @@ struct OpenAIResponsesStreamEvent: Decodable {
     let type: String
     let delta: String?
     let text: String?
+    let item: Item?
+    let callID: String?
+    let name: String?
+    let arguments: String?
     let response: Response?
     let error: ErrorBody?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case delta
+        case text
+        case item
+        case callID = "call_id"
+        case name
+        case arguments
+        case response
+        case error
+    }
 }
 
 struct OpenAIResponsesUsage: Decodable {

@@ -20,7 +20,8 @@ struct RemoteResponseMapper {
         return RemoteTextPayload(
             text: text,
             usage: body.usage?.metrics,
-            finishReason: body.finishReasonValue.map(RemoteFinishReasonMapper.map) ?? .completed
+            finishReason: body.finishReasonValue.map(RemoteFinishReasonMapper.map) ?? .completed,
+            toolInvocations: []
         )
     }
 
@@ -59,21 +60,27 @@ struct RemoteResponseMapper {
         guard !accumulator.isEmpty else {
             throw BackendError.mappingFailed("Remote stream did not contain text.")
         }
-        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
+        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason, toolInvocations: [])
     }
 
     private func decodeOpenAIResponsesTextPayload(_ data: Data) throws -> RemoteTextPayload {
         let body = try decoder.decode(OpenAIResponsesTextResponse.self, from: data)
-        guard let text = body.textValue else {
+        guard let text = body.textValue ?? (body.toolInvocations.isEmpty ? nil : "") else {
             throw BackendError.mappingFailed("Remote response did not contain text.")
         }
-        return RemoteTextPayload(text: text, usage: body.usage?.metrics, finishReason: .completed)
+        return RemoteTextPayload(
+            text: text,
+            usage: body.usage?.metrics,
+            finishReason: body.toolInvocations.isEmpty ? .completed : .toolCall,
+            toolInvocations: body.toolInvocations
+        )
     }
 
     private func collectOpenAIResponsesStreamText(_ events: [SSEEvent], yield: (String) -> Void) throws -> RemoteTextPayload {
         var accumulator = StreamedTextAccumulator()
         var usage: UsageMetrics?
         var finishReason: StreamFinishReason = .completed
+        var toolInvocations: [ToolInvocation] = []
 
         for event in events where event.data != "[DONE]" {
             let body = try decoder.decode(OpenAIResponsesStreamEvent.self, from: Data(event.data.utf8))
@@ -85,6 +92,29 @@ struct RemoteResponseMapper {
             case "response.output_text.done":
                 if accumulator.isEmpty, let text = body.text {
                     accumulator.append(text)
+                }
+            case "response.output_item.done":
+                guard body.item?.type == "function_call" else {
+                    continue
+                }
+                if let invocation = try RemoteToolInvocationMapper.invocation(
+                    callID: body.item?.callID,
+                    fallbackID: body.item?.id,
+                    toolName: body.item?.name,
+                    argumentsJSON: body.item?.arguments
+                ) {
+                    toolInvocations.append(invocation)
+                    finishReason = .toolCall
+                }
+            case "response.function_call_arguments.done":
+                if let invocation = try RemoteToolInvocationMapper.invocation(
+                    callID: body.callID,
+                    fallbackID: nil,
+                    toolName: body.name,
+                    argumentsJSON: body.arguments
+                ) {
+                    toolInvocations.append(invocation)
+                    finishReason = .toolCall
                 }
             case "response.completed":
                 if let bodyUsage = body.response?.usage?.metrics {
@@ -107,21 +137,22 @@ struct RemoteResponseMapper {
             }
         }
 
-        guard !accumulator.isEmpty else {
+        guard !accumulator.isEmpty || !toolInvocations.isEmpty else {
             throw BackendError.mappingFailed("Remote stream did not contain text.")
         }
-        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
+        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason, toolInvocations: toolInvocations)
     }
 
     private func decodeAnthropicTextPayload(_ data: Data) throws -> RemoteTextPayload {
         let body = try decoder.decode(AnthropicTextResponse.self, from: data)
-        guard let text = body.textValue else {
+        guard let text = body.textValue ?? (body.toolInvocations.isEmpty ? nil : "") else {
             throw BackendError.mappingFailed("Remote response did not contain text.")
         }
         return RemoteTextPayload(
             text: text,
             usage: body.usage?.metrics,
-            finishReason: body.stopReason.map(AnthropicFinishReasonMapper.map) ?? .completed
+            finishReason: body.stopReason.map(AnthropicFinishReasonMapper.map) ?? (body.toolInvocations.isEmpty ? .completed : .toolCall),
+            toolInvocations: body.toolInvocations
         )
     }
 
@@ -129,10 +160,24 @@ struct RemoteResponseMapper {
         var accumulator = StreamedTextAccumulator()
         var usage: UsageMetrics?
         var finishReason: StreamFinishReason = .completed
+        var toolInvocations: [ToolInvocation] = []
 
         for event in events where event.data != "[DONE]" {
             let body = try decoder.decode(AnthropicStreamEvent.self, from: Data(event.data.utf8))
             switch body.type {
+            case "content_block_start":
+                guard body.contentBlock?.type == "tool_use" else {
+                    continue
+                }
+                if let invocation = RemoteToolInvocationMapper.invocation(
+                    callID: body.contentBlock?.id,
+                    fallbackID: nil,
+                    toolName: body.contentBlock?.name,
+                    inputObject: body.contentBlock?.input
+                ) {
+                    toolInvocations.append(invocation)
+                    finishReason = .toolCall
+                }
             case "content_block_delta":
                 guard body.delta?.type == "text_delta", let delta = body.delta?.text else {
                     continue
@@ -157,9 +202,9 @@ struct RemoteResponseMapper {
             }
         }
 
-        guard !accumulator.isEmpty else {
+        guard !accumulator.isEmpty || !toolInvocations.isEmpty else {
             throw BackendError.mappingFailed("Remote stream did not contain text.")
         }
-        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason)
+        return RemoteTextPayload(text: accumulator.text, usage: usage, finishReason: finishReason, toolInvocations: toolInvocations)
     }
 }

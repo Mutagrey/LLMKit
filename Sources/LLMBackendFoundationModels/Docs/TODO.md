@@ -1,3 +1,5 @@
 # LLMBackendFoundationModels TODO
 
-- Add real Foundation Models request mapping behind platform availability checks.
+- Add structured output mapping once `StructuredRequest` carries a backend-neutral schema representation.
+- Add tool mapping after `LLMTools` stabilizes tool argument schema contracts.
+- Add focused runtime smoke tests that are skipped unless Foundation Models is available on the host device.

@@ -15,7 +15,8 @@ import Testing
         backend: .foundationModels,
         capabilities: [.completion]
     )
-    let unavailable = await FoundationModelsBackend().availability(for: descriptor)
+    let unavailableBackend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: false, reason: "not ready"))
+    let unavailable = await unavailableBackend.availability(for: descriptor)
     let availableBackend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true))
     let handle = try await availableBackend.loadModel(descriptor)
 
@@ -39,13 +40,28 @@ import Testing
     }
 }
 
-@Test func foundationModelsSkeletonStreamsUnavailableUntilImplemented() async throws {
+@Test func foundationModelsGenerationFailsWhenRuntimeUnavailable() async throws {
     let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.completion])
-    let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true))
+    let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: false, reason: "not ready"))
 
     do {
         for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: descriptor)) {}
-        Issue.record("Expected Foundation Models generation skeleton to be unavailable.")
+        Issue.record("Expected Foundation Models generation to fail when runtime is unavailable.")
+    } catch {
+        #expect(error as? LLMError == .unavailable)
+    }
+}
+
+@Test func foundationModelsChatFailsWhenRuntimeUnavailable() async throws {
+    let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.chat])
+    let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: false, reason: "not ready"))
+    let request = ChatRequest(messages: [
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ])
+
+    do {
+        for try await _ in backend.chat(BackendChatRequest(request: request, model: descriptor)) {}
+        Issue.record("Expected Foundation Models chat to fail when runtime is unavailable.")
     } catch {
         #expect(error as? LLMError == .unavailable)
     }

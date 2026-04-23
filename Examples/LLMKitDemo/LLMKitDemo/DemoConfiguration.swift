@@ -1,4 +1,5 @@
 import LLMBackendFoundationModels
+import LLMBackendMLX
 import LLMCore
 import LLMExampleUI
 import LLMModelLifecycle
@@ -7,13 +8,17 @@ import LLMProtocols
 
 enum DemoConfiguration {
     static func make() -> LLMKitExampleConfiguration {
+        let downloadableModels = [
+            LLMKitExampleModels.qwen25HalfBInstructMLX4Bit
+        ]
         let models = [
             LLMKitExampleModels.appleIntelligence,
             demoEchoModel
-        ]
+        ] + downloadableModels
         let catalog = DefaultModelCatalog(models: models)
         let backends: [any ModelBackend] = [
             FoundationModelsBackend(),
+            MLXBackend(runtimeAvailable: true),
             DemoEchoBackend()
         ]
         let container = LLMKitFactory.makeContainer(
@@ -24,7 +29,8 @@ enum DemoConfiguration {
         return LLMKitExampleConfiguration(
             container: container,
             catalog: catalog,
-            backends: backends
+            backends: backends,
+            downloadableModels: downloadableModels
         )
     }
 

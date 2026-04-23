@@ -21,26 +21,34 @@ public struct ChatScreen: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             transcript
-            Divider()
             composer
         }
+        .background(Color.primary.opacity(0.03))
     }
 
     private var header: some View {
-        HStack {
-            Text(title)
-                .font(.headline)
-            Spacer()
-            if viewModel.isStreaming {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Streaming")
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                    Text(viewModel.isStreaming ? "Generating response" : "Ready")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if viewModel.isStreaming {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Streaming")
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.primary.opacity(0.04))
+            Divider()
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
     }
 
     private var transcript: some View {
@@ -64,28 +72,39 @@ public struct ChatScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message", text: $draftText, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...5)
+        VStack(spacing: 0) {
+            Divider()
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("Message", text: $draftText, axis: .vertical)
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Button {
-                let text = draftText
-                draftText = ""
-                Task { await viewModel.send(text) }
-            } label: {
-                Image(systemName: "paperplane.fill")
+                Button {
+                    let text = draftText
+                    draftText = ""
+                    Task { await viewModel.send(text) }
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .font(.headline)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isStreaming)
+                .accessibilityLabel("Send")
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isStreaming)
-            .accessibilityLabel("Send")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.primary.opacity(0.04))
         }
-        .padding()
     }
 }
 
@@ -175,14 +194,15 @@ private struct MessageBubble: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(message.role.rawValue.capitalized)
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text(message.content.text)
                     .font(.body)
                     .textSelection(.enabled)
             }
-            .padding(10)
-            .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             if message.role != .user {
                 Spacer(minLength: 36)
             }
@@ -191,7 +211,9 @@ private struct MessageBubble: View {
     }
 
     private var backgroundStyle: AnyShapeStyle {
-        message.role == .user ? AnyShapeStyle(.tint.opacity(0.16)) : AnyShapeStyle(.gray.opacity(0.12))
+        message.role == .user
+            ? AnyShapeStyle(.tint.opacity(0.14))
+            : AnyShapeStyle(Color.primary.opacity(0.06))
     }
 }
 

@@ -20,29 +20,14 @@ public struct ModelDownloadListView: View {
 
     public var body: some View {
         List(visibleDescriptors, id: \.id) { descriptor in
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(descriptor.displayName)
-                        .font(.headline)
-                    Text(viewModel.statusText(for: descriptor.id))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let progress = viewModel.progress(for: descriptor.id) {
-                        ProgressView(value: progress)
-                            .accessibilityLabel("Install progress")
-                    }
-                }
-                Spacer()
-                Button {
-                    Task { await viewModel.install(descriptor) }
-                } label: {
-                    Image(systemName: viewModel.isInstalled(descriptor.id) ? "checkmark.circle.fill" : "arrow.down.circle")
-                }
-                .buttonStyle(.bordered)
-                .disabled(viewModel.isInstallButtonDisabled(for: descriptor.id))
-                .accessibilityLabel(viewModel.isInstalled(descriptor.id) ? "Installed" : "Install")
+            ModelDownloadCardView(
+                descriptor: descriptor,
+                state: viewModel.installState(for: descriptor.id),
+                isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
+            ) {
+                await viewModel.install(descriptor)
             }
-            .padding(.vertical, 4)
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
         }
         .overlay {
             if let lastErrorMessage = viewModel.lastErrorMessage {
@@ -67,18 +52,6 @@ public struct ModelDownloadListView: View {
         return (configuredDescriptors + viewModel.models.map(\.descriptor)).filter { descriptor in
             seen.insert(descriptor.id).inserted
         }
-    }
-}
-
-public struct ModelInstallProgressView: View {
-    private let state: InstallState
-
-    public init(state: InstallState) {
-        self.state = state
-    }
-
-    public var body: some View {
-        Text(String(describing: state))
     }
 }
 

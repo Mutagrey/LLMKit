@@ -12,6 +12,7 @@
 		0A1000010000000000000003 /* DemoConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000003 /* DemoConfiguration.swift */; };
 		0A1000010000000000000004 /* DemoEchoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1000020000000000000004 /* DemoEchoBackend.swift */; };
 		0A1000010000000000000006 /* LLMKitExampleUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000002 /* LLMKitExampleUI */; };
+		0A1000010000000000000007 /* LLMKitLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000003 /* LLMKitLocal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A1000010000000000000006 /* LLMKitExampleUI in Frameworks */,
+				0A1000010000000000000007 /* LLMKitLocal in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +80,7 @@
 			name = LLMKitDemo;
 			packageProductDependencies = (
 				0A10000F0000000000000002 /* LLMKitExampleUI */,
+				0A10000F0000000000000003 /* LLMKitLocal */,
 			);
 			productName = LLMKitDemo;
 			productReference = 0A1000030000000000000001 /* LLMKitDemo.app */;
@@ -305,6 +308,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A10000E0000000000000001 /* XCLocalSwiftPackageReference "../.." */;
 			productName = LLMKitExampleUI;
+		};
+		0A10000F0000000000000003 /* LLMKitLocal */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A10000E0000000000000001 /* XCLocalSwiftPackageReference "../.." */;
+			productName = LLMKitLocal;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

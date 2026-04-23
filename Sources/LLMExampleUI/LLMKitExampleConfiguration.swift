@@ -1,4 +1,5 @@
 import LLMBackendFoundationModels
+import LLMBackendMLX
 import LLMCore
 import LLMModelLifecycle
 import LLMOrchestrator
@@ -42,9 +43,23 @@ public struct LLMKitExampleConfiguration: Sendable {
     }
 
     public static func localQwenSmokeTest() -> LLMKitExampleConfiguration {
-        appleIntelligenceOnly(downloadableModels: [
-            LLMKitExampleModels.qwen25HalfBInstructMLX4Bit
-        ])
+        let downloadableModels = [LLMKitExampleModels.qwen25HalfBInstructMLX4Bit]
+        let models = [LLMKitExampleModels.appleIntelligence] + downloadableModels
+        let catalog = DefaultModelCatalog(models: models)
+        let foundationModelsBackend = FoundationModelsBackend()
+        let mlxBackend = MLXBackend(runtimeAvailable: true)
+        let backends: [any ModelBackend] = [foundationModelsBackend, mlxBackend]
+        let container = LLMKitFactory.makeContainer(
+            catalog: catalog,
+            backends: backends
+        )
+
+        return LLMKitExampleConfiguration(
+            container: container,
+            catalog: catalog,
+            backends: backends,
+            downloadableModels: downloadableModels
+        )
     }
 
     func backend(for kind: BackendKind) -> (any ModelBackend)? {

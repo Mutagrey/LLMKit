@@ -13,5 +13,5 @@ and demo hosts can exercise model lifecycle UI before real MLX inference is enab
 `LLMKitExampleScreen` presents:
 
 - Chat tab for sending prompts through the selected model.
-- Models tab for catalog status and lifecycle/download screens.
+- Models tab for catalog status, selected-model metadata, and inline lifecycle/download controls.
 - Settings tab for generation quality, routing mode, privacy mode, and response token budget.

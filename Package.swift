@@ -309,6 +309,7 @@ let package = Package(
                 "LLMOrchestrator",
                 "LLMModelLifecycle",
                 "LLMBackendFoundationModels",
+                "LLMBackendMLX",
                 "LLMUIChat",
                 "LLMUIDownloads"
             ],

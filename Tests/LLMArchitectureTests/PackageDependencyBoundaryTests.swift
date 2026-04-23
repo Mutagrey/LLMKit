@@ -173,6 +173,7 @@ private struct PackageManifest {
         "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMExampleUI": [
             "LLMBackendFoundationModels",
+            "LLMBackendMLX",
             "LLMCore",
             "LLMModelLifecycle",
             "LLMOrchestrator",

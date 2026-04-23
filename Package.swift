@@ -133,9 +133,8 @@ let package = Package(
         )
     ],
     dependencies: [
-        // Add external packages only after ADR review.
-        // Example placeholders:
-        // .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.0.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMajor(from: "3.31.3")),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0")
         // .package(url: "https://github.com/apple/swift-collections", from: "1.0.0")
     ],
     targets: [
@@ -262,7 +261,11 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMModelLifecycle",
-                "LLMObservability"
+                "LLMObservability",
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),
+                .product(name: "Tokenizers", package: "swift-transformers")
             ],
             exclude: ["Docs"]
         ),

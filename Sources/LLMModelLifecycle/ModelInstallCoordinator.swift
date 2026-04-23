@@ -88,11 +88,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         var completedUnits: Int64 = 0
 
         for artifact in source.artifacts {
-            let destination = try artifactDestinationURL(
-                rootDirectory: artifactRootDirectory,
-                modelID: descriptor.id,
-                artifact: artifact
-            )
+            let destination = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+                .artifactURL(modelID: descriptor.id, artifact: artifact)
             let result = try await artifactDownloader.download(artifact, to: destination)
             completedUnits += usesByteProgress ? (artifact.byteCount ?? result.bytesWritten) : 1
             let progress = min(Double(completedUnits) / Double(totalUnits), 1)
@@ -111,32 +108,5 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
             return total
         }
         return Int64(max(artifacts.count, 1))
-    }
-
-    private func artifactDestinationURL(
-        rootDirectory: URL,
-        modelID: ModelID,
-        artifact: ModelArtifact
-    ) throws -> URL {
-        guard !artifact.relativePath.hasPrefix("/") else {
-            throw LLMError.downloadFailed("Artifact path must be relative: \(artifact.relativePath).")
-        }
-
-        let pathComponents = artifact.relativePath.split(separator: "/").map(String.init)
-        guard !pathComponents.isEmpty, !pathComponents.contains("..") else {
-            throw LLMError.downloadFailed("Invalid artifact path: \(artifact.relativePath).")
-        }
-
-        let modelDirectory = rootDirectory.appendingPathComponent(safeDirectoryName(for: modelID), isDirectory: true)
-        return pathComponents.reduce(modelDirectory) { url, component in
-            url.appendingPathComponent(component)
-        }
-    }
-
-    private func safeDirectoryName(for modelID: ModelID) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        return modelID.rawValue.unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? String(scalar) : "_"
-        }.joined()
     }
 }

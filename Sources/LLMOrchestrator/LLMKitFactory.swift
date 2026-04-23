@@ -1,4 +1,3 @@
-import Foundation
 import LLMCore
 import LLMModelLifecycle
 import LLMProtocols
@@ -16,7 +15,7 @@ public enum LLMKitFactory {
         let chat = DefaultChatService(router: router, registry: registry)
         let structured = DefaultStructuredGenerationService(generation: generation)
         let lifecycle = lifecycle ?? ModelInstallCoordinator(
-            artifactRootDirectory: defaultArtifactRootDirectory()
+            artifactRootDirectory: ModelArtifactLocationResolver.defaultRootDirectory()
         )
         let sessions = SessionCoordinator()
         return LLMKitContainer(
@@ -26,12 +25,5 @@ public enum LLMKitFactory {
             lifecycle: lifecycle,
             sessions: sessions
         )
-    }
-
-    private static func defaultArtifactRootDirectory() -> URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("LLMKit", isDirectory: true)
-            .appendingPathComponent("Models", isDirectory: true)
     }
 }

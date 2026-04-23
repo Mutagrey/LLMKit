@@ -1,4 +1,4 @@
 # LLMBackendMLX TODO
 
-- Add MLX dependency only after an ADR approves it.
-- Add concrete MLX loading/execution after dependency approval.
+- Add richer chat history mapping once the package supports backend-neutral prompt rehydration.
+- Add focused integration smoke tests gated on a tiny local model fixture.

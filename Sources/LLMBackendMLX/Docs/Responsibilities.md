@@ -1,3 +1,4 @@
 # LLMBackendMLX Responsibilities
 
-Owns MLX runtime integration and support matrices once approved. It does not add third-party dependencies without ADR.
+Owns MLX runtime integration and support matrices approved by ADR-009. It loads already-installed local model
+directories and executes generation/chat through backend-neutral `ModelBackend` contracts.

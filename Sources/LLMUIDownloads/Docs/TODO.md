@@ -1,4 +1,3 @@
 # LLMUIDownloads TODO
 
-- Add visible install buttons once UI composition is expanded.
-- Add error presentation styling.
+- Refine error presentation styling once the broader UI theme surface stabilizes.

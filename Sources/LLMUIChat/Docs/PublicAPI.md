@@ -2,4 +2,6 @@
 
 Public API includes chat screen, view model, message rendering, and theme configuration.
 
-`ChatViewModel.send(_:)` appends a user message, consumes `ChatService` streaming events, and appends the assistant response.
+`ChatScreen` renders a backend-agnostic transcript and composer using `ChatViewModel`.
+
+`ChatViewModel.send(_:)` trims blank input, appends a user message, forwards normalized `ChatRequest` values with its configured `ExecutionRequirements`, consumes `ChatService` streaming events, exposes in-flight streamed text, and appends the assistant response.

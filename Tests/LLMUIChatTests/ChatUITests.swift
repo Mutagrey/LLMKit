@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMProtocols
 import LLMUIChat
@@ -8,6 +9,47 @@ private struct StreamingChatService: ChatService {
         AsyncThrowingStream { continuation in
             continuation.yield(.delta("hel"))
             continuation.yield(.delta("lo"))
+            continuation.finish()
+        }
+    }
+}
+
+private struct CompletingChatService: ChatService {
+    func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let message = ChatMessage(role: .assistant, content: MessageContent(text: "done"))
+            continuation.yield(.completed(ChatResult(message: message)))
+            continuation.finish()
+        }
+    }
+}
+
+private struct FailingChatService: ChatService {
+    func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: LLMError.executionFailed("chat failed"))
+        }
+    }
+}
+
+private final class RecordingChatService: ChatService, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedRequests: [ChatRequest] = []
+
+    var requests: [ChatRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRequests
+    }
+
+    func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
+        lock.lock()
+        recordedRequests.append(request)
+        lock.unlock()
+
+        return AsyncThrowingStream { continuation in
+            let message = ChatMessage(role: .assistant, content: MessageContent(text: "recorded"))
+            continuation.yield(.completed(ChatResult(message: message)))
             continuation.finish()
         }
     }
@@ -30,5 +72,71 @@ private struct StreamingChatService: ChatService {
 
     #expect(viewModel.messages.map(\.role) == [.user, .assistant])
     #expect(viewModel.messages.last?.content.text == "hello")
+    #expect(viewModel.streamingText.isEmpty)
+    #expect(!viewModel.isStreaming)
+}
+
+@MainActor
+@Test func chatViewModelIgnoresBlankMessages() async {
+    let viewModel = ChatViewModel(chatService: StreamingChatService())
+
+    await viewModel.send("   ")
+
+    #expect(viewModel.messages.isEmpty)
+    #expect(!viewModel.isStreaming)
+}
+
+@MainActor
+@Test func chatViewModelTrimsMessageBeforeSending() async {
+    let viewModel = ChatViewModel(chatService: CompletingChatService())
+
+    await viewModel.send("  hi  ")
+
+    #expect(viewModel.messages.first?.role == .user)
+    #expect(viewModel.messages.first?.content.text == "hi")
+    #expect(viewModel.messages.last?.role == .assistant)
+    #expect(viewModel.messages.last?.content.text == "done")
+}
+
+@MainActor
+@Test func chatViewModelSendsNormalizedRequestWithRequirements() async {
+    let service = RecordingChatService()
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.chat, .streaming],
+        executionMode: .preferOffline,
+        preferredLatency: .interactive,
+        qualityTier: .fast
+    )
+    let viewModel = ChatViewModel(chatService: service, requirements: requirements)
+
+    await viewModel.send("  hi  ")
+    let requests = service.requests
+
+    #expect(requests.count == 1)
+    #expect(requests.first?.messages.map(\.content.text) == ["hi"])
+    #expect(requests.first?.requirements == requirements)
+}
+
+@MainActor
+@Test func chatViewModelStoresErrorAndStopsStreamingOnServiceFailure() async {
+    let viewModel = ChatViewModel(chatService: FailingChatService())
+
+    await viewModel.send("hi")
+
+    #expect(viewModel.messages.map(\.role) == [.user])
+    #expect(viewModel.lastErrorMessage == "executionFailed(\"chat failed\")")
+    #expect(viewModel.streamingText.isEmpty)
+    #expect(!viewModel.isStreaming)
+}
+
+@MainActor
+@Test func chatViewModelWithoutServiceOnlyAppendsUserMessage() async {
+    let viewModel = ChatViewModel()
+
+    await viewModel.send("hi")
+
+    #expect(viewModel.messages.map(\.role) == [.user])
+    #expect(viewModel.lastErrorMessage == nil)
+    #expect(viewModel.streamingText.isEmpty)
     #expect(!viewModel.isStreaming)
 }

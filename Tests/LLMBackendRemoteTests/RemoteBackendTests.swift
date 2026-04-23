@@ -64,6 +64,50 @@ private actor RecordingTransport: HTTPTransport {
     #expect(configuration.defaultHeaders["anthropic-version"] == "2023-06-01")
 }
 
+@Test func openAIChatCompletionsDescriptorBuildsRemoteModelMetadata() {
+    let descriptor = RemoteModelDescriptors.openAIChatCompletions(
+        id: "gpt-test",
+        displayName: "GPT Test",
+        contextWindowTokens: 128_000,
+        supportsTools: true,
+        supportsStructuredOutput: true,
+        extraCapabilities: [.summarization],
+        tags: ["production"]
+    )
+
+    #expect(descriptor.id.rawValue == "gpt-test")
+    #expect(descriptor.displayName == "GPT Test")
+    #expect(descriptor.family == .custom("openai"))
+    #expect(descriptor.backend == .remote)
+    #expect(descriptor.isRemote)
+    #expect(descriptor.supportsStreaming)
+    #expect(descriptor.supportsTools)
+    #expect(descriptor.supportsStructuredOutput)
+    #expect(descriptor.contextWindowTokens == 128_000)
+    #expect(descriptor.capabilities.isSuperset(of: [.chat, .completion, .streaming, .toolCalling, .structuredOutput, .summarization]))
+    #expect(descriptor.tags == ["provider:openai", "api:chat-completions", "production"])
+}
+
+@Test func anthropicMessagesDescriptorBuildsRemoteModelMetadata() {
+    let descriptor = RemoteModelDescriptors.anthropicMessages(
+        id: "claude-test",
+        supportsTools: true,
+        extraCapabilities: [.longContext]
+    )
+
+    #expect(descriptor.id.rawValue == "claude-test")
+    #expect(descriptor.displayName == "claude-test")
+    #expect(descriptor.family == .custom("anthropic"))
+    #expect(descriptor.backend == .remote)
+    #expect(descriptor.isRemote)
+    #expect(descriptor.supportsStreaming)
+    #expect(descriptor.supportsTools)
+    #expect(!descriptor.supportsStructuredOutput)
+    #expect(descriptor.capabilities.isSuperset(of: [.chat, .completion, .streaming, .toolCalling, .longContext]))
+    #expect(!descriptor.capabilities.contains(.structuredOutput))
+    #expect(descriptor.tags == ["provider:anthropic", "api:messages"])
+}
+
 @Test func remoteBackendSendsGenerationRequestThroughTransport() async throws {
     let url = try #require(URL(string: "https://example.com/v1"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url, defaultHeaders: ["Authorization": "Bearer token"])

@@ -8,6 +8,8 @@ Public API includes remote backend configuration and generic backend conformers.
 
 `RemoteConfiguration.anthropic(apiKey:version:defaultMaxTokens:baseURL:)` creates an Anthropic Messages configuration with `x-api-key`, `anthropic-version`, `/messages` paths, and the default `max_tokens` required by Anthropic request bodies. System and developer chat messages are mapped into Anthropic's top-level `system` field.
 
+`RemoteModelDescriptors` provides provider-specific convenience builders for regular `ModelDescriptor` values. It does not own catalog state or register models globally.
+
 `RemoteAPIStyle` selects the request mapping strategy. The default remains generic completions/chat mapping; OpenAI uses Chat Completions request and response shapes; Anthropic uses Messages request and response shapes.
 
 When a response body contains server-sent events, `RemoteBackend` maps text deltas into core streaming events and finishes with the accumulated result. Streams that complete without any text delta fail with a backend-neutral mapping error.

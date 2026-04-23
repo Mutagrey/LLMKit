@@ -172,6 +172,121 @@ private struct CancellingBackend: ModelBackend {
     }
 }
 
+private final class ToolLoopBackend: ModelBackend, @unchecked Sendable {
+    let backendKind: BackendKind
+    private let state = State()
+
+    init(backendKind: BackendKind = .remote) {
+        self.backendKind = backendKind
+    }
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        .available
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(GenerationResult(text: "unused", model: request.model)))
+            continuation.finish()
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                let round = await state.record(request)
+
+                if round == 0 {
+                    continuation.yield(.toolCallRequested(ToolInvocation(
+                        id: "call_weather_1",
+                        toolName: "weather",
+                        arguments: ToolArguments(structuredValues: ["city": .string("Paris")])
+                    )))
+                    continuation.yield(.completed(ChatResult(
+                        message: ChatMessage(role: .assistant, content: MessageContent(text: "")),
+                        model: request.model,
+                        finishReason: .toolCall
+                    )))
+                } else {
+                    continuation.yield(.completed(ChatResult(
+                        message: ChatMessage(role: .assistant, content: MessageContent(text: "Sunny in Paris")),
+                        model: request.model
+                    )))
+                }
+                continuation.finish()
+            }
+        }
+    }
+
+    func capturedRequests() async -> [BackendChatRequest] {
+        await state.snapshot()
+    }
+
+    private actor State {
+        private var requests: [BackendChatRequest] = []
+
+        func record(_ request: BackendChatRequest) -> Int {
+            let round = requests.count
+            requests.append(request)
+            return round
+        }
+
+        func snapshot() -> [BackendChatRequest] {
+            requests
+        }
+    }
+}
+
+private actor RecordingToolService: ToolService {
+    private let definitions: [ToolDefinition]
+    private let resultText: String
+    private var invocations: [ToolInvocation] = []
+
+    init(definitions: [ToolDefinition], resultText: String) {
+        self.definitions = definitions
+        self.resultText = resultText
+    }
+
+    func availableTools() async -> [ToolDefinition] {
+        definitions
+    }
+
+    func execute(_ invocation: ToolInvocation) async throws -> ToolResult {
+        invocations.append(invocation)
+        return ToolResult(invocationID: invocation.id, content: resultText)
+    }
+
+    func capturedInvocations() -> [ToolInvocation] {
+        invocations
+    }
+}
+
+private actor FailingToolService: ToolService {
+    private let definitions: [ToolDefinition]
+
+    init(definitions: [ToolDefinition]) {
+        self.definitions = definitions
+    }
+
+    func availableTools() async -> [ToolDefinition] {
+        definitions
+    }
+
+    func execute(_ invocation: ToolInvocation) async throws -> ToolResult {
+        throw LLMError.toolExecutionFailed("tool failed")
+    }
+}
+
 @Test func executionPlannerFiltersOfflineOnlyRequests() {
     let local = ModelDescriptor(id: "local", displayName: "Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
     let remote = ModelDescriptor(id: "remote", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
@@ -425,4 +540,106 @@ private struct CancellingBackend: ModelBackend {
     } catch {
         #expect(error as? LLMError == .cancelled)
     }
+}
+
+@Test func chatServiceExecutesToolRoundTripOnSameModel() async throws {
+    let descriptor = ModelDescriptor(
+        id: "remote-tools",
+        displayName: "Remote Tools",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.chat, .toolCalling],
+        isRemote: true
+    )
+    let catalog = DefaultModelCatalog(models: [descriptor])
+    let backend = ToolLoopBackend()
+    let tool = ToolDefinition(
+        name: "weather",
+        description: "Lookup weather",
+        schema: ToolSchema(requiredArguments: ["city"])
+    )
+    let toolService = RecordingToolService(definitions: [tool], resultText: "sunny")
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: catalog),
+        registry: BackendRegistry(backends: [backend]),
+        tools: toolService
+    )
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "Weather in Paris?"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat, .toolCalling])
+    )
+
+    var requested: [ToolInvocation] = []
+    var completedResults: [ToolResult] = []
+    var completed: ChatResult?
+    for try await event in service.send(request) {
+        switch event {
+        case .toolCallRequested(let invocation):
+            requested.append(invocation)
+        case .toolCallCompleted(let result):
+            completedResults.append(result)
+        case .completed(let result):
+            completed = result
+        case .started, .delta, .failed:
+            break
+        }
+    }
+
+    let capturedRequests = await backend.capturedRequests()
+    let capturedInvocations = await toolService.capturedInvocations()
+
+    #expect(requested.count == 1)
+    #expect(requested.first?.toolName == "weather")
+    #expect(requested.first?.arguments["city"] == .string("Paris"))
+    #expect(completedResults.count == 1)
+    #expect(completedResults.first?.content == "sunny")
+    #expect(completed?.message.content.text == "Sunny in Paris")
+    #expect(capturedInvocations.count == 1)
+    #expect(capturedRequests.count == 2)
+    #expect(capturedRequests.first?.request.tools == [tool])
+    #expect(capturedRequests.last?.request.messages.count == 2)
+    #expect(capturedRequests.last?.request.messages.last?.role == .tool)
+    #expect(capturedRequests.last?.request.messages.last?.content.text == "sunny")
+    #expect(capturedRequests.last?.request.messages.last?.toolCallReference == ToolCallReference(id: "call_weather_1", toolName: "weather"))
+}
+
+@Test func chatServiceDoesNotFallbackWhenToolExecutionFails() async throws {
+    let first = ModelDescriptor(
+        id: "a-tools",
+        displayName: "A Tools",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.chat, .toolCalling]
+    )
+    let fallbackModel = ModelDescriptor(
+        id: "z-fallback",
+        displayName: "Z Fallback",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.chat],
+        isRemote: true
+    )
+    let catalog = DefaultModelCatalog(models: [fallbackModel, first])
+    let backend = ToolLoopBackend(backendKind: .coreML)
+    let fallbackBackend = StreamingBackend(backendKind: .remote, responseText: "should not execute")
+    let tool = ToolDefinition(name: "weather", description: "Lookup weather")
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: catalog),
+        registry: BackendRegistry(backends: [backend, fallbackBackend]),
+        tools: FailingToolService(definitions: [tool])
+    )
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "Weather in Paris?"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat, .toolCalling])
+    )
+
+    do {
+        for try await _ in service.send(request) {}
+        Issue.record("Expected tool execution failure to stop chat round-trip.")
+    } catch {
+        #expect(error as? LLMError == .toolExecutionFailed("tool failed"))
+    }
+
+    let capturedRequests = await backend.capturedRequests()
+    #expect(capturedRequests.count == 1)
 }

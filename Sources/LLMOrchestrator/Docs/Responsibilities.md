@@ -3,3 +3,5 @@
 Owns capability matching, backend selection, request normalization, fallback, and app-facing service composition. It does not perform raw HTTP, direct storage writes, UI rendering, or provider SDK calls.
 
 Fallback is limited to selecting another already eligible `ModelDescriptor`; backend-specific retry, provider mapping, and transport recovery remain outside this module. Cancellation and unsupported capability failures stop fallback.
+
+When a backend emits backend-neutral tool requests, orchestration may execute them through `ToolService`, append tool result turns, and continue the conversation on the same selected model. Tool execution failures stop the round-trip instead of triggering backend fallback.

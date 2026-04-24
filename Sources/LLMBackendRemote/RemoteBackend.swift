@@ -116,7 +116,7 @@ public struct RemoteBackend: ModelBackend {
         case .genericCompletionsAndChat:
             try makeRequest(
                 path: configuration?.generationPath,
-                body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.prompt, stream: request.model.supportsStreaming)
+                body: RemoteCompletionRequest(model: request.model.id.rawValue, prompt: request.request.renderedPrompt, stream: request.model.supportsStreaming)
             )
         case .openAIChatCompletions:
             try makeRequest(
@@ -124,7 +124,7 @@ public struct RemoteBackend: ModelBackend {
                 body: OpenAIChatCompletionRequest(
                     model: request.model.id.rawValue,
                     messages: [
-                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt, toolCallID: nil)
+                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.renderedPrompt, toolCallID: nil)
                     ],
                     stream: request.model.supportsStreaming,
                     tools: nil
@@ -135,7 +135,7 @@ public struct RemoteBackend: ModelBackend {
                 path: configuration?.generationPath,
                 body: OpenAIResponsesRequest(
                     model: request.model.id.rawValue,
-                    input: .text(request.request.prompt),
+                    input: .text(request.request.renderedPrompt),
                     stream: request.model.supportsStreaming,
                     instructions: nil,
                     tools: nil
@@ -147,7 +147,7 @@ public struct RemoteBackend: ModelBackend {
                 body: AnthropicMessagesRequest(
                     model: request.model.id.rawValue,
                     messages: [
-                        AnthropicMessage(role: MessageRole.user.rawValue, content: .text(request.request.prompt))
+                        AnthropicMessage(role: MessageRole.user.rawValue, content: .text(request.request.renderedPrompt))
                     ],
                     maxTokens: defaultMaxTokens,
                     stream: request.model.supportsStreaming,

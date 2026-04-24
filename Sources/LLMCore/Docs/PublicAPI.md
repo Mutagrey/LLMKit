@@ -6,6 +6,13 @@ Downloadable local models are described through backend-neutral metadata on `Mod
 `ModelSource`, `ModelArtifact`, `ModelLicense`, and `Quantization`. These types describe where artifacts come from
 without making core depend on any downloader, model hub SDK, or backend runtime.
 
+Structured generation uses `StructuredOutputSchema` as the backend-neutral schema contract. It stores a canonical
+JSON-schema-like object tree using existing `ToolValue` primitives so schema payloads do not require a second generic
+JSON value model inside `LLMCore`.
+
+`GenerationRequest` can carry an optional `structuredOutputSchema` and exposes `renderedPrompt` for backends that still
+need prompt-level JSON guidance while native structured generation adapters are adopted incrementally.
+
 Streaming helpers include `StreamedTextAccumulator`, a small value type for accumulating text deltas without duplicating ad hoc string state across modules.
 
 Tool calling is described through backend-neutral `ToolDefinition`, `ToolArguments`, `ToolInvocation`, `ToolResult`, `ToolCallID`, `ToolCallReference`, and `ToolValue`.

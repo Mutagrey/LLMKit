@@ -16,7 +16,7 @@ enum FoundationModelsNativeRuntime {
 
             let session = LanguageModelSession(model: model)
             let response = try await session.respond(
-                to: request.request.prompt,
+                to: request.request.renderedPrompt,
                 options: FoundationModelsGenerationOptionsMapper.options(for: request.request.requirements)
             )
             return response.content

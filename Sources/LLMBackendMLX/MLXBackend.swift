@@ -71,7 +71,7 @@ public struct MLXBackend: ModelBackend {
                     continuation.yield(.started(request.model))
                     var output = ""
                     let stream = try await runtime.stream(
-                        prompt: request.request.prompt,
+                        prompt: request.request.renderedPrompt,
                         model: request.model,
                         maxTokens: request.request.requirements.budget?.maxOutputTokens
                     )

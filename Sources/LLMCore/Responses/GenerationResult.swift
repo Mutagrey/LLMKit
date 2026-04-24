@@ -30,11 +30,15 @@ public struct ChatResult: Hashable, Codable, Sendable {
 
 public struct StructuredGenerationResult: Hashable, Codable, Sendable {
     public let rawText: String
-    public let schemaName: String?
+    public let schema: StructuredOutputSchema?
 
-    public init(rawText: String, schemaName: String? = nil) {
+    public var schemaName: String? {
+        schema?.name
+    }
+
+    public init(rawText: String, schema: StructuredOutputSchema? = nil) {
         self.rawText = rawText
-        self.schemaName = schemaName
+        self.schema = schema
     }
 }
 

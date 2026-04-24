@@ -64,6 +64,8 @@ import Testing
 
     #expect(request.requirements.requiredCapabilities.contains(.offline))
     #expect(request.sessionID == "session-1")
+    #expect(request.structuredOutputSchema == nil)
+    #expect(request.renderedPrompt == "Summarize")
 }
 
 @Test func lifecycleStatesAreEquatable() {
@@ -99,4 +101,31 @@ import Testing
     #expect(decoded["days"] == .integer(3))
     #expect(decoded.values["metric"] == "true")
     #expect(decoded.values["filters"] == #"{"region":"eu"}"#)
+}
+
+@Test func structuredOutputSchemaRoundTripsThroughCodable() throws {
+    let schema = StructuredOutputSchema(name: "WeatherSummary", definition: [
+        "type": .string("object"),
+        "properties": .object([
+            "city": .object(["type": .string("string")]),
+            "forecast": .object(["type": .string("string")])
+        ]),
+        "required": .array([.string("city"), .string("forecast")]),
+        "additionalProperties": .boolean(false)
+    ])
+
+    let request = StructuredRequest(prompt: "Summarize weather", schema: schema, sessionID: "session-structured")
+    let result = StructuredGenerationResult(rawText: #"{"city":"Paris","forecast":"Sunny"}"#, schema: schema)
+
+    let requestData = try JSONEncoder().encode(request)
+    let resultData = try JSONEncoder().encode(result)
+    let decodedRequest = try JSONDecoder().decode(StructuredRequest.self, from: requestData)
+    let decodedResult = try JSONDecoder().decode(StructuredGenerationResult.self, from: resultData)
+
+    #expect(decodedRequest == request)
+    #expect(decodedRequest.schemaName == "WeatherSummary")
+    #expect(decodedRequest.renderedPrompt.contains("Schema name: WeatherSummary"))
+    #expect(decodedRequest.schema?.jsonString?.contains(#""type":"object""#) == true)
+    #expect(decodedResult == result)
+    #expect(decodedResult.schemaName == "WeatherSummary")
 }

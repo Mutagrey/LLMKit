@@ -12,8 +12,13 @@ JSON value model inside `LLMCore`.
 
 `GenerationRequest` can carry an optional `structuredOutputSchema` and exposes `renderedPrompt` for backends that still
 need prompt-level JSON guidance while native structured generation adapters are adopted incrementally.
+`ExecutionRequirements` carries backend-neutral routing constraints, including `allowsFallback` for flows that must stay
+on the explicitly selected model.
 
 Streaming helpers include `StreamedTextAccumulator`, a small value type for accumulating text deltas without duplicating ad hoc string state across modules.
 
 Tool calling is described through backend-neutral `ToolDefinition`, `ToolArguments`, `ToolInvocation`, `ToolResult`, `ToolCallID`, `ToolCallReference`, and `ToolValue`.
 `ToolArguments` keeps structured values as the source of truth while preserving a string projection for simple executors. `ChatRequest` can carry available tool definitions, and `ChatMessage` can reference a prior tool call when a provider needs an explicit tool result turn.
+
+Lifecycle state includes `ModelStorageUsage`, which reports total installed bytes and per-model byte counts without exposing
+filesystem paths to UI modules.

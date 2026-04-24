@@ -2,13 +2,14 @@ import Foundation
 import LLMCore
 import LLMProtocols
 
-public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProviding {
+public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaintenanceService, InstalledModelProviding {
     private var records: [ModelID: InstalledModelRecord]
     private let stateMachine: InstallStateMachine
     private let recordStore: InstalledModelRecordStore?
     private let artifactRootDirectory: URL?
     private let artifactDownloader: any ModelArtifactDownloading
     private let integrityVerifier: ModelIntegrityVerifier
+    private var hasLoadedPersistedRecords: Bool
 
     public init(
         records: [InstalledModelRecord] = [],
@@ -16,7 +17,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         recordStore: InstalledModelRecordStore? = nil,
         artifactRootDirectory: URL? = nil,
         artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader(),
-        integrityVerifier: ModelIntegrityVerifier = ModelIntegrityVerifier()
+        integrityVerifier: ModelIntegrityVerifier = ModelIntegrityVerifier(),
+        loadedPersistedRecords: Bool? = nil
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
         self.stateMachine = stateMachine ?? InstallStateMachine(
@@ -26,23 +28,60 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         self.artifactRootDirectory = artifactRootDirectory
         self.artifactDownloader = artifactDownloader
         self.integrityVerifier = integrityVerifier
+        self.hasLoadedPersistedRecords = loadedPersistedRecords ?? (recordStore == nil || !records.isEmpty)
     }
 
     public static func persisted(recordStore: InstalledModelRecordStore) async throws -> ModelInstallCoordinator {
         let records = try await recordStore.load()
-        return ModelInstallCoordinator(records: records, recordStore: recordStore)
+        return ModelInstallCoordinator(records: records, recordStore: recordStore, loadedPersistedRecords: true)
     }
 
     public func installedModels() async throws -> [InstalledModelRecord] {
-        Array(records.values).sorted { $0.descriptor.displayName < $1.descriptor.displayName }
+        try await ensureLoadedPersistedRecords()
+        return Array(records.values).sorted { $0.descriptor.displayName < $1.descriptor.displayName }
     }
 
     public func installedRecord(for id: ModelID) async throws -> InstalledModelRecord? {
-        records[id]
+        try await ensureLoadedPersistedRecords()
+        return records[id]
     }
 
     public func state(for modelID: ModelID) async throws -> InstallState {
-        await stateMachine.state(for: modelID)
+        try await ensureLoadedPersistedRecords()
+        return await stateMachine.state(for: modelID)
+    }
+
+    public func deleteInstalledModel(_ modelID: ModelID) async throws {
+        try await ensureLoadedPersistedRecords()
+
+        if let artifactRootDirectory {
+            let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+                .modelDirectory(for: modelID)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
+
+        records[modelID] = nil
+        await stateMachine.transition(modelID: modelID, to: .notInstalled)
+        try await recordStore?.save(Array(records.values))
+    }
+
+    public func storageUsage() async throws -> ModelStorageUsage {
+        try await ensureLoadedPersistedRecords()
+        var modelBytes: [ModelID: Int64] = [:]
+        for modelID in records.keys {
+            modelBytes[modelID] = try storageUsageWithoutLoading(for: modelID)
+        }
+        return ModelStorageUsage(
+            totalBytes: modelBytes.values.reduce(0, +),
+            modelBytes: modelBytes
+        )
+    }
+
+    public func storageUsage(for modelID: ModelID) async throws -> Int64 {
+        try await ensureLoadedPersistedRecords()
+        return try storageUsageWithoutLoading(for: modelID)
     }
 
     public nonisolated func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
@@ -67,6 +106,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         _ descriptor: ModelDescriptor,
         continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
     ) async throws -> InstalledModelRecord {
+        try await ensureLoadedPersistedRecords()
         try await downloadArtifacts(for: descriptor, continuation: continuation)
         try await verifyArtifacts(for: descriptor, continuation: continuation)
         await stateMachine.transition(modelID: descriptor.id, to: .ready)
@@ -134,6 +174,49 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
             return total
         }
         return Int64(max(artifacts.count, 1))
+    }
+
+    private func ensureLoadedPersistedRecords() async throws {
+        guard !hasLoadedPersistedRecords, let recordStore else {
+            return
+        }
+
+        let loadedRecords = try await recordStore.load()
+        for record in loadedRecords {
+            records[record.descriptor.id] = record
+            await stateMachine.transition(modelID: record.descriptor.id, to: record.installState)
+        }
+        hasLoadedPersistedRecords = true
+    }
+
+    private func storageUsageWithoutLoading(for modelID: ModelID) throws -> Int64 {
+        guard let artifactRootDirectory else {
+            return 0
+        }
+
+        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+            .modelDirectory(for: modelID)
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return 0
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
     }
 
     private static func mapInstallError(_ error: Error) -> LLMError {

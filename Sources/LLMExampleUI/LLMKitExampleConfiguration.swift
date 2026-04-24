@@ -82,6 +82,58 @@ public struct LLMKitExampleConfiguration: Sendable {
         )
     }
 
+    public static func dynamicRemoteManifest(
+        remoteSource: RemoteModelCatalogSource,
+        fallbackManifest: ModelManifest = CuratedModelManifests.localIPhoneTextModels,
+        includeAppleIntelligence: Bool = true,
+        runtimeAvailable: Bool = true,
+        additionalBackends: [any ModelBackend] = [],
+        lifecycle: (any ModelLifecycleService)? = nil,
+        fetchManifestData: @escaping @Sendable (URL) async throws -> Data = DynamicModelCatalog.defaultFetchManifestData
+    ) -> LLMKitExampleConfiguration {
+        let fallbackCatalogManifest = includeAppleIntelligence
+            ? CuratedModelManifests.merged(
+                id: "llmkit.example.dynamic-fallback-catalog",
+                manifests: [CuratedModelManifests.appleFoundation, fallbackManifest]
+            )
+            : fallbackManifest
+        let fallbackCatalog = DefaultModelCatalog(manifest: fallbackCatalogManifest)
+        let remoteCatalog = DynamicModelCatalog(
+            remoteSource: remoteSource,
+            fallbackCatalog: fallbackCatalog,
+            fetchManifestData: fetchManifestData
+        )
+        let catalog: any ModelCatalogProviding
+        if includeAppleIntelligence {
+            catalog = CompositeModelCatalog(catalogs: [
+                DefaultModelCatalog(manifest: CuratedModelManifests.appleFoundation),
+                remoteCatalog
+            ])
+        } else {
+            catalog = remoteCatalog
+        }
+
+        var resolvedBackends: [any ModelBackend] = []
+        if includeAppleIntelligence {
+            resolvedBackends.append(FoundationModelsBackend())
+        }
+        resolvedBackends.append(MLXBackend(runtimeAvailable: runtimeAvailable))
+        resolvedBackends.append(contentsOf: additionalBackends)
+
+        let container = LLMKitFactory.makeContainer(
+            catalog: catalog,
+            backends: resolvedBackends,
+            lifecycle: lifecycle
+        )
+
+        return LLMKitExampleConfiguration(
+            container: container,
+            catalog: catalog,
+            backends: resolvedBackends,
+            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") }
+        )
+    }
+
     func backend(for kind: BackendKind) -> (any ModelBackend)? {
         backends.first { $0.backendKind == kind }
     }

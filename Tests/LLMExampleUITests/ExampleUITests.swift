@@ -1,5 +1,8 @@
+import CryptoKit
+import Foundation
 import LLMCore
 import LLMExampleUI
+import LLMModelLifecycle
 import Testing
 
 @Test func appleIntelligenceExampleDescriptorIsSystemManagedChatModel() {
@@ -43,6 +46,55 @@ import Testing
 }
 
 @MainActor
+@Test func dynamicRemoteManifestConfigurationSurfacesFetchedDownloadableModels() async throws {
+    let remoteModel = ModelDescriptor(
+        id: "remote.qwen",
+        displayName: "Remote Qwen",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat, .completion, .streaming, .offline],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/remote-qwen",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+                    )
+                )
+            ]
+        ),
+        tags: ["downloadable", "mlx", "remote"]
+    )
+    let manifest = ModelManifest(id: "remote", models: [remoteModel])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let configuration = LLMKitExampleConfiguration.dynamicRemoteManifest(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+            )
+        ),
+        fetchManifestData: { _ in data }
+    )
+    let viewModel = LLMKitExampleViewModel(configuration: configuration)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.models.contains { $0.id == remoteModel.id })
+    #expect(viewModel.downloadableModels.contains { $0.id == remoteModel.id })
+}
+
+@MainActor
 @Test func exampleViewModelDefaultsPreferLocalAppleIntelligenceSmokeTest() {
     let viewModel = LLMKitExampleViewModel(configuration: .appleIntelligenceOnly())
 
@@ -50,4 +102,8 @@ import Testing
     #expect(viewModel.privacyMode == .localOnly)
     #expect(viewModel.qualityTier == .balanced)
     #expect(viewModel.maxOutputTokens == 512)
+}
+
+private func hexString(for data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
 }

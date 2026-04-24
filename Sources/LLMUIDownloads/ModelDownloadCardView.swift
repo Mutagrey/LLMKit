@@ -5,19 +5,25 @@ import SwiftUI
 public struct ModelDownloadCardView: View {
     private let descriptor: ModelDescriptor
     private let state: InstallState
+    private let installedSizeBytes: Int64?
     private let isInstallButtonDisabled: Bool
     private let installAction: @Sendable () async -> Void
+    private let deleteAction: (@Sendable () async -> Void)?
 
     public init(
         descriptor: ModelDescriptor,
         state: InstallState,
+        installedSizeBytes: Int64? = nil,
         isInstallButtonDisabled: Bool,
-        installAction: @escaping @Sendable () async -> Void
+        installAction: @escaping @Sendable () async -> Void,
+        deleteAction: (@Sendable () async -> Void)? = nil
     ) {
         self.descriptor = descriptor
         self.state = state
+        self.installedSizeBytes = installedSizeBytes
         self.isInstallButtonDisabled = isInstallButtonDisabled
         self.installAction = installAction
+        self.deleteAction = deleteAction
     }
 
     public var body: some View {
@@ -73,6 +79,9 @@ public struct ModelDownloadCardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 metadataRow(title: "Quantization", value: descriptor.quantization?.format ?? "Standard")
                 metadataRow(title: "Size", value: byteCountTitle(for: descriptor.estimatedDownloadSizeBytes))
+                if let installedSizeBytes {
+                    metadataRow(title: "Installed Size", value: byteCountTitle(for: installedSizeBytes))
+                }
                 metadataRow(title: "License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
                 metadataRow(title: "Context", value: contextTitle)
                 metadataRow(title: "Provider", value: sourceProviderTitle)
@@ -97,14 +106,24 @@ public struct ModelDownloadCardView: View {
 
     private var actionRow: some View {
         HStack(spacing: 12) {
-            Button {
-                Task { await installAction() }
-            } label: {
-                Label(actionTitle, systemImage: actionSymbol)
-                    .frame(maxWidth: .infinity)
+            if isInstalled, let deleteAction {
+                Button(role: .destructive) {
+                    Task { await deleteAction() }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    Task { await installAction() }
+                } label: {
+                    Label(actionTitle, systemImage: actionSymbol)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isInstallButtonDisabled)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isInstallButtonDisabled)
 
             if isInstalled {
                 Label("Installed", systemImage: "checkmark.circle.fill")
@@ -223,7 +242,7 @@ public struct ModelDownloadCardView: View {
         if isInstalling {
             return "In Progress"
         }
-        return "Ready"
+        return "Not Installed"
     }
 
     private var installBadgeTint: Color {

@@ -11,3 +11,5 @@ can be embedded by host apps alongside their own model selection UI.
 `ModelDownloadsViewModel.install(_:)` consumes model install events, tracks in-flight installs by model ID, records thrown install
 errors for presentation, and updates install state by model ID. `refresh()` loads installed records through `ModelLifecycleService`
 when one is provided.
+When the lifecycle service also conforms to `ModelLifecycleMaintenanceService`, the view model exposes installed storage totals
+and delete actions without owning file paths or persistence details.

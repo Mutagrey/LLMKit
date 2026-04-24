@@ -7,6 +7,7 @@ struct CatalogOverviewCard: View {
     let readyModels: Int
     let downloadableModels: Int
     let installedModels: Int
+    let installedSize: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,6 +27,9 @@ struct CatalogOverviewCard: View {
                 GridRow {
                     summaryMetric(title: "Downloadable", value: "\(downloadableModels)", tint: .blue)
                     summaryMetric(title: "Installed", value: "\(installedModels)", tint: .orange)
+                }
+                GridRow {
+                    summaryMetric(title: "Storage", value: installedSize, tint: .secondary)
                 }
             }
         }

@@ -53,12 +53,18 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
         while let model = candidate {
             guard let backend = await registry.backend(for: model.backend) else {
                 lastError = LLMError.unavailable
+                guard request.requirements.allowsFallback else {
+                    throw lastError ?? LLMError.unavailable
+                }
                 candidate = fallback.nextCandidate(after: model, in: plan)
                 continue
             }
             let availability = await backend.availability(for: model)
             guard availability.status == .available else {
                 lastError = LLMError.unavailable
+                guard request.requirements.allowsFallback else {
+                    throw lastError ?? LLMError.unavailable
+                }
                 candidate = fallback.nextCandidate(after: model, in: plan)
                 continue
             }
@@ -70,7 +76,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                     switch event {
                     case .failed(let error):
                         lastError = error
-                        guard fallback.shouldFallback(after: error) else {
+                        guard request.requirements.allowsFallback, fallback.shouldFallback(after: error) else {
                             throw error
                         }
                         shouldTryNextCandidate = true
@@ -87,7 +93,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                 }
             } catch {
                 lastError = error
-                guard fallback.shouldFallback(after: error) else {
+                guard request.requirements.allowsFallback, fallback.shouldFallback(after: error) else {
                     throw error
                 }
             }

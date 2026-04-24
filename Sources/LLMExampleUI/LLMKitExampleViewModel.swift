@@ -47,6 +47,10 @@ public final class LLMKitExampleViewModel {
         return availability[selectedModel.id]
     }
 
+    public var downloadableModels: [ModelDescriptor] {
+        models.filter { $0.tags.contains("downloadable") }
+    }
+
     public var canChatWithSelectedModel: Bool {
         selectedModelAvailability?.status == .available
     }
@@ -59,7 +63,8 @@ public final class LLMKitExampleViewModel {
             qualityTier: qualityTier,
             preferredModel: selectedModel?.id,
             privacyMode: privacyMode,
-            budget: ExecutionBudget(maxOutputTokens: maxOutputTokens)
+            budget: ExecutionBudget(maxOutputTokens: maxOutputTokens),
+            allowsFallback: false
         )
     }
 

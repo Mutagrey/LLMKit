@@ -517,6 +517,29 @@ private actor FailingToolService: ToolService {
     #expect(result.model?.id == "local")
 }
 
+@Test func generationServiceCanDisableFallbackForPreferredModel() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [local, remote])
+    let registry = BackendRegistry(backends: [
+        StreamingBackend(backendKind: .coreML, responseText: "should not execute"),
+        UnavailableBackend(backendKind: .remote)
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.completion],
+        preferredModel: "remote",
+        allowsFallback: false
+    )
+
+    do {
+        _ = try await service.generate(GenerationRequest(prompt: "hi", requirements: requirements))
+        Issue.record("Expected disabled fallback to surface the preferred model failure.")
+    } catch {
+        #expect(error as? LLMError == .unavailable)
+    }
+}
+
 @Test func generationServiceDoesNotFallbackAfterCancellation() async throws {
     let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
     let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
@@ -591,6 +614,33 @@ private actor FailingToolService: ToolService {
 
     #expect(completed?.message.content.text == "chat recovered")
     #expect(completed?.model?.id == "remote")
+}
+
+@Test func chatServiceCanDisableFallbackForPreferredModel() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [local, remote])
+    let registry = BackendRegistry(backends: [
+        StreamingBackend(backendKind: .coreML, responseText: "should not execute"),
+        ThrowingBackend(backendKind: .remote)
+    ])
+    let service = DefaultChatService(router: ModelRouter(catalog: catalog), registry: registry)
+    let userMessage = ChatMessage(role: .user, content: MessageContent(text: "hi"))
+    let request = ChatRequest(
+        messages: [userMessage],
+        requirements: ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            preferredModel: "remote",
+            allowsFallback: false
+        )
+    )
+
+    do {
+        for try await _ in service.send(request) {}
+        Issue.record("Expected disabled fallback to surface the preferred model failure.")
+    } catch {
+        #expect(error as? LLMError == .executionFailed("stream threw"))
+    }
 }
 
 @Test func chatServiceDoesNotFallbackAfterCancellation() async throws {

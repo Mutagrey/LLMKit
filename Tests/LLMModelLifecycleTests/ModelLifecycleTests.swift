@@ -253,6 +253,67 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     #expect(try await restored.state(for: descriptor.id) == .active)
 }
 
+@Test func modelInstallCoordinatorLazilyRestoresPersistedRecords() async throws {
+    let descriptor = ModelDescriptor(
+        id: "lazy-persisted-model",
+        displayName: "Lazy Persisted Model",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.completion]
+    )
+    let store = InstalledModelRecordStore(manifestStore: InMemoryManifestStore())
+    try await store.save([
+        InstalledModelRecord(descriptor: descriptor, installState: .ready)
+    ])
+    let coordinator = ModelInstallCoordinator(recordStore: store)
+
+    #expect(try await coordinator.state(for: descriptor.id) == .ready)
+    #expect(try await coordinator.installedModels().map(\.descriptor.id) == [descriptor.id])
+}
+
+@Test func modelInstallCoordinatorDeletesInstalledModelAndStorage() async throws {
+    let artifactData = Data("weights".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "delete/model",
+        displayName: "Delete Model",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(artifactData.count)
+                )
+            ]
+        )
+    )
+    let store = InstalledModelRecordStore(manifestStore: InMemoryManifestStore())
+    let coordinator = ModelInstallCoordinator(
+        recordStore: store,
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: WritingArtifactDownloader(data: artifactData)
+    )
+
+    for try await _ in coordinator.install(descriptor) {}
+
+    let usage = try await coordinator.storageUsage()
+    #expect(usage.totalBytes == Int64(artifactData.count))
+    #expect(try await coordinator.storageUsage(for: descriptor.id) == Int64(artifactData.count))
+
+    try await coordinator.deleteInstalledModel(descriptor.id)
+
+    #expect(try await coordinator.state(for: descriptor.id) == .notInstalled)
+    #expect(try await coordinator.installedModels().isEmpty)
+    #expect(try await coordinator.storageUsage().totalBytes == 0)
+}
+
 @Test func installedModelRecordStorePersistsRecordsSortedByDisplayName() async throws {
     let zModel = ModelDescriptor(
         id: "z-model",

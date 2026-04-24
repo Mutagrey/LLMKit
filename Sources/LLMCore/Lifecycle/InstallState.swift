@@ -48,6 +48,18 @@ public struct InstalledModelRecord: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
+public struct ModelStorageUsage: Hashable, Codable, Sendable {
+    public let totalBytes: Int64
+    public let modelBytes: [ModelID: Int64]
+
+    public init(totalBytes: Int64, modelBytes: [ModelID: Int64] = [:]) {
+        self.totalBytes = totalBytes
+        self.modelBytes = modelBytes
+    }
+
+    public static let empty = ModelStorageUsage(totalBytes: 0)
+}
+
 public enum ModelInstallEvent: Equatable, Sendable {
     case stateChanged(ModelID, InstallState)
     case progress(ModelID, Double)

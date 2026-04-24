@@ -110,8 +110,9 @@ private struct ExampleModelsTab: View {
                     CatalogOverviewCard(
                         totalModels: viewModel.models.count,
                         readyModels: readyModels.count,
-                        downloadableModels: configuration.downloadableModels.count,
-                        installedModels: installedModels.count
+                        downloadableModels: viewModel.downloadableModels.count,
+                        installedModels: installedModels.count,
+                        installedSize: downloadsViewModel.installedStorageTitle
                     )
                 }
 
@@ -133,14 +134,18 @@ private struct ExampleModelsTab: View {
                         }
                     }
 
-                    if configuration.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
+                    if viewModel.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
                         Section("Install") {
                             ModelDownloadCardView(
                                 descriptor: selectedModel,
                                 state: downloadsViewModel.installState(for: selectedModel.id),
+                                installedSizeBytes: downloadsViewModel.storageBytes(for: selectedModel.id),
                                 isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: selectedModel.id)
                             ) {
                                 await downloadsViewModel.install(selectedModel)
+                                await viewModel.refresh()
+                            } deleteAction: {
+                                await downloadsViewModel.delete(selectedModel.id)
                                 await viewModel.refresh()
                             }
                         }
@@ -163,11 +168,11 @@ private struct ExampleModelsTab: View {
                     }
                 }
 
-                if !configuration.downloadableModels.isEmpty {
+                if !viewModel.downloadableModels.isEmpty {
                     Section("Download Catalog") {
                         NavigationLink {
                             ModelDownloadListView(
-                                descriptors: configuration.downloadableModels,
+                                descriptors: viewModel.downloadableModels,
                                 lifecycleService: configuration.container.lifecycle
                             )
                             .navigationTitle("Downloads")
@@ -234,11 +239,11 @@ private struct ExampleModelsTab: View {
     }
 
     private var installedModels: [ModelDescriptor] {
-        configuration.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }
+        viewModel.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }
     }
 
     private var downloadCandidates: [ModelDescriptor] {
-        configuration.downloadableModels.filter { !viewModel.isAvailable($0) }
+        viewModel.downloadableModels.filter { !viewModel.isAvailable($0) }
     }
 
     private var currentSelectedModelID: ModelID? {

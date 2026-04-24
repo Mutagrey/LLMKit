@@ -14,6 +14,9 @@ supports SHA-256 digest checks for local compatibility and Ed25519 signatures fo
 downloadable remote artifacts, caches the accepted manifest, and falls back to a caller-provided catalog when
 fetching or verification fails.
 
+`CompositeModelCatalog` combines multiple backend-neutral catalogs into one sorted model list, with later catalogs
+replacing descriptors that share the same `ModelID`.
+
 `ModelArtifactDownloading` is the injectable download boundary used by `ModelInstallCoordinator`. The default
 `URLSessionModelArtifactDownloader` downloads declared `ModelArtifact` values to the configured artifact root directory.
 
@@ -22,3 +25,6 @@ fetching or verification fails.
 model ready, and it records `.failed(...)` install state when download or integrity checks fail.
 
 `InstalledModelRecordStore` persists installed model records through the backend-neutral `ManifestStore` contract. `ModelInstallCoordinator.persisted(recordStore:)` restores both installed records and `state(for:)` answers from that store.
+`ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage
+summaries. When initialized with a `recordStore`, it lazily restores records before answering state, install, delete, or storage
+queries so app startup does not require async container construction.

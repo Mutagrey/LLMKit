@@ -24,7 +24,8 @@ public struct ModelDownloadListView: View {
                 DownloadsOverviewCard(
                     totalModels: visibleDescriptors.count,
                     installedModels: installedDescriptors.count,
-                    inProgressModels: inProgressDescriptors.count
+                    inProgressModels: inProgressDescriptors.count,
+                    installedSize: viewModel.installedStorageTitle
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
@@ -93,9 +94,12 @@ public struct ModelDownloadListView: View {
         ModelDownloadCardView(
             descriptor: descriptor,
             state: viewModel.installState(for: descriptor.id),
+            installedSizeBytes: viewModel.storageBytes(for: descriptor.id),
             isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
         ) {
             await viewModel.install(descriptor)
+        } deleteAction: {
+            await viewModel.delete(descriptor.id)
         }
         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
     }
@@ -107,15 +111,20 @@ public final class ModelDownloadsViewModel {
     public private(set) var models: [InstalledModelRecord]
     public private(set) var installStates: [ModelID: InstallState]
     public private(set) var installingModelIDs: Set<ModelID>
+    public private(set) var storageUsage: ModelStorageUsage
     public private(set) var lastErrorMessage: String?
     @ObservationIgnored
     private let lifecycleService: (any ModelLifecycleService)?
+    @ObservationIgnored
+    private let maintenanceService: (any ModelLifecycleMaintenanceService)?
 
     public init(models: [InstalledModelRecord] = [], lifecycleService: (any ModelLifecycleService)? = nil) {
         self.models = models
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
         self.installingModelIDs = []
+        self.storageUsage = .empty
         self.lifecycleService = lifecycleService
+        self.maintenanceService = lifecycleService as? any ModelLifecycleMaintenanceService
     }
 
     public func replaceModels(_ models: [InstalledModelRecord]) {
@@ -130,6 +139,7 @@ public final class ModelDownloadsViewModel {
         lastErrorMessage = nil
         do {
             replaceModels(try await lifecycleService.installedModels())
+            try await refreshStorageUsage()
         } catch {
             lastErrorMessage = String(describing: error)
         }
@@ -152,6 +162,7 @@ public final class ModelDownloadsViewModel {
                     installStates[record.descriptor.id] = record.installState
                     installingModelIDs.remove(record.descriptor.id)
                     upsert(record)
+                    try? await refreshStorageUsage()
                 case .failed(let id, let error):
                     installStates[id] = .failed(String(describing: error))
                     installingModelIDs.remove(id)
@@ -161,6 +172,21 @@ public final class ModelDownloadsViewModel {
             lastErrorMessage = String(describing: error)
         }
         installingModelIDs.remove(descriptor.id)
+    }
+
+    public func delete(_ modelID: ModelID) async {
+        guard let maintenanceService else {
+            return
+        }
+        lastErrorMessage = nil
+        do {
+            try await maintenanceService.deleteInstalledModel(modelID)
+            installStates[modelID] = .notInstalled
+            models.removeAll { $0.descriptor.id == modelID }
+            try await refreshStorageUsage()
+        } catch {
+            lastErrorMessage = String(describing: error)
+        }
     }
 
     public func statusText(for modelID: ModelID) -> String {
@@ -195,6 +221,14 @@ public final class ModelDownloadsViewModel {
         return progress
     }
 
+    public func storageBytes(for modelID: ModelID) -> Int64? {
+        storageUsage.modelBytes[modelID]
+    }
+
+    public var installedStorageTitle: String {
+        ByteCountFormatter.string(fromByteCount: storageUsage.totalBytes, countStyle: .file)
+    }
+
     public func isInstalled(_ modelID: ModelID) -> Bool {
         switch installStates[modelID] {
         case .ready, .warming, .active:
@@ -224,18 +258,32 @@ public final class ModelDownloadsViewModel {
             models.append(record)
         }
     }
+
+    private func refreshStorageUsage() async throws {
+        guard let maintenanceService else {
+            storageUsage = .empty
+            return
+        }
+        storageUsage = try await maintenanceService.storageUsage()
+    }
 }
 
 private struct DownloadsOverviewCard: View {
     let totalModels: Int
     let installedModels: Int
     let inProgressModels: Int
+    let installedSize: String
 
     var body: some View {
-        HStack(spacing: 10) {
-            stat(title: "Catalog", value: "\(totalModels)", tint: .secondary)
-            stat(title: "Installed", value: "\(installedModels)", tint: .green)
-            stat(title: "In Progress", value: "\(inProgressModels)", tint: .blue)
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                stat(title: "Catalog", value: "\(totalModels)", tint: .secondary)
+                stat(title: "Installed", value: "\(installedModels)", tint: .green)
+            }
+            GridRow {
+                stat(title: "In Progress", value: "\(inProgressModels)", tint: .blue)
+                stat(title: "Storage", value: installedSize, tint: .orange)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

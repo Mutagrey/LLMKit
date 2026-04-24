@@ -8,6 +8,7 @@ public struct ExecutionRequirements: Hashable, Codable, Sendable {
     public let preferredModel: ModelID?
     public let privacyMode: PrivacyMode
     public let budget: ExecutionBudget?
+    public let allowsFallback: Bool
 
     public init(
         requiredCapabilities: Set<ModelCapability> = [],
@@ -16,7 +17,8 @@ public struct ExecutionRequirements: Hashable, Codable, Sendable {
         qualityTier: QualityTier = .balanced,
         preferredModel: ModelID? = nil,
         privacyMode: PrivacyMode = .standard,
-        budget: ExecutionBudget? = nil
+        budget: ExecutionBudget? = nil,
+        allowsFallback: Bool = true
     ) {
         self.requiredCapabilities = requiredCapabilities
         self.executionMode = executionMode
@@ -25,6 +27,7 @@ public struct ExecutionRequirements: Hashable, Codable, Sendable {
         self.preferredModel = preferredModel
         self.privacyMode = privacyMode
         self.budget = budget
+        self.allowsFallback = allowsFallback
     }
 }
 

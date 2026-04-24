@@ -32,30 +32,36 @@ public struct ModelIntegrityVerifier: Sendable {
             return true
         }
 
-        let resolver = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
         for artifact in source.artifacts {
-            let fileURL = try resolver.artifactURL(modelID: descriptor.id, artifact: artifact)
-            guard FileManager.default.fileExists(atPath: fileURL.path) else {
-                throw LLMError.verificationFailed("Missing artifact \(artifact.relativePath).")
-            }
-
-            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-            if let expectedBytes = artifact.byteCount,
-               let actualBytes = (attributes[.size] as? NSNumber)?.int64Value,
-               actualBytes != expectedBytes {
-                throw LLMError.verificationFailed("Artifact size mismatch for \(artifact.relativePath).")
-            }
-
-            if let checksum = artifact.checksum {
-                let data = try Data(contentsOf: fileURL)
-                let actual = try Self.digestHex(of: data, algorithm: checksum.algorithm)
-                guard actual.caseInsensitiveCompare(checksum.value) == .orderedSame else {
-                    throw LLMError.verificationFailed("Artifact checksum mismatch for \(artifact.relativePath).")
-                }
-            }
+            _ = try verifyArtifact(artifact, modelID: descriptor.id, at: artifactRootDirectory)
         }
 
         return true
+    }
+
+    func verifyArtifact(_ artifact: ModelArtifact, modelID: ModelID, at artifactRootDirectory: URL) throws -> Int64 {
+        let resolver = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+        let fileURL = try resolver.artifactURL(modelID: modelID, artifact: artifact)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw LLMError.verificationFailed("Missing artifact \(artifact.relativePath).")
+        }
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let actualBytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        if let expectedBytes = artifact.byteCount,
+           actualBytes != expectedBytes {
+            throw LLMError.verificationFailed("Artifact size mismatch for \(artifact.relativePath).")
+        }
+
+        if let checksum = artifact.checksum {
+            let data = try Data(contentsOf: fileURL)
+            let actual = try Self.digestHex(of: data, algorithm: checksum.algorithm)
+            guard actual.caseInsensitiveCompare(checksum.value) == .orderedSame else {
+                throw LLMError.verificationFailed("Artifact checksum mismatch for \(artifact.relativePath).")
+            }
+        }
+
+        return actualBytes
     }
 
     static func digestHex(of data: Data, algorithm: String) throws -> String {

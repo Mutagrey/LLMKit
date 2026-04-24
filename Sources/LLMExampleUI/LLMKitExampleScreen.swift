@@ -159,6 +159,14 @@ private struct ExampleModelsTab: View {
                     }
                 }
 
+                if !installingModels.isEmpty {
+                    Section("Installing Now") {
+                        ForEach(installingModels, id: \.id) { descriptor in
+                            modelSelectionRow(for: descriptor)
+                        }
+                    }
+                }
+
                 if !readyModels.isEmpty {
                     Section("Ready for Chat") {
                         ForEach(readyModels, id: \.id) { descriptor in
@@ -167,8 +175,16 @@ private struct ExampleModelsTab: View {
                     }
                 }
 
+                if !installedButUnavailableModels.isEmpty {
+                    Section("Installed on Device") {
+                        ForEach(installedButUnavailableModels, id: \.id) { descriptor in
+                            modelSelectionRow(for: descriptor)
+                        }
+                    }
+                }
+
                 if !downloadCandidates.isEmpty {
-                    Section("Downloadable for iPhone") {
+                    Section("Available to Download") {
                         ForEach(downloadCandidates, id: \.id) { descriptor in
                             modelSelectionRow(for: descriptor)
                         }
@@ -247,15 +263,40 @@ private struct ExampleModelsTab: View {
     }
 
     private var readyModels: [ModelDescriptor] {
-        viewModel.models.filter { viewModel.isAvailable($0) }
+        viewModel.models
+            .filter { $0.id != currentSelectedModelID && viewModel.isAvailable($0) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private var installingModels: [ModelDescriptor] {
+        viewModel.downloadableModels
+            .filter { $0.id != currentSelectedModelID && downloadsViewModel.isInstalling($0.id) }
+            .sorted { $0.displayName < $1.displayName }
     }
 
     private var installedModels: [ModelDescriptor] {
         viewModel.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }
     }
 
+    private var installedButUnavailableModels: [ModelDescriptor] {
+        viewModel.downloadableModels
+            .filter {
+                $0.id != currentSelectedModelID &&
+                downloadsViewModel.isInstalled($0.id) &&
+                !downloadsViewModel.isInstalling($0.id) &&
+                !viewModel.isAvailable($0)
+            }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
     private var downloadCandidates: [ModelDescriptor] {
-        viewModel.downloadableModels.filter { !viewModel.isAvailable($0) }
+        viewModel.downloadableModels
+            .filter {
+                $0.id != currentSelectedModelID &&
+                !downloadsViewModel.isInstalled($0.id) &&
+                !downloadsViewModel.isInstalling($0.id)
+            }
+            .sorted { $0.displayName < $1.displayName }
     }
 
     private var currentSelectedModelID: ModelID? {

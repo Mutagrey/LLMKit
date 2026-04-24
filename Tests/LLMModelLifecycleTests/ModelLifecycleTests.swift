@@ -17,6 +17,14 @@ private actor InMemoryManifestStore: ManifestStore {
     }
 }
 
+private actor DownloadCounter {
+    private(set) var count = 0
+
+    func increment() {
+        count += 1
+    }
+}
+
 private struct CorruptManifestStore: ManifestStore {
     func loadManifest(named name: String) async throws -> Data? {
         Data("{not-json".utf8)
@@ -29,6 +37,21 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     let data: Data
 
     func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: destination, options: [.atomic])
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(data.count))
+    }
+}
+
+private struct CountingArtifactDownloader: ModelArtifactDownloading {
+    let data: Data
+    let counter: DownloadCounter
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        await counter.increment()
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -170,6 +193,98 @@ private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifa
     #expect(progressValues.contains(0.2))
     #expect(progressValues.contains(0.55))
     #expect(progressValues.contains(1))
+}
+
+@Test func modelInstallCoordinatorReusesValidExistingArtifactsOnRetry() async throws {
+    let artifactData = Data("weights".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-resume",
+        displayName: "Qwen Resume",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(artifactData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: artifactData).map { String(format: "%02x", $0) }.joined()
+                    )
+                )
+            ]
+        )
+    )
+    let counter = DownloadCounter()
+    let primingCoordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: WritingArtifactDownloader(data: artifactData)
+    )
+    for try await _ in primingCoordinator.install(descriptor) {}
+
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CountingArtifactDownloader(data: artifactData, counter: counter)
+    )
+
+    for try await _ in coordinator.install(descriptor) {}
+
+    #expect(await counter.count == 0)
+}
+
+@Test func modelInstallCoordinatorRedownloadsInvalidExistingArtifactsOnRetry() async throws {
+    let validData = Data("valid-weights".utf8)
+    let invalidData = Data("bad".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-redownload",
+        displayName: "Qwen Redownload",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(validData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: validData).map { String(format: "%02x", $0) }.joined()
+                    )
+                )
+            ]
+        )
+    )
+    let resolver = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+    let invalidURL = try resolver.artifactURL(modelID: descriptor.id, artifact: descriptor.source!.artifacts[0])
+    try FileManager.default.createDirectory(
+        at: invalidURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try invalidData.write(to: invalidURL, options: [.atomic])
+
+    let counter = DownloadCounter()
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CountingArtifactDownloader(data: validData, counter: counter)
+    )
+
+    for try await _ in coordinator.install(descriptor) {}
+
+    #expect(await counter.count == 1)
+    #expect(try Data(contentsOf: invalidURL) == validData)
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {

@@ -86,11 +86,11 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
     public nonisolated func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
         AsyncThrowingStream { continuation in
-            var installTask: Task<Void, Never>?
+            let taskHolder = InstallTaskHolder()
             continuation.onTermination = { _ in
-                installTask?.cancel()
+                taskHolder.cancel()
             }
-            installTask = Task {
+            taskHolder.set(Task {
                 do {
                     let record = try await completeInstall(descriptor, continuation: continuation)
                     continuation.yield(.stateChanged(descriptor.id, .ready))
@@ -108,7 +108,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     }
                     continuation.finish(throwing: llmError)
                 }
-            }
+            })
         }
     }
 
@@ -144,10 +144,34 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             totalExpectedBytes: expectedTotalBytes(for: descriptor, artifacts: source.artifacts),
             totalArtifacts: source.artifacts.count
         )
+        let resolver = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
 
         for artifact in source.artifacts {
-            let destination = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
-                .artifactURL(modelID: descriptor.id, artifact: artifact)
+            try Task.checkCancellation()
+            let destination = try resolver.artifactURL(modelID: descriptor.id, artifact: artifact)
+
+            if let restoredBytes = try resumeExistingArtifactIfPossible(
+                artifact,
+                modelID: descriptor.id,
+                artifactRootDirectory: artifactRootDirectory
+            ) {
+                tracker.completedArtifacts += 1
+                tracker.completedBytes += artifact.byteCount ?? restoredBytes
+                let resumedProgress = progressValue(
+                    completedBytes: tracker.completedBytes,
+                    currentArtifactBytes: 0,
+                    totalExpectedBytes: tracker.totalExpectedBytes,
+                    fallbackArtifactCount: tracker.totalArtifacts,
+                    completedArtifacts: tracker.completedArtifacts
+                )
+                try await publishDownloadProgressIfNeeded(
+                    descriptorID: descriptor.id,
+                    continuation: continuation,
+                    progress: resumedProgress,
+                    tracker: tracker
+                )
+                continue
+            }
 
             let result: ModelArtifactDownloadResult
             if let progressDownloader = artifactDownloader as? any ProgressReportingModelArtifactDownloading {
@@ -182,6 +206,27 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
         await stateMachine.transition(modelID: descriptor.id, to: .verifying)
         continuation.yield(.stateChanged(descriptor.id, .verifying))
+    }
+
+    private func resumeExistingArtifactIfPossible(
+        _ artifact: ModelArtifact,
+        modelID: ModelID,
+        artifactRootDirectory: URL
+    ) throws -> Int64? {
+        do {
+            return try integrityVerifier.verifyArtifact(artifact, modelID: modelID, at: artifactRootDirectory)
+        } catch let error as LLMError {
+            guard case .verificationFailed = error else {
+                throw error
+            }
+
+            let artifactURL = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+                .artifactURL(modelID: modelID, artifact: artifact)
+            if FileManager.default.fileExists(atPath: artifactURL.path) {
+                try FileManager.default.removeItem(at: artifactURL)
+            }
+            return nil
+        }
     }
 
     private func verifyArtifacts(
@@ -388,5 +433,23 @@ private final class DownloadProgressTracker: @unchecked Sendable {
         self.artifactExpectedBytes = [:]
         self.completedArtifacts = 0
         self.lastReportedProgress = 0
+    }
+}
+
+private final class InstallTaskHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+
+    func set(_ task: Task<Void, Never>) {
+        lock.lock()
+        self.task = task
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
     }
 }

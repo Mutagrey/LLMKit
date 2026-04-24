@@ -29,6 +29,9 @@ instead of waiting for the current artifact to finish.
 model ready, and it records `.failed(...)` install state when download or integrity checks fail.
 When an install is cancelled, the coordinator removes partial artifacts for that model and returns the install state to
 `.notInstalled` rather than leaving a misleading terminal failure state behind.
+Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk
+and reuses it when size and checksum validation pass, so repeated installs after restart can resume from completed files
+instead of always downloading the full manifest again.
 
 `InstalledModelRecordStore` persists installed model records through the backend-neutral `ManifestStore` contract. `ModelInstallCoordinator.persisted(recordStore:)` restores both installed records and `state(for:)` answers from that store.
 `ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage

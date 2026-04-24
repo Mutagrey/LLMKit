@@ -95,7 +95,7 @@ struct CurrentModelSummaryRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: isAvailable ? "checkmark.circle.fill" : "clock")
-                .foregroundStyle(isAvailable ? Color.green : Color.orange)
+                .foregroundStyle(isAvailable ? Color.green : statusTint)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -104,12 +104,16 @@ struct CurrentModelSummaryRow: View {
                     .lineLimit(1)
                 Text("\(exampleBackendTitle(descriptor.backend)) · \(status)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(statusTint)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 12)
         }
+    }
+
+    private var statusTint: Color {
+        statusColor(for: status, isAvailable: isAvailable)
     }
 }
 
@@ -217,12 +221,28 @@ struct ModelRow: View {
 
             Text(isAvailable ? "Ready" : status)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(isAvailable ? .green : .secondary)
+                .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("\(descriptor.displayName), \(isSelected ? "selected" : "not selected")")
     }
+}
+
+private func statusColor(for status: String, isAvailable: Bool) -> Color {
+    if isAvailable || status == "Ready" || status == "Active" {
+        return .green
+    }
+    if status.hasPrefix("Downloading") || status == "Downloaded" || status == "Verifying" || status == "Compiling" {
+        return .blue
+    }
+    if status.hasPrefix("Failed") {
+        return .red
+    }
+    if status.hasPrefix("Evicted") || status == "Install required" || status == "Network required" {
+        return .orange
+    }
+    return .secondary
 }
 
 func exampleBackendTitle(_ backend: BackendKind) -> String {

@@ -65,12 +65,19 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
             delegateQueue: nil
         )
 
-        return try await withCheckedThrowingContinuation { continuation in
-            delegate.onComplete = { result in
-                session.invalidateAndCancel()
-                continuation.resume(with: result)
+        let downloadTask = session.downloadTask(with: artifact.url)
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.onComplete = { result in
+                    session.invalidateAndCancel()
+                    continuation.resume(with: result)
+                }
+                downloadTask.resume()
             }
-            session.downloadTask(with: artifact.url).resume()
+        } onCancel: {
+            downloadTask.cancel()
+            session.invalidateAndCancel()
         }
     }
 }
@@ -131,6 +138,10 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
         didCompleteWithError error: Error?
     ) {
         if let error {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                finish(with: .failure(CancellationError()))
+                return
+            }
             finish(with: .failure(error))
             return
         }

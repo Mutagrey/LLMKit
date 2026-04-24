@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMProtocols
 import Observation
@@ -11,16 +12,44 @@ public final class LLMKitExampleViewModel {
     public private(set) var catalogStatus: ModelCatalogStatus
     public private(set) var isRefreshing: Bool
     public private(set) var lastErrorMessage: String?
-    public var selectedModelID: ModelID?
-    public var executionMode: ExecutionMode
-    public var qualityTier: QualityTier
-    public var privacyMode: PrivacyMode
-    public var maxOutputTokens: Int
+    public var selectedModelID: ModelID? {
+        didSet {
+            persistSelectedModelID()
+        }
+    }
+    public var executionMode: ExecutionMode {
+        didSet {
+            defaults.set(executionMode.rawValue, forKey: Self.executionModeKey)
+        }
+    }
+    public var qualityTier: QualityTier {
+        didSet {
+            defaults.set(qualityTier.rawValue, forKey: Self.qualityTierKey)
+        }
+    }
+    public var privacyMode: PrivacyMode {
+        didSet {
+            defaults.set(privacyMode.rawValue, forKey: Self.privacyModeKey)
+        }
+    }
+    public var maxOutputTokens: Int {
+        didSet {
+            let clampedValue = max(64, min(maxOutputTokens, 4096))
+            if clampedValue != maxOutputTokens {
+                maxOutputTokens = clampedValue
+                return
+            }
+            defaults.set(maxOutputTokens, forKey: Self.maxOutputTokensKey)
+        }
+    }
 
     @ObservationIgnored
     private let configuration: LLMKitExampleConfiguration
+    @ObservationIgnored
+    private let defaults: UserDefaults
 
-    public init(configuration: LLMKitExampleConfiguration) {
+    public init(configuration: LLMKitExampleConfiguration, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         self.configuration = configuration
         self.models = []
         self.availability = [:]
@@ -28,11 +57,11 @@ public final class LLMKitExampleViewModel {
         self.catalogStatus = .local
         self.isRefreshing = false
         self.lastErrorMessage = nil
-        self.selectedModelID = nil
-        self.executionMode = .preferOffline
-        self.qualityTier = .balanced
-        self.privacyMode = .localOnly
-        self.maxOutputTokens = 512
+        self.selectedModelID = defaults.string(forKey: Self.selectedModelIDKey).map(ModelID.init(rawValue:))
+        self.executionMode = Self.persistedExecutionMode(from: defaults)
+        self.qualityTier = Self.persistedQualityTier(from: defaults)
+        self.privacyMode = Self.persistedPrivacyMode(from: defaults)
+        self.maxOutputTokens = Self.persistedMaxOutputTokens(from: defaults)
     }
 
     public var selectedModel: ModelDescriptor? {
@@ -90,9 +119,7 @@ public final class LLMKitExampleViewModel {
             } else {
                 catalogStatus = .local
             }
-            if selectedModelID == nil {
-                selectedModelID = models.first?.id
-            }
+            normalizeSelectedModel()
             try await refreshInstallStates()
             await refreshAvailability()
         } catch {
@@ -155,6 +182,25 @@ public final class LLMKitExampleViewModel {
         }
     }
 
+    private func normalizeSelectedModel() {
+        guard let selectedModelID else {
+            selectedModelID = models.first?.id
+            return
+        }
+
+        if !models.contains(where: { $0.id == selectedModelID }) {
+            self.selectedModelID = models.first?.id
+        }
+    }
+
+    private func persistSelectedModelID() {
+        if let selectedModelID {
+            defaults.set(selectedModelID.rawValue, forKey: Self.selectedModelIDKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedModelIDKey)
+        }
+    }
+
     private func installText(for state: InstallState) -> String {
         switch state {
         case .notInstalled:
@@ -178,5 +224,40 @@ public final class LLMKitExampleViewModel {
         case .evicted(let reason):
             return "Evicted: \(String(describing: reason))"
         }
+    }
+
+    private static let selectedModelIDKey = "llmkit.example.selectedModelID"
+    private static let executionModeKey = "llmkit.example.executionMode"
+    private static let qualityTierKey = "llmkit.example.qualityTier"
+    private static let privacyModeKey = "llmkit.example.privacyMode"
+    private static let maxOutputTokensKey = "llmkit.example.maxOutputTokens"
+
+    private static func persistedExecutionMode(from defaults: UserDefaults) -> ExecutionMode {
+        guard let rawValue = defaults.string(forKey: executionModeKey),
+              let mode = ExecutionMode(rawValue: rawValue) else {
+            return .preferOffline
+        }
+        return mode
+    }
+
+    private static func persistedQualityTier(from defaults: UserDefaults) -> QualityTier {
+        guard let rawValue = defaults.string(forKey: qualityTierKey),
+              let tier = QualityTier(rawValue: rawValue) else {
+            return .balanced
+        }
+        return tier
+    }
+
+    private static func persistedPrivacyMode(from defaults: UserDefaults) -> PrivacyMode {
+        guard let rawValue = defaults.string(forKey: privacyModeKey),
+              let mode = PrivacyMode(rawValue: rawValue) else {
+            return .localOnly
+        }
+        return mode
+    }
+
+    private static func persistedMaxOutputTokens(from defaults: UserDefaults) -> Int {
+        let storedValue = defaults.object(forKey: maxOutputTokensKey) as? Int ?? 512
+        return max(64, min(storedValue, 4096))
     }
 }

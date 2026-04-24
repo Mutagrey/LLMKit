@@ -23,8 +23,11 @@ the signed remote manifest versus a local fallback.
 `LLMKitExampleScreen` presents:
 
 - Chat tab for sending prompts through the selected model, with a toolbar-based model picker and compact reusable chat UI.
-- Models tab for catalog source status, selected-model metadata, readiness grouping, storage totals, and inline lifecycle/download controls.
+- Models tab for catalog source status, selected-model metadata, readiness grouping, storage totals, and inline lifecycle/download controls including user-requested cancellation.
 - Settings tab for generation quality, routing mode, privacy mode, response token budget, and catalog source diagnostics.
 
 The chat tab sets `ExecutionRequirements.allowsFallback` to `false` so demo-only backends do not silently answer when the
 explicitly selected model is unavailable or fails.
+
+`LLMKitExampleViewModel` persists the selected model plus routing preferences and output-token budget in `UserDefaults`,
+so the demo restores the previous selection and settings after app restart while keeping that state inside the UI layer.

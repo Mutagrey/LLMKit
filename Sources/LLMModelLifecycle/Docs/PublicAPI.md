@@ -21,10 +21,14 @@ replacing descriptors that share the same `ModelID`.
 `ModelArtifactDownloading` is the injectable download boundary used by `ModelInstallCoordinator`. When an implementation
 also conforms to `ProgressReportingModelArtifactDownloading`, the coordinator emits byte-level progress updates instead
 of only per-file completion updates. The default `URLSessionModelArtifactDownloader` supports that richer progress path.
+Task cancellation now propagates into the default downloader so user-requested cancellation can stop an in-flight transfer
+instead of waiting for the current artifact to finish.
 
 `ModelIntegrityVerifier` validates manifest signatures plus downloaded artifact size and checksum metadata.
 `ModelInstallCoordinator` now transitions installs through download and verification phases before marking a
 model ready, and it records `.failed(...)` install state when download or integrity checks fail.
+When an install is cancelled, the coordinator removes partial artifacts for that model and returns the install state to
+`.notInstalled` rather than leaving a misleading terminal failure state behind.
 
 `InstalledModelRecordStore` persists installed model records through the backend-neutral `ManifestStore` contract. `ModelInstallCoordinator.persisted(recordStore:)` restores both installed records and `state(for:)` answers from that store.
 `ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage

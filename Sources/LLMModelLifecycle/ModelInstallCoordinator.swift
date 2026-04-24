@@ -86,7 +86,11 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
     public nonisolated func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            var installTask: Task<Void, Never>?
+            continuation.onTermination = { _ in
+                installTask?.cancel()
+            }
+            installTask = Task {
                 do {
                     let record = try await completeInstall(descriptor, continuation: continuation)
                     continuation.yield(.stateChanged(descriptor.id, .ready))
@@ -94,8 +98,14 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     continuation.finish()
                 } catch {
                     let llmError = Self.mapInstallError(error)
-                    await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
-                    continuation.yield(.failed(descriptor.id, llmError))
+                    if llmError == .cancelled {
+                        try? await cleanupPartialArtifacts(for: descriptor.id)
+                        await stateMachine.transition(modelID: descriptor.id, to: .notInstalled)
+                        continuation.yield(.stateChanged(descriptor.id, .notInstalled))
+                    } else {
+                        await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
+                        continuation.yield(.failed(descriptor.id, llmError))
+                    }
                     continuation.finish(throwing: llmError)
                 }
             }
@@ -178,6 +188,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         for descriptor: ModelDescriptor,
         continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
     ) async throws {
+        try Task.checkCancellation()
+
         guard let artifactRootDirectory else {
             if descriptor.source?.artifacts.isEmpty == false {
                 throw LLMError.verificationFailed("No artifact root directory configured for \(descriptor.id.rawValue).")
@@ -191,6 +203,18 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
 
         _ = try await integrityVerifier.verify(descriptor, at: artifactRootDirectory)
+    }
+
+    private func cleanupPartialArtifacts(for modelID: ModelID) async throws {
+        guard let artifactRootDirectory else {
+            return
+        }
+
+        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+            .modelDirectory(for: modelID)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
     }
 
     private func expectedTotalBytes(for descriptor: ModelDescriptor, artifacts: [ModelArtifact]) -> Int64? {
@@ -319,6 +343,9 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             return llmError
         }
         if error is CancellationError {
+            return .cancelled
+        }
+        if let urlError = error as? URLError, urlError.code == .cancelled {
             return .cancelled
         }
         return .executionFailed(String(describing: error))

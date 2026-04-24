@@ -102,7 +102,9 @@ public struct ModelDownloadListView: View {
             installedSizeBytes: viewModel.storageBytes(for: descriptor.id),
             isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
         ) {
-            await viewModel.install(descriptor)
+            await viewModel.beginInstall(descriptor)
+        } cancelAction: {
+            await viewModel.cancelInstall(descriptor.id)
         } deleteAction: {
             await viewModel.delete(descriptor.id)
         }
@@ -124,6 +126,8 @@ public final class ModelDownloadsViewModel {
     private let lifecycleService: (any ModelLifecycleService)?
     @ObservationIgnored
     private let maintenanceService: (any ModelLifecycleMaintenanceService)?
+    @ObservationIgnored
+    private var installTasks: [ModelID: Task<Void, Never>]
 
     public init(
         models: [InstalledModelRecord] = [],
@@ -137,6 +141,7 @@ public final class ModelDownloadsViewModel {
         self.descriptors = descriptors
         self.lifecycleService = lifecycleService
         self.maintenanceService = lifecycleService as? any ModelLifecycleMaintenanceService
+        self.installTasks = [:]
     }
 
     public func replaceModels(_ models: [InstalledModelRecord]) {
@@ -181,17 +186,41 @@ public final class ModelDownloadsViewModel {
                 case .completed(let record):
                     installStates[record.descriptor.id] = record.installState
                     installingModelIDs.remove(record.descriptor.id)
+                    installTasks[record.descriptor.id] = nil
                     upsert(record)
                     try? await refreshStorageUsage()
                 case .failed(let id, let error):
                     installStates[id] = .failed(String(describing: error))
                     installingModelIDs.remove(id)
+                    installTasks[id] = nil
                 }
             }
         } catch {
-            lastErrorMessage = String(describing: error)
+            if let llmError = error as? LLMError, llmError == .cancelled {
+                installStates[descriptor.id] = .notInstalled
+            } else {
+                lastErrorMessage = String(describing: error)
+            }
         }
         installingModelIDs.remove(descriptor.id)
+        installTasks[descriptor.id] = nil
+    }
+
+    public func beginInstall(_ descriptor: ModelDescriptor) async {
+        guard installTasks[descriptor.id] == nil else {
+            return
+        }
+
+        installTasks[descriptor.id] = Task { [weak self] in
+            await self?.install(descriptor)
+        }
+    }
+
+    public func cancelInstall(_ modelID: ModelID) async {
+        installTasks[modelID]?.cancel()
+        installTasks[modelID] = nil
+        installingModelIDs.remove(modelID)
+        installStates[modelID] = .notInstalled
     }
 
     public func delete(_ modelID: ModelID) async {
@@ -199,6 +228,8 @@ public final class ModelDownloadsViewModel {
             return
         }
         lastErrorMessage = nil
+        installTasks[modelID]?.cancel()
+        installTasks[modelID] = nil
         do {
             try await maintenanceService.deleteInstalledModel(modelID)
             installStates[modelID] = .notInstalled

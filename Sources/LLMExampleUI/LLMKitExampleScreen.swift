@@ -146,7 +146,10 @@ private struct ExampleModelsTab: View {
                                 installedSizeBytes: downloadsViewModel.storageBytes(for: selectedModel.id),
                                 isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: selectedModel.id)
                             ) {
-                                await downloadsViewModel.install(selectedModel)
+                                await downloadsViewModel.beginInstall(selectedModel)
+                                await viewModel.refresh()
+                            } cancelAction: {
+                                await downloadsViewModel.cancelInstall(selectedModel.id)
                                 await viewModel.refresh()
                             } deleteAction: {
                                 await downloadsViewModel.delete(selectedModel.id)

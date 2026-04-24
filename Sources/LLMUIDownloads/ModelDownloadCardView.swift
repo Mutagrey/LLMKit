@@ -8,6 +8,7 @@ public struct ModelDownloadCardView: View {
     private let installedSizeBytes: Int64?
     private let isInstallButtonDisabled: Bool
     private let installAction: @Sendable () async -> Void
+    private let cancelAction: (@Sendable () async -> Void)?
     private let deleteAction: (@Sendable () async -> Void)?
 
     public init(
@@ -16,6 +17,7 @@ public struct ModelDownloadCardView: View {
         installedSizeBytes: Int64? = nil,
         isInstallButtonDisabled: Bool,
         installAction: @escaping @Sendable () async -> Void,
+        cancelAction: (@Sendable () async -> Void)? = nil,
         deleteAction: (@Sendable () async -> Void)? = nil
     ) {
         self.descriptor = descriptor
@@ -23,6 +25,7 @@ public struct ModelDownloadCardView: View {
         self.installedSizeBytes = installedSizeBytes
         self.isInstallButtonDisabled = isInstallButtonDisabled
         self.installAction = installAction
+        self.cancelAction = cancelAction
         self.deleteAction = deleteAction
     }
 
@@ -114,6 +117,14 @@ public struct ModelDownloadCardView: View {
                     Task { await deleteAction() }
                 } label: {
                     Label("Delete", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            } else if isInstalling, let cancelAction {
+                Button(role: .cancel) {
+                    Task { await cancelAction() }
+                } label: {
+                    Label("Cancel", systemImage: "xmark.circle")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

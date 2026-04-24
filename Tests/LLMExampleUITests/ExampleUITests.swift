@@ -149,6 +149,47 @@ import Testing
     #expect(viewModel.maxOutputTokens == 512)
 }
 
+@MainActor
+@Test func exampleViewModelRestoresPersistedSelectionAndRoutingPreferences() {
+    let suiteName = "LLMKitExampleUITests.\(#function)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defaults.set(LLMKitExampleModels.qwen31Point7BMLX4Bit.id.rawValue, forKey: "llmkit.example.selectedModelID")
+    defaults.set(ExecutionMode.remoteAllowed.rawValue, forKey: "llmkit.example.executionMode")
+    defaults.set(QualityTier.best.rawValue, forKey: "llmkit.example.qualityTier")
+    defaults.set(PrivacyMode.standard.rawValue, forKey: "llmkit.example.privacyMode")
+    defaults.set(1024, forKey: "llmkit.example.maxOutputTokens")
+
+    let viewModel = LLMKitExampleViewModel(
+        configuration: .localIPhoneCatalog(),
+        defaults: defaults
+    )
+
+    #expect(viewModel.selectedModelID == LLMKitExampleModels.qwen31Point7BMLX4Bit.id)
+    #expect(viewModel.executionMode == .remoteAllowed)
+    #expect(viewModel.qualityTier == .best)
+    #expect(viewModel.privacyMode == .standard)
+    #expect(viewModel.maxOutputTokens == 1024)
+}
+
+@MainActor
+@Test func exampleViewModelFallsBackToFirstModelWhenPersistedSelectionIsMissing() async {
+    let suiteName = "LLMKitExampleUITests.\(#function)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defaults.set("missing.model", forKey: "llmkit.example.selectedModelID")
+
+    let viewModel = LLMKitExampleViewModel(
+        configuration: .appleIntelligenceOnly(),
+        defaults: defaults
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.selectedModelID == LLMKitExampleModels.appleIntelligence.id)
+    #expect(defaults.string(forKey: "llmkit.example.selectedModelID") == LLMKitExampleModels.appleIntelligence.id.rawValue)
+}
+
 private func hexString(for data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }

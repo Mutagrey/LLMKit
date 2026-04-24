@@ -15,8 +15,7 @@ struct ChatComposer: View {
                 HStack(alignment: .bottom, spacing: 8) {
                     TextField("Ask anything", text: $draftText, axis: .vertical)
                         .focused(isComposerFocused)
-                        .submitLabel(.send)
-                        .onSubmit(send)
+                        .submitLabel(.return)
                         .lineLimit(1...6)
                         .font(.callout)
                         .padding(.horizontal, 14)
@@ -30,31 +29,20 @@ struct ChatComposer: View {
                                 .strokeBorder(Color.secondary.opacity(0.12), lineWidth: 1)
                         }
 
-                    if isComposerFocused.wrappedValue {
-                        Button(action: dismissKeyboard) {
-                            Image(systemName: "keyboard.chevron.compact.down")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(width: 34, height: 34)
-                        }
-                        .buttonStyle(.bordered)
-                        .clipShape(Circle())
-                        .accessibilityLabel("Hide keyboard")
-                    }
-
                     Button(action: send) {
                         Group {
                             if isStreaming {
                                 ProgressView()
                                     .controlSize(.small)
                             } else {
-                                Image(systemName: "arrow.up")
+                                Image(systemName: "paperplane.fill")
                                     .font(.headline.weight(.semibold))
                             }
                         }
-                        .frame(width: 36, height: 36)
+                        .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.borderedProminent)
-                    .clipShape(Circle())
+                    .clipShape(.capsule)
                     .disabled(isSendDisabled)
                     .accessibilityLabel("Send")
                 }

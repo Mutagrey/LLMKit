@@ -318,6 +318,23 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     #expect(restored.models.map(\.id) == manifest.models.map(\.id))
 }
 
+@Test func manifestLoaderVerifiesEd25519ManifestSignature() throws {
+    let manifest = CuratedModelManifests.localIPhoneTextModels
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let signature = ModelManifestSignature(
+        algorithm: "ed25519",
+        value: hexString(for: signatureData),
+        publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+    )
+
+    let restored = try loader.load(data: data, expectedSignature: signature)
+
+    #expect(restored.id == manifest.id)
+}
+
 @Test func manifestLoaderRejectsInvalidExpectedSignature() throws {
     let manifest = CuratedModelManifests.localIPhoneTextModels
     let loader = ManifestLoader()
@@ -339,4 +356,121 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
 
     let models = try await catalog.availableModels()
     #expect(models.map(\.id) == manifest.models.sorted { $0.displayName < $1.displayName }.map(\.id))
+}
+
+@Test func dynamicModelCatalogUsesSignedRemoteManifestWhenValid() async throws {
+    let descriptor = downloadableDescriptor(
+        id: "remote-valid",
+        checksum: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+    )
+    let manifest = ModelManifest(id: "remote", models: [descriptor])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: []),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [descriptor.id])
+}
+
+@Test func dynamicModelCatalogFallsBackWhenRemoteSignatureFails() async throws {
+    let fallback = ModelDescriptor(
+        id: "fallback",
+        displayName: "Fallback",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let manifest = ModelManifest(id: "remote", models: [
+        downloadableDescriptor(id: "remote-invalid", checksum: "invalid")
+    ])
+    let data = try ManifestLoader().encoded(manifest)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: String(repeating: "0", count: 128),
+                publicKeyValue: hexString(for: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation)
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: [fallback]),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [fallback.id])
+}
+
+@Test func dynamicModelCatalogFallsBackWhenRemoteArtifactLacksChecksum() async throws {
+    let fallback = ModelDescriptor(
+        id: "fallback",
+        displayName: "Fallback",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let manifest = ModelManifest(id: "remote", models: [
+        downloadableDescriptor(id: "remote-missing-checksum", checksum: nil)
+    ])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: [fallback]),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [fallback.id])
+}
+
+private func downloadableDescriptor(id: ModelID, checksum: String?) -> ModelDescriptor {
+    ModelDescriptor(
+        id: id,
+        displayName: id.rawValue,
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat, .completion, .streaming, .offline],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    checksum: checksum.map { ModelArtifactChecksum(algorithm: "sha256", value: $0) }
+                )
+            ]
+        )
+    )
+}
+
+private func hexString(for data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
 }

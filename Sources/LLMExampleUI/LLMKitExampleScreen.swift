@@ -116,16 +116,25 @@ private struct ExampleModelsTab: View {
                 }
 
                 if let selectedModel = viewModel.selectedModel {
-                    Section("Selected Model") {
-                        SelectedModelSummaryCard(
-                            descriptor: selectedModel,
-                            status: viewModel.statusText(for: selectedModel),
-                            isAvailable: viewModel.isAvailable(selectedModel)
-                        )
+                    Section("Current") {
+                        NavigationLink {
+                            ModelDetailView(
+                                descriptor: selectedModel,
+                                status: viewModel.statusText(for: selectedModel),
+                                isAvailable: viewModel.isAvailable(selectedModel)
+                            )
+                            .navigationTitle(selectedModel.displayName)
+                        } label: {
+                            CurrentModelSummaryRow(
+                                descriptor: selectedModel,
+                                status: viewModel.statusText(for: selectedModel),
+                                isAvailable: viewModel.isAvailable(selectedModel)
+                            )
+                        }
                     }
 
                     if configuration.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
-                        Section("Install / Update") {
+                        Section("Install") {
                             ModelDownloadCardView(
                                 descriptor: selectedModel,
                                 state: downloadsViewModel.installState(for: selectedModel.id),
@@ -141,7 +150,7 @@ private struct ExampleModelsTab: View {
                 if !readyModels.isEmpty {
                     Section("Ready for Chat") {
                         ForEach(readyModels, id: \.id) { descriptor in
-                            modelRowButton(for: descriptor)
+                            modelSelectionRow(for: descriptor)
                         }
                     }
                 }
@@ -149,7 +158,7 @@ private struct ExampleModelsTab: View {
                 if !downloadCandidates.isEmpty {
                     Section("Downloadable for iPhone") {
                         ForEach(downloadCandidates, id: \.id) { descriptor in
-                            modelRowButton(for: descriptor)
+                            modelSelectionRow(for: descriptor)
                         }
                     }
                 }
@@ -189,20 +198,34 @@ private struct ExampleModelsTab: View {
         }
     }
 
-    private func modelRowButton(for descriptor: ModelDescriptor) -> some View {
-        Button {
-            viewModel.selectedModelID = descriptor.id
-        } label: {
-            ModelRow(
-                descriptor: descriptor,
-                status: viewModel.statusText(for: descriptor),
-                isSystemManaged: viewModel.isSystemManaged(descriptor),
-                isDownloadable: configuration.downloadableModels.contains(where: { $0.id == descriptor.id }),
-                isSelected: descriptor.id == currentSelectedModelID,
-                isAvailable: viewModel.isAvailable(descriptor)
-            )
+    private func modelSelectionRow(for descriptor: ModelDescriptor) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                viewModel.selectedModelID = descriptor.id
+            } label: {
+                ModelRow(
+                    descriptor: descriptor,
+                    status: viewModel.statusText(for: descriptor),
+                    isSelected: descriptor.id == currentSelectedModelID,
+                    isAvailable: viewModel.isAvailable(descriptor)
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                ModelDetailView(
+                    descriptor: descriptor,
+                    status: viewModel.statusText(for: descriptor),
+                    isAvailable: viewModel.isAvailable(descriptor)
+                )
+                .navigationTitle(descriptor.displayName)
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Model details")
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .contentShape(Rectangle())
     }
 

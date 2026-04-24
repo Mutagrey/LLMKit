@@ -6,9 +6,23 @@ public struct ModelIntegrityVerifier: Sendable {
     public init() {}
 
     public func verifyManifestData(_ data: Data, signature: ModelManifestSignature) throws -> Bool {
-        let actual = try Self.digestHex(of: data, algorithm: signature.algorithm)
-        guard actual.caseInsensitiveCompare(signature.value) == .orderedSame else {
-            throw LLMError.verificationFailed("Manifest signature mismatch.")
+        switch signature.algorithm.lowercased() {
+        case "sha256":
+            let actual = try Self.digestHex(of: data, algorithm: signature.algorithm)
+            guard actual.caseInsensitiveCompare(signature.value) == .orderedSame else {
+                throw LLMError.verificationFailed("Manifest signature mismatch.")
+            }
+        case "ed25519":
+            guard let publicKeyValue = signature.publicKeyValue else {
+                throw LLMError.verificationFailed("Manifest signature is missing a public key.")
+            }
+            let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: Self.data(fromHex: publicKeyValue))
+            let signatureData = try Self.data(fromHex: signature.value)
+            guard publicKey.isValidSignature(signatureData, for: data) else {
+                throw LLMError.verificationFailed("Manifest signature mismatch.")
+            }
+        default:
+            throw LLMError.verificationFailed("Unsupported verification algorithm: \(signature.algorithm).")
         }
         return true
     }
@@ -51,5 +65,27 @@ public struct ModelIntegrityVerifier: Sendable {
         default:
             throw LLMError.verificationFailed("Unsupported verification algorithm: \(algorithm).")
         }
+    }
+
+    static func hexString(for data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func data(fromHex value: String) throws -> Data {
+        guard value.count.isMultiple(of: 2) else {
+            throw LLMError.verificationFailed("Invalid hex-encoded verification value.")
+        }
+
+        var data = Data()
+        var index = value.startIndex
+        while index < value.endIndex {
+            let nextIndex = value.index(index, offsetBy: 2)
+            guard let byte = UInt8(value[index..<nextIndex], radix: 16) else {
+                throw LLMError.verificationFailed("Invalid hex-encoded verification value.")
+            }
+            data.append(byte)
+            index = nextIndex
+        }
+        return data
     }
 }

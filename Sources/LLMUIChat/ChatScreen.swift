@@ -41,12 +41,6 @@ public struct ChatScreen: View {
                     dismissKeyboard: dismissKeyboard
                 )
             }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Hide Keyboard", systemImage: "keyboard.chevron.compact.down", action: dismissKeyboard)
-                }
-            }
             .navigationTitle(title)
             .background(.background)
             .onAppear {

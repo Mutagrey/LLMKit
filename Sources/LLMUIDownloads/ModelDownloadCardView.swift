@@ -21,15 +21,15 @@ public struct ModelDownloadCardView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            descriptorPills
+            primaryFacts
             metadata
             ModelInstallProgressView(state: state)
             actionRow
         }
-        .padding(16)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(14)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var header: some View {
@@ -51,41 +51,43 @@ public struct ModelDownloadCardView: View {
         }
     }
 
-    private var descriptorPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                DownloadPill(title: backendTitle, tint: .secondary)
-                DownloadPill(title: familyTitle, tint: .secondary)
-                if let quantization = descriptor.quantization?.format {
-                    DownloadPill(title: quantization, tint: .blue)
-                }
-                if let minimumRAMGB = descriptor.minimumRAMGB {
-                    DownloadPill(title: "\(minimumRAMGB) GB RAM", tint: .orange)
-                }
-                if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB {
-                    DownloadPill(title: "\(minimumFreeDiskGB) GB free", tint: .orange)
-                }
-                if descriptor.tags.contains("iphone-recommended") {
-                    DownloadPill(title: "iPhone Recommended", tint: .green)
-                }
-                if descriptor.tags.contains("iphone-pro") {
-                    DownloadPill(title: "iPhone Pro", tint: .purple)
-                }
+    private var primaryFacts: some View {
+        HStack(spacing: 8) {
+            fact(backendTitle)
+            fact(familyTitle)
+            if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
+                fact(byteCountTitle(for: estimatedDownloadSizeBytes))
             }
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private func fact(_ title: String) -> some View {
+        Text(title)
+            .lineLimit(1)
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            metadataRow(title: "Quantization", value: descriptor.quantization?.format ?? "Standard")
-            metadataRow(title: "Size", value: byteCountTitle(for: descriptor.estimatedDownloadSizeBytes))
-            metadataRow(title: "License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
-            metadataRow(title: "Context", value: contextTitle)
-            metadataRow(title: "Provider", value: sourceProviderTitle)
-            if let revision = descriptor.source?.revision {
-                metadataRow(title: "Revision", value: String(revision.prefix(10)))
+        DisclosureGroup("Details") {
+            VStack(alignment: .leading, spacing: 8) {
+                metadataRow(title: "Quantization", value: descriptor.quantization?.format ?? "Standard")
+                metadataRow(title: "Size", value: byteCountTitle(for: descriptor.estimatedDownloadSizeBytes))
+                metadataRow(title: "License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
+                metadataRow(title: "Context", value: contextTitle)
+                metadataRow(title: "Provider", value: sourceProviderTitle)
+                if let revision = descriptor.source?.revision {
+                    metadataRow(title: "Revision", value: String(revision.prefix(10)))
+                }
+                if let minimumRAMGB = descriptor.minimumRAMGB {
+                    metadataRow(title: "Memory", value: "\(minimumRAMGB) GB RAM")
+                }
+                if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB {
+                    metadataRow(title: "Disk", value: "\(minimumFreeDiskGB) GB free")
+                }
             }
         }
+        .font(.caption)
     }
 
     private func metadataRow(title: String, value: String) -> some View {

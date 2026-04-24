@@ -16,9 +16,11 @@ public struct ModelManifest: Hashable, Codable, Sendable, Identifiable {
 public struct ModelManifestSignature: Hashable, Codable, Sendable {
     public let algorithm: String
     public let value: String
+    public let publicKeyValue: String?
 
-    public init(algorithm: String, value: String) {
+    public init(algorithm: String, value: String, publicKeyValue: String? = nil) {
         self.algorithm = algorithm
         self.value = value
+        self.publicKeyValue = publicKeyValue
     }
 }

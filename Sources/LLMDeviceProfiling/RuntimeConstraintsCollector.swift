@@ -11,7 +11,13 @@ public struct RuntimeConstraintsCollector: Sendable {
     }
 
     private func availableFreeDiskGB(at volumeURL: URL?) -> Int? {
-        let targetURL = volumeURL ?? FileManager.default.homeDirectoryForCurrentUser
+        let targetURL: URL
+        if let volumeURL {
+            targetURL = volumeURL
+        } else {
+            // Use the app's documents directory as a representative volume URL on iOS
+            targetURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        }
         guard let values = try? targetURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
               let bytes = values.volumeAvailableCapacityForImportantUsage else {
             return nil

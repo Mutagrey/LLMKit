@@ -45,198 +45,141 @@ struct CatalogOverviewCard: View {
     }
 }
 
-struct SelectedModelSummaryCard: View {
+struct CurrentModelSummaryRow: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(descriptor.displayName)
-                        .font(.headline)
-                    Text(descriptor.source?.repository ?? exampleModelFamilyTitle(descriptor.family))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
+        HStack(spacing: 12) {
+            Image(systemName: isAvailable ? "checkmark.circle.fill" : "clock")
+                .foregroundStyle(isAvailable ? Color.green : Color.orange)
+                .accessibilityHidden(true)
 
-                Spacer(minLength: 12)
-
-                ModelPill(title: isAvailable ? "Ready" : "Not Ready", tint: isAvailable ? .green : .orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(descriptor.displayName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text("\(exampleBackendTitle(descriptor.backend)) · \(status)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            FlowLayout(spacing: 8) {
-                ModelPill(title: exampleBackendTitle(descriptor.backend), tint: .secondary)
-                ModelPill(title: exampleModelFamilyTitle(descriptor.family), tint: .secondary)
-                if let quantization = descriptor.quantization?.format {
-                    ModelPill(title: quantization, tint: .blue)
-                }
+            Spacer(minLength: 12)
+        }
+    }
+}
+
+struct ModelDetailView: View {
+    let descriptor: ModelDescriptor
+    let status: String
+    let isAvailable: Bool
+
+    var body: some View {
+        List {
+            Section("Summary") {
+                LabeledContent("Status", value: isAvailable ? "Ready" : status)
+                LabeledContent("Backend", value: exampleBackendTitle(descriptor.backend))
+                LabeledContent("Family", value: exampleModelFamilyTitle(descriptor.family))
+                LabeledContent("Model ID", value: descriptor.id.rawValue)
             }
 
-            FlowLayout(spacing: 8) {
+            Section("Requirements") {
+                LabeledContent("Download", value: exampleByteCountTitle(descriptor.estimatedDownloadSizeBytes))
                 if let minimumRAMGB = descriptor.minimumRAMGB {
-                    metricPill(systemImage: "memorychip", value: "\(minimumRAMGB) GB RAM")
+                    LabeledContent("Memory", value: "\(minimumRAMGB) GB RAM")
                 }
                 if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB {
-                    metricPill(systemImage: "internaldrive", value: "\(minimumFreeDiskGB) GB free")
+                    LabeledContent("Free Disk", value: "\(minimumFreeDiskGB) GB")
                 }
                 if let contextWindowTokens = descriptor.contextWindowTokens {
-                    metricPill(systemImage: "text.quote", value: "\(contextWindowTokens) ctx")
+                    LabeledContent("Context", value: "\(contextWindowTokens) tokens")
+                }
+                if let quantization = descriptor.quantization?.format {
+                    LabeledContent("Quantization", value: quantization)
                 }
             }
 
             if !descriptor.capabilities.isEmpty {
-                FlowLayout(spacing: 8) {
+                Section("Capabilities") {
                     ForEach(exampleCapabilityTitles(for: descriptor), id: \.self) { capability in
-                        ModelPill(title: capability, tint: .secondary)
+                        Text(capability)
                     }
                 }
             }
 
-            LabeledContent("Status", value: status)
-                .font(.caption)
+            Section("Source") {
+                LabeledContent("Provider", value: sourceProviderTitle)
+                if let repository = descriptor.source?.repository {
+                    LabeledContent("Repository", value: repository)
+                }
+                if let revision = descriptor.source?.revision {
+                    LabeledContent("Revision", value: String(revision.prefix(12)))
+                }
+                LabeledContent("License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func metricPill(systemImage: String, value: String) -> some View {
-        Label(value, systemImage: systemImage)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    private var sourceProviderTitle: String {
+        guard let provider = descriptor.source?.provider else {
+            return "Unknown"
+        }
+
+        switch provider {
+        case .huggingFace:
+            return "Hugging Face"
+        case .remoteURL:
+            return "Remote URL"
+        case .bundled:
+            return "Bundled"
+        case .custom(let value):
+            return value
+        }
     }
 }
 
 struct ModelRow: View {
     let descriptor: ModelDescriptor
     let status: String
-    let isSystemManaged: Bool
-    let isDownloadable: Bool
     let isSelected: Bool
     let isAvailable: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: isSystemManaged ? "apple.intelligence" : "cpu")
-                .font(.subheadline.weight(.semibold))
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.body)
                 .frame(width: 24, height: 24)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(descriptor.displayName)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-
-                    if isSystemManaged {
-                        ModelPill(title: "System", tint: .secondary)
-                    } else if isDownloadable {
-                        ModelPill(title: "Local", tint: .blue)
-                    }
-
-                    ModelPill(title: isAvailable ? "Ready" : "Needs Install", tint: isAvailable ? .green : .orange)
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(descriptor.displayName)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
                 HStack(spacing: 8) {
                     Text(exampleBackendTitle(descriptor.backend))
+                    Text(exampleModelFamilyTitle(descriptor.family))
                     if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
                         Text(exampleByteCountTitle(estimatedDownloadSizeBytes))
-                    }
-                    if let minimumRAMGB = descriptor.minimumRAMGB {
-                        Text("\(minimumRAMGB) GB RAM")
                     }
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-
-                Text(status)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
 
             Spacer(minLength: 12)
 
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.body)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
-                .accessibilityLabel(isSelected ? "Selected" : "Not selected")
+            Text(isAvailable ? "Ready" : status)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(isAvailable ? .green : .secondary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct ModelPill: View {
-    let title: String
-    let tint: Color
-
-    var body: some View {
-        Text(title)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.quinary, in: Capsule(style: .continuous))
-    }
-}
-
-private struct FlowLayout: Layout {
-    let spacing: CGFloat
-
-    init(spacing: CGFloat = 8) {
-        self.spacing = spacing
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .greatestFiniteMagnitude
-        var width: CGFloat = 0
-        var height: CGFloat = 0
-        var rowWidth: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if rowWidth > 0, rowWidth + spacing + size.width > maxWidth {
-                width = max(width, rowWidth)
-                height += rowHeight + spacing
-                rowWidth = size.width
-                rowHeight = size.height
-            } else {
-                rowWidth += rowWidth == 0 ? size.width : spacing + size.width
-                rowHeight = max(rowHeight, size.height)
-            }
-        }
-
-        width = max(width, rowWidth)
-        height += rowHeight
-        return CGSize(width: width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let maxWidth = bounds.width
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.minX + maxWidth {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-
-            subview.place(
-                at: CGPoint(x: x, y: y),
-                proposal: ProposedViewSize(width: size.width, height: size.height)
-            )
-
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
+        .accessibilityLabel("\(descriptor.displayName), \(isSelected ? "selected" : "not selected")")
     }
 }
 

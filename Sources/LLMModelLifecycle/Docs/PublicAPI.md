@@ -12,13 +12,15 @@ supports SHA-256 digest checks for local compatibility and Ed25519 signatures fo
 
 `DynamicModelCatalog` loads a remote manifest only when an Ed25519 signature validates, requires checksums on
 downloadable remote artifacts, caches the accepted manifest, and falls back to a caller-provided catalog when
-fetching or verification fails.
+fetching or verification fails. It also exposes `ModelCatalogStatusProviding` so host UI can explain when the signed
+remote manifest is active versus when a fallback catalog is being used.
 
 `CompositeModelCatalog` combines multiple backend-neutral catalogs into one sorted model list, with later catalogs
 replacing descriptors that share the same `ModelID`.
 
-`ModelArtifactDownloading` is the injectable download boundary used by `ModelInstallCoordinator`. The default
-`URLSessionModelArtifactDownloader` downloads declared `ModelArtifact` values to the configured artifact root directory.
+`ModelArtifactDownloading` is the injectable download boundary used by `ModelInstallCoordinator`. When an implementation
+also conforms to `ProgressReportingModelArtifactDownloading`, the coordinator emits byte-level progress updates instead
+of only per-file completion updates. The default `URLSessionModelArtifactDownloader` supports that richer progress path.
 
 `ModelIntegrityVerifier` validates manifest signatures plus downloaded artifact size and checksum metadata.
 `ModelInstallCoordinator` now transitions installs through download and verification phases before marking a

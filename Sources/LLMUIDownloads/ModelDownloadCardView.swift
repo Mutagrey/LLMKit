@@ -31,7 +31,10 @@ public struct ModelDownloadCardView: View {
             header
             primaryFacts
             metadata
-            ModelInstallProgressView(state: state)
+            ModelInstallProgressView(
+                state: state,
+                estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
+            )
             actionRow
         }
         .padding(14)
@@ -279,9 +282,11 @@ private struct DownloadPill: View {
 
 public struct ModelInstallProgressView: View {
     private let state: InstallState
+    private let estimatedTotalBytes: Int64?
 
-    public init(state: InstallState) {
+    public init(state: InstallState, estimatedTotalBytes: Int64? = nil) {
         self.state = state
+        self.estimatedTotalBytes = estimatedTotalBytes
     }
 
     public var body: some View {
@@ -293,6 +298,12 @@ public struct ModelInstallProgressView: View {
                 Spacer(minLength: 8)
                 Text(progressTitle)
                     .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            if let transferTitle {
+                Text(transferTitle)
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
 
@@ -374,6 +385,17 @@ public struct ModelInstallProgressView: View {
         }
     }
 
+    private var transferTitle: String? {
+        guard case .downloading(let progress) = state,
+              let estimatedTotalBytes,
+              estimatedTotalBytes > 0 else {
+            return nil
+        }
+
+        let writtenBytes = Int64((progress * Double(estimatedTotalBytes)).rounded())
+        return "\(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
+    }
+
     private var statusColor: Color {
         switch state {
         case .notInstalled:
@@ -394,5 +416,9 @@ public struct ModelInstallProgressView: View {
             return 0
         }
         return max(totalWidth * progressValue, 8)
+    }
+
+    private func byteCountTitle(for bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }

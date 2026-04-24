@@ -15,6 +15,9 @@ need prompt-level JSON guidance while native structured generation adapters are 
 `ExecutionRequirements` carries backend-neutral routing constraints, including `allowsFallback` for flows that must stay
 on the explicitly selected model.
 
+Catalog metadata includes `ModelCatalogStatus` and `ModelCatalogSourceKind`, which let host apps explain whether a
+catalog is local, signed remote, or using a fallback manifest without pulling lifecycle implementation details into UI.
+
 Streaming helpers include `StreamedTextAccumulator`, a small value type for accumulating text deltas without duplicating ad hoc string state across modules.
 
 Tool calling is described through backend-neutral `ToolDefinition`, `ToolArguments`, `ToolInvocation`, `ToolResult`, `ToolCallID`, `ToolCallReference`, and `ToolValue`.

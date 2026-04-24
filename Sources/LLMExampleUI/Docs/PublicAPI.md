@@ -17,13 +17,14 @@ and builds the example composition from that manifest without moving manifest lo
 
 `LLMKitExampleConfiguration.dynamicRemoteManifest(remoteSource:)` wires `DynamicModelCatalog` into the example app so the
 Models tab can refresh a signed internet catalog at runtime and fall back to the curated local catalog when fetch or
-verification fails.
+verification fails. The example view model also surfaces the catalog source status so the demo can show when it is using
+the signed remote manifest versus a local fallback.
 
 `LLMKitExampleScreen` presents:
 
 - Chat tab for sending prompts through the selected model, with a toolbar-based model picker and compact reusable chat UI.
-- Models tab for catalog status, selected-model metadata, readiness grouping, and inline lifecycle/download controls.
-- Settings tab for generation quality, routing mode, privacy mode, and response token budget.
+- Models tab for catalog source status, selected-model metadata, readiness grouping, storage totals, and inline lifecycle/download controls.
+- Settings tab for generation quality, routing mode, privacy mode, response token budget, and catalog source diagnostics.
 
 The chat tab sets `ExecutionRequirements.allowsFallback` to `false` so demo-only backends do not silently answer when the
 explicitly selected model is unavailable or fails.

@@ -8,15 +8,24 @@ struct CatalogOverviewCard: View {
     let downloadableModels: Int
     let installedModels: Int
     let installedSize: String
+    let catalogStatus: ModelCatalogStatus
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Local Catalog")
+            Text(catalogTitle)
                 .font(.headline)
 
-            Text("A lifecycle-owned catalog of on-device models curated for Apple platforms.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(catalogSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let catalogMessage {
+                    Text(catalogMessage)
+                        .font(.caption2)
+                        .foregroundStyle(catalogStatus.source == .fallback ? .orange : .secondary)
+                        .lineLimit(2)
+                }
+            }
 
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
                 GridRow {
@@ -46,6 +55,35 @@ struct CatalogOverviewCard: View {
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var catalogTitle: String {
+        switch catalogStatus.source {
+        case .local:
+            return "Local Catalog"
+        case .remoteVerified:
+            return "Remote Catalog"
+        case .fallback:
+            return "Fallback Catalog"
+        }
+    }
+
+    private var catalogSubtitle: String {
+        switch catalogStatus.source {
+        case .local:
+            return "A lifecycle-owned catalog of on-device models curated for Apple platforms."
+        case .remoteVerified:
+            return "Loaded from a signed remote manifest and merged into the demo catalog."
+        case .fallback:
+            return "Remote catalog could not be used, so the demo is showing the local fallback manifest."
+        }
+    }
+
+    private var catalogMessage: String? {
+        guard let message = catalogStatus.message, !message.isEmpty else {
+            return nil
+        }
+        return message
     }
 }
 

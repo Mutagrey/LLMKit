@@ -15,13 +15,14 @@ public struct RemoteModelCatalogSource: Hashable, Sendable {
     }
 }
 
-public actor DynamicModelCatalog: ModelCatalogProviding, ModelManifestProviding {
+public actor DynamicModelCatalog: ModelCatalogProviding, ModelManifestProviding, ModelCatalogStatusProviding {
     private let remoteSource: RemoteModelCatalogSource
     private let fallbackCatalog: any ModelCatalogProviding
     private let loader: ManifestLoader
     private let fetchManifestData: @Sendable (URL) async throws -> Data
     private let validator: ModelManifestValidator
     private var cachedRemoteManifest: ModelManifest?
+    private var currentStatus: ModelCatalogStatus
 
     public init(
         remoteSource: RemoteModelCatalogSource,
@@ -35,13 +36,22 @@ public actor DynamicModelCatalog: ModelCatalogProviding, ModelManifestProviding 
         self.loader = loader
         self.fetchManifestData = fetchManifestData
         self.validator = validator
+        self.currentStatus = .local
     }
 
     public func availableModels() async throws -> [ModelDescriptor] {
         do {
             let manifest = try await remoteManifest()
+            currentStatus = ModelCatalogStatus(
+                source: .remoteVerified,
+                message: remoteSource.url.host ?? remoteSource.url.absoluteString
+            )
             return manifest.models.sorted { $0.displayName < $1.displayName }
         } catch {
+            currentStatus = ModelCatalogStatus(
+                source: .fallback,
+                message: String(describing: error)
+            )
             return try await fallbackCatalog.availableModels()
         }
     }
@@ -52,6 +62,10 @@ public actor DynamicModelCatalog: ModelCatalogProviding, ModelManifestProviding 
 
     public func descriptor(for id: ModelID) async throws -> ModelDescriptor? {
         try await availableModels().first { $0.id == id }
+    }
+
+    public func catalogStatus() async -> ModelCatalogStatus {
+        currentStatus
     }
 
     public func refresh() async throws -> ModelManifest {

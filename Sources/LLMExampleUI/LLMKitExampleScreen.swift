@@ -99,7 +99,10 @@ private struct ExampleModelsTab: View {
         self.viewModel = viewModel
         self.configuration = configuration
         self._downloadsViewModel = State(
-            initialValue: ModelDownloadsViewModel(lifecycleService: configuration.container.lifecycle)
+            initialValue: ModelDownloadsViewModel(
+                descriptors: configuration.downloadableModels,
+                lifecycleService: configuration.container.lifecycle
+            )
         )
     }
 
@@ -112,7 +115,8 @@ private struct ExampleModelsTab: View {
                         readyModels: readyModels.count,
                         downloadableModels: viewModel.downloadableModels.count,
                         installedModels: installedModels.count,
-                        installedSize: downloadsViewModel.installedStorageTitle
+                        installedSize: downloadsViewModel.installedStorageTitle,
+                        catalogStatus: viewModel.catalogStatus
                     )
                 }
 
@@ -195,10 +199,15 @@ private struct ExampleModelsTab: View {
             }
             .refreshable {
                 await viewModel.refresh()
+                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
                 await downloadsViewModel.refresh()
             }
             .task {
+                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
                 await downloadsViewModel.refresh()
+            }
+            .task(id: trackedDownloadablesKey) {
+                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
             }
         }
     }
@@ -249,6 +258,10 @@ private struct ExampleModelsTab: View {
     private var currentSelectedModelID: ModelID? {
         viewModel.selectedModel?.id
     }
+
+    private var trackedDownloadablesKey: String {
+        viewModel.downloadableModels.map { $0.id.rawValue }.joined(separator: "|")
+    }
 }
 
 private struct ExampleSettingsTab: View {
@@ -291,6 +304,15 @@ private struct ExampleSettingsTab: View {
                     } else {
                         Text("No model selected")
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Catalog") {
+                    LabeledContent("Source", value: catalogSourceTitle)
+                    if let catalogMessage {
+                        Text(catalogMessage)
+                            .font(.caption)
+                            .foregroundStyle(viewModel.catalogStatus.source == .fallback ? .orange : .secondary)
                     }
                 }
             }
@@ -343,6 +365,24 @@ private struct ExampleSettingsTab: View {
             get: { viewModel.maxOutputTokens },
             set: { viewModel.maxOutputTokens = $0 }
         )
+    }
+
+    private var catalogSourceTitle: String {
+        switch viewModel.catalogStatus.source {
+        case .local:
+            return "Local"
+        case .remoteVerified:
+            return "Signed Remote"
+        case .fallback:
+            return "Fallback"
+        }
+    }
+
+    private var catalogMessage: String? {
+        guard let message = viewModel.catalogStatus.message, !message.isEmpty else {
+            return nil
+        }
+        return message
     }
 
     private func title(for mode: ExecutionMode) -> String {

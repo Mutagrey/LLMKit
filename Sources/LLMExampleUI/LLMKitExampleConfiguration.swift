@@ -9,17 +9,20 @@ import LLMProtocols
 public struct LLMKitExampleConfiguration: Sendable {
     public let container: LLMKitContainer
     public let catalog: any ModelCatalogProviding
+    public let catalogStatusProvider: (any ModelCatalogStatusProviding)?
     public let backends: [any ModelBackend]
     public let downloadableModels: [ModelDescriptor]
 
     public init(
         container: LLMKitContainer,
         catalog: any ModelCatalogProviding,
+        catalogStatusProvider: (any ModelCatalogStatusProviding)? = nil,
         backends: [any ModelBackend],
         downloadableModels: [ModelDescriptor] = []
     ) {
         self.container = container
         self.catalog = catalog
+        self.catalogStatusProvider = catalogStatusProvider
         self.backends = backends
         self.downloadableModels = downloadableModels
     }
@@ -129,6 +132,7 @@ public struct LLMKitExampleConfiguration: Sendable {
         return LLMKitExampleConfiguration(
             container: container,
             catalog: catalog,
+            catalogStatusProvider: remoteCatalog,
             backends: resolvedBackends,
             downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") }
         )
@@ -168,6 +172,7 @@ public struct LLMKitExampleConfiguration: Sendable {
         return LLMKitExampleConfiguration(
             container: container,
             catalog: catalog,
+            catalogStatusProvider: nil,
             backends: resolvedBackends,
             downloadableModels: downloadableModels
         )

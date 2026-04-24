@@ -8,6 +8,7 @@ public final class LLMKitExampleViewModel {
     public private(set) var models: [ModelDescriptor]
     public private(set) var availability: [ModelID: BackendAvailability]
     public private(set) var installStates: [ModelID: InstallState]
+    public private(set) var catalogStatus: ModelCatalogStatus
     public private(set) var isRefreshing: Bool
     public private(set) var lastErrorMessage: String?
     public var selectedModelID: ModelID?
@@ -24,6 +25,7 @@ public final class LLMKitExampleViewModel {
         self.models = []
         self.availability = [:]
         self.installStates = [:]
+        self.catalogStatus = .local
         self.isRefreshing = false
         self.lastErrorMessage = nil
         self.selectedModelID = nil
@@ -83,6 +85,11 @@ public final class LLMKitExampleViewModel {
         lastErrorMessage = nil
         do {
             models = try await configuration.catalog.availableModels()
+            if let catalogStatusProvider = configuration.catalogStatusProvider {
+                catalogStatus = await catalogStatusProvider.catalogStatus()
+            } else {
+                catalogStatus = .local
+            }
             if selectedModelID == nil {
                 selectedModelID = models.first?.id
             }

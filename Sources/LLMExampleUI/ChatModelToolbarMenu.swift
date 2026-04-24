@@ -65,6 +65,12 @@ struct ChatModelToolbarMenu: View {
         if statusText == "Available" || statusText == "Ready" || statusText == "Active" {
             return .green
         }
+        if statusText.hasPrefix("Downloading") || statusText == "Verifying" || statusText == "Compiling" {
+            return .blue
+        }
+        if statusText.hasPrefix("Failed") {
+            return .red
+        }
         return .secondary
     }
 

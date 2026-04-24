@@ -38,6 +38,36 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     }
 }
 
+private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifactDownloading {
+    let expectedByteCount: Int64
+    let checkpoints: [Int64]
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        try await download(artifact, to: destination) { _ in }
+    }
+
+    func download(
+        _ artifact: ModelArtifact,
+        to destination: URL,
+        onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void
+    ) async throws -> ModelArtifactDownloadResult {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = Data(repeating: 0x61, count: Int(expectedByteCount))
+        try data.write(to: destination, options: [.atomic])
+        for checkpoint in checkpoints {
+            await onProgress(ModelArtifactDownloadProgress(
+                artifactID: artifact.id,
+                bytesWritten: checkpoint,
+                expectedTotalBytes: expectedByteCount
+            ))
+        }
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: expectedByteCount)
+    }
+}
+
 @Test func modelInstallCoordinatorPublishesReadyRecord() async throws {
     let descriptor = ModelDescriptor(
         id: "local-model",
@@ -98,6 +128,48 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     #expect(events.contains(.progress(descriptor.id, 1)))
     #expect(events.contains(.stateChanged(descriptor.id, .verifying)))
     #expect(try await coordinator.state(for: descriptor.id) == .ready)
+}
+
+@Test func modelInstallCoordinatorUsesStreamingByteProgressWhenAvailable() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-streaming-progress",
+        displayName: "Qwen Streaming Progress",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors"
+                )
+            ]
+        ),
+        estimatedDownloadSizeBytes: 100
+    )
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: ProgressReportingArtifactDownloader(
+            expectedByteCount: 100,
+            checkpoints: [20, 55, 100]
+        )
+    )
+
+    var progressValues: [Double] = []
+    for try await event in coordinator.install(descriptor) {
+        if case .progress(_, let progress) = event {
+            progressValues.append(progress)
+        }
+    }
+
+    #expect(progressValues.contains(0.2))
+    #expect(progressValues.contains(0.55))
+    #expect(progressValues.contains(1))
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {
@@ -508,6 +580,68 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     let models = try await catalog.availableModels()
 
     #expect(models.map(\.id) == [fallback.id])
+}
+
+@Test func dynamicModelCatalogReportsRemoteVerifiedStatusAfterSuccessfulFetch() async throws {
+    let descriptor = downloadableDescriptor(
+        id: "remote-status-valid",
+        checksum: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+    )
+    let manifest = ModelManifest(id: "remote", models: [descriptor])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: []),
+        fetchManifestData: { _ in data }
+    )
+
+    _ = try await catalog.availableModels()
+    let status = await catalog.catalogStatus()
+
+    #expect(status.source == .remoteVerified)
+    #expect(status.message == "example.com")
+}
+
+@Test func dynamicModelCatalogReportsFallbackStatusAfterVerificationFailure() async throws {
+    let fallback = ModelDescriptor(
+        id: "fallback-status",
+        displayName: "Fallback Status",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let manifest = ModelManifest(id: "remote", models: [
+        downloadableDescriptor(id: "remote-invalid-status", checksum: "invalid")
+    ])
+    let data = try ManifestLoader().encoded(manifest)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: String(repeating: "0", count: 128),
+                publicKeyValue: hexString(for: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation)
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: [fallback]),
+        fetchManifestData: { _ in data }
+    )
+
+    _ = try await catalog.availableModels()
+    let status = await catalog.catalogStatus()
+
+    #expect(status.source == .fallback)
+    #expect(status.message?.contains("Manifest signature mismatch") == true)
 }
 
 private func downloadableDescriptor(id: ModelID, checksum: String?) -> ModelDescriptor {

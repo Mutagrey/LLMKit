@@ -92,6 +92,51 @@ import Testing
 
     #expect(viewModel.models.contains { $0.id == remoteModel.id })
     #expect(viewModel.downloadableModels.contains { $0.id == remoteModel.id })
+    #expect(viewModel.catalogStatus.source == .remoteVerified)
+}
+
+@MainActor
+@Test func dynamicRemoteManifestConfigurationReportsFallbackStatusWhenRemoteCatalogFails() async throws {
+    let configuration = LLMKitExampleConfiguration.dynamicRemoteManifest(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: String(repeating: "0", count: 128),
+                publicKeyValue: hexString(for: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation)
+            )
+        ),
+        fetchManifestData: { _ in
+            try ManifestLoader().encoded(ModelManifest(
+                id: "remote",
+                models: [ModelDescriptor(
+                    id: "remote.invalid",
+                    displayName: "Remote Invalid",
+                    family: .qwen,
+                    backend: .mlx,
+                    capabilities: [.chat],
+                    source: ModelSource(
+                        provider: .huggingFace,
+                        repository: "example/remote-invalid",
+                        artifacts: [
+                            ModelArtifact(
+                                id: "weights",
+                                url: URL(string: "https://example.com/model.safetensors")!,
+                                relativePath: "model.safetensors"
+                            )
+                        ]
+                    ),
+                    tags: ["downloadable", "mlx", "remote"]
+                )]
+            ))
+        }
+    )
+    let viewModel = LLMKitExampleViewModel(configuration: configuration)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.catalogStatus.source == .fallback)
+    #expect(viewModel.models.contains { $0.id == LLMKitExampleModels.qwen25HalfBInstructMLX4Bit.id })
 }
 
 @MainActor

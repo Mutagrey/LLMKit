@@ -14,7 +14,11 @@ public struct ModelDownloadListView: View {
         descriptors: [ModelDescriptor] = [],
         lifecycleService: (any ModelLifecycleService)? = nil
     ) {
-        self._viewModel = State(initialValue: ModelDownloadsViewModel(models: models, lifecycleService: lifecycleService))
+        self._viewModel = State(initialValue: ModelDownloadsViewModel(
+            models: models,
+            descriptors: descriptors,
+            lifecycleService: lifecycleService
+        ))
         self.configuredDescriptors = descriptors
     }
 
@@ -60,6 +64,7 @@ public struct ModelDownloadListView: View {
             }
         }
         .task {
+            viewModel.updateDescriptors(configuredDescriptors)
             await viewModel.refresh()
         }
     }
@@ -114,15 +119,22 @@ public final class ModelDownloadsViewModel {
     public private(set) var storageUsage: ModelStorageUsage
     public private(set) var lastErrorMessage: String?
     @ObservationIgnored
+    private var descriptors: [ModelDescriptor]
+    @ObservationIgnored
     private let lifecycleService: (any ModelLifecycleService)?
     @ObservationIgnored
     private let maintenanceService: (any ModelLifecycleMaintenanceService)?
 
-    public init(models: [InstalledModelRecord] = [], lifecycleService: (any ModelLifecycleService)? = nil) {
+    public init(
+        models: [InstalledModelRecord] = [],
+        descriptors: [ModelDescriptor] = [],
+        lifecycleService: (any ModelLifecycleService)? = nil
+    ) {
         self.models = models
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
         self.installingModelIDs = []
         self.storageUsage = .empty
+        self.descriptors = descriptors
         self.lifecycleService = lifecycleService
         self.maintenanceService = lifecycleService as? any ModelLifecycleMaintenanceService
     }
@@ -132,6 +144,13 @@ public final class ModelDownloadsViewModel {
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
     }
 
+    public func updateDescriptors(_ descriptors: [ModelDescriptor]) {
+        self.descriptors = descriptors
+        for descriptor in descriptors where installStates[descriptor.id] == nil {
+            installStates[descriptor.id] = .notInstalled
+        }
+    }
+
     public func refresh() async {
         guard let lifecycleService else {
             return
@@ -139,6 +158,7 @@ public final class ModelDownloadsViewModel {
         lastErrorMessage = nil
         do {
             replaceModels(try await lifecycleService.installedModels())
+            try await refreshInstallStates()
             try await refreshStorageUsage()
         } catch {
             lastErrorMessage = String(describing: error)
@@ -257,6 +277,19 @@ public final class ModelDownloadsViewModel {
         } else {
             models.append(record)
         }
+    }
+
+    private func refreshInstallStates() async throws {
+        guard let lifecycleService else {
+            return
+        }
+
+        let trackedIDs = Set(descriptors.map(\.id)).union(models.map(\.descriptor.id))
+        var resolvedStates = installStates
+        for modelID in trackedIDs {
+            resolvedStates[modelID] = try await lifecycleService.state(for: modelID)
+        }
+        installStates = resolvedStates
     }
 
     private func refreshStorageUsage() async throws {

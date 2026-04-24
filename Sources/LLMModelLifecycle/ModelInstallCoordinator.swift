@@ -130,18 +130,44 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: 0))
         continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0)))
 
-        let usesByteProgress = source.artifacts.allSatisfy { $0.byteCount != nil }
-        let totalUnits = expectedProgressUnits(for: source.artifacts)
-        var completedUnits: Int64 = 0
+        let tracker = DownloadProgressTracker(
+            totalExpectedBytes: expectedTotalBytes(for: descriptor, artifacts: source.artifacts),
+            totalArtifacts: source.artifacts.count
+        )
 
         for artifact in source.artifacts {
             let destination = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
                 .artifactURL(modelID: descriptor.id, artifact: artifact)
-            let result = try await artifactDownloader.download(artifact, to: destination)
-            completedUnits += usesByteProgress ? (artifact.byteCount ?? result.bytesWritten) : 1
-            let progress = min(Double(completedUnits) / Double(totalUnits), 1)
-            await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: progress))
-            continuation.yield(.progress(descriptor.id, progress))
+
+            let result: ModelArtifactDownloadResult
+            if let progressDownloader = artifactDownloader as? any ProgressReportingModelArtifactDownloading {
+                result = try await progressDownloader.download(artifact, to: destination) { progress in
+                    await self.updateDownloadProgress(
+                        descriptorID: descriptor.id,
+                        continuation: continuation,
+                        artifactProgress: progress,
+                        tracker: tracker
+                    )
+                }
+            } else {
+                result = try await artifactDownloader.download(artifact, to: destination)
+            }
+
+            tracker.completedArtifacts += 1
+            tracker.completedBytes += tracker.artifactExpectedBytes[artifact.id] ?? artifact.byteCount ?? result.bytesWritten
+            let overallProgress = progressValue(
+                completedBytes: tracker.completedBytes,
+                currentArtifactBytes: 0,
+                totalExpectedBytes: tracker.totalExpectedBytes,
+                fallbackArtifactCount: tracker.totalArtifacts,
+                completedArtifacts: tracker.completedArtifacts
+            )
+            try await publishDownloadProgressIfNeeded(
+                descriptorID: descriptor.id,
+                continuation: continuation,
+                progress: overallProgress,
+                tracker: tracker
+            )
         }
 
         await stateMachine.transition(modelID: descriptor.id, to: .verifying)
@@ -167,13 +193,82 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         _ = try await integrityVerifier.verify(descriptor, at: artifactRootDirectory)
     }
 
-    private func expectedProgressUnits(for artifacts: [ModelArtifact]) -> Int64 {
+    private func expectedTotalBytes(for descriptor: ModelDescriptor, artifacts: [ModelArtifact]) -> Int64? {
+        if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes, estimatedDownloadSizeBytes > 0 {
+            return estimatedDownloadSizeBytes
+        }
+
         let knownBytes = artifacts.compactMap(\.byteCount)
         let total = knownBytes.reduce(Int64(0), +)
         if knownBytes.count == artifacts.count, total > 0 {
             return total
         }
-        return Int64(max(artifacts.count, 1))
+        return nil
+    }
+
+    private func updateDownloadProgress(
+        descriptorID: ModelID,
+        continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation,
+        artifactProgress: ModelArtifactDownloadProgress,
+        tracker: DownloadProgressTracker
+    ) async {
+        if let expectedTotalBytes = artifactProgress.expectedTotalBytes, expectedTotalBytes > 0 {
+            tracker.artifactExpectedBytes[artifactProgress.artifactID] = expectedTotalBytes
+        }
+
+        let progress = progressValue(
+            completedBytes: tracker.completedBytes,
+            currentArtifactBytes: artifactProgress.bytesWritten,
+            totalExpectedBytes: tracker.totalExpectedBytes ?? summedExpectedBytes(from: tracker.artifactExpectedBytes),
+            fallbackArtifactCount: tracker.totalArtifacts,
+            completedArtifacts: tracker.completedArtifacts
+        )
+
+        try? await publishDownloadProgressIfNeeded(
+            descriptorID: descriptorID,
+            continuation: continuation,
+            progress: progress,
+            tracker: tracker
+        )
+    }
+
+    private func progressValue(
+        completedBytes: Int64,
+        currentArtifactBytes: Int64,
+        totalExpectedBytes: Int64?,
+        fallbackArtifactCount: Int,
+        completedArtifacts: Int
+    ) -> Double {
+        if let totalExpectedBytes, totalExpectedBytes > 0 {
+            let writtenBytes = min(completedBytes + currentArtifactBytes, totalExpectedBytes)
+            return min(Double(writtenBytes) / Double(totalExpectedBytes), 1)
+        }
+
+        let completedUnit = Double(completedArtifacts)
+        let currentUnit = currentArtifactBytes > 0 ? 0.9 : 0
+        let totalUnits = Double(max(fallbackArtifactCount, 1))
+        return min((completedUnit + currentUnit) / totalUnits, 1)
+    }
+
+    private func publishDownloadProgressIfNeeded(
+        descriptorID: ModelID,
+        continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation,
+        progress: Double,
+        tracker: DownloadProgressTracker
+    ) async throws {
+        let clampedProgress = min(max(progress, 0), 1)
+        guard clampedProgress >= 1 || clampedProgress - tracker.lastReportedProgress >= 0.01 else {
+            return
+        }
+
+        tracker.lastReportedProgress = clampedProgress
+        await stateMachine.transition(modelID: descriptorID, to: .downloading(progress: clampedProgress))
+        continuation.yield(.progress(descriptorID, clampedProgress))
+    }
+
+    private func summedExpectedBytes(from artifactExpectedBytes: [String: Int64]) -> Int64? {
+        let total = artifactExpectedBytes.values.reduce(0, +)
+        return total > 0 ? total : nil
     }
 
     private func ensureLoadedPersistedRecords() async throws {
@@ -248,5 +343,23 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         case .compilationFailed:
             return "Compilation failed."
         }
+    }
+}
+
+private final class DownloadProgressTracker: @unchecked Sendable {
+    let totalExpectedBytes: Int64?
+    let totalArtifacts: Int
+    var completedBytes: Int64
+    var artifactExpectedBytes: [String: Int64]
+    var completedArtifacts: Int
+    var lastReportedProgress: Double
+
+    init(totalExpectedBytes: Int64?, totalArtifacts: Int) {
+        self.totalExpectedBytes = totalExpectedBytes
+        self.totalArtifacts = totalArtifacts
+        self.completedBytes = 0
+        self.artifactExpectedBytes = [:]
+        self.completedArtifacts = 0
+        self.lastReportedProgress = 0
     }
 }

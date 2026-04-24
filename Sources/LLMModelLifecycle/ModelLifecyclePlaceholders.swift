@@ -1,19 +1,7 @@
 import LLMCore
 
-public struct ManifestLoader: Sendable {
-    public init() {}
-}
-
 public struct ModelDownloader: Sendable {
     public init() {}
-}
-
-public struct ModelIntegrityVerifier: Sendable {
-    public init() {}
-
-    public func verify(_ descriptor: ModelDescriptor) async throws -> Bool {
-        !descriptor.displayName.isEmpty
-    }
 }
 
 public struct ModelCompiler: Sendable {

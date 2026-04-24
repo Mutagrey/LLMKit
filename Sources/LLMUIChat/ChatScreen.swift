@@ -262,8 +262,8 @@ public struct ChatErrorPresentation: Hashable, Sendable {
                 self.init(title: "Model Missing", message: "\(modelID.rawValue) is not installed.")
             case .downloadFailed(let message):
                 self.init(title: "Download Failed", message: message)
-            case .verificationFailed:
-                self.init(title: "Verification Failed", message: "Model verification failed.")
+            case .verificationFailed(let message):
+                self.init(title: "Verification Failed", message: message)
             case .compilationFailed:
                 self.init(title: "Compilation Failed", message: "Model compilation failed.")
             case .invalidStructuredOutput(let message):

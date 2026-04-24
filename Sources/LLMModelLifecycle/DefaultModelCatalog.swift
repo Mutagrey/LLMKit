@@ -8,8 +8,22 @@ public actor DefaultModelCatalog: ModelCatalogProviding, ModelManifestProviding 
         self.descriptors = Dictionary(uniqueKeysWithValues: models.map { ($0.id, $0) })
     }
 
+    public init(manifest: ModelManifest) {
+        self.init(models: manifest.models)
+    }
+
     public func register(_ descriptor: ModelDescriptor) {
         descriptors[descriptor.id] = descriptor
+    }
+
+    public func register(contentsOf manifest: ModelManifest) {
+        for descriptor in manifest.models {
+            descriptors[descriptor.id] = descriptor
+        }
+    }
+
+    public func replace(with manifest: ModelManifest) {
+        descriptors = Dictionary(uniqueKeysWithValues: manifest.models.map { ($0.id, $0) })
     }
 
     public func availableModels() async throws -> [ModelDescriptor] {

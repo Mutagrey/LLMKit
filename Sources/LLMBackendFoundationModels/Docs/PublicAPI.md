@@ -8,5 +8,7 @@ Public API is limited to generic backend conformers and availability helpers.
 
 Foundation Models chat mapping remains backend-neutral: tool definitions and tool result references are folded into prompt text until a dedicated native tool-calling surface is adopted in this target.
 
-Structured generation metadata is preserved on `GenerationRequest`. The current generation path still uses generic
-schema-aware prompt rendering until this target adopts a native Foundation Models structured response surface.
+Structured generation metadata is preserved on `GenerationRequest`. When a backend-neutral `StructuredOutputSchema`
+can be mapped to Foundation Models guided generation, the adapter now uses native `GenerationSchema` APIs and returns
+the resulting structured content as JSON text to keep upper layers unchanged. Unsupported schema constructs still fall
+back to generic prompt rendering.

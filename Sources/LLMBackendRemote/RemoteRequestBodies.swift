@@ -1,4 +1,5 @@
 import Foundation
+import LLMCore
 
 struct RemoteCompletionRequest: Encodable {
     let model: String
@@ -21,7 +22,16 @@ struct OpenAIChatCompletionRequest: Encodable {
     let model: String
     let messages: [OpenAIChatMessage]
     let stream: Bool
+    let responseFormat: OpenAIChatCompletionResponseFormat?
     let tools: [OpenAIChatTool]?
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case stream
+        case responseFormat = "response_format"
+        case tools
+    }
 }
 
 struct OpenAIChatMessage: Encodable {
@@ -36,12 +46,40 @@ struct OpenAIChatMessage: Encodable {
     }
 }
 
+struct OpenAIChatCompletionResponseFormat: Encodable {
+    let type: String
+    let jsonSchema: OpenAIChatCompletionJSONSchemaFormat
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case jsonSchema = "json_schema"
+    }
+}
+
+struct OpenAIChatCompletionJSONSchemaFormat: Encodable {
+    let name: String
+    let schema: [String: ToolValue]
+    let strict: Bool
+}
+
 struct OpenAIResponsesRequest: Encodable {
     let model: String
     let input: OpenAIResponsesInput
     let stream: Bool
     let instructions: String?
+    let text: OpenAIResponsesTextConfiguration?
     let tools: [OpenAIResponsesTool]?
+}
+
+struct OpenAIResponsesTextConfiguration: Encodable {
+    let format: OpenAIResponsesTextFormat
+}
+
+struct OpenAIResponsesTextFormat: Encodable {
+    let type: String
+    let name: String
+    let schema: [String: ToolValue]
+    let strict: Bool
 }
 
 enum OpenAIResponsesInput: Encodable {

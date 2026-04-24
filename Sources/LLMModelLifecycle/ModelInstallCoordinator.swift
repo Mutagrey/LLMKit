@@ -8,13 +8,15 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
     private let recordStore: InstalledModelRecordStore?
     private let artifactRootDirectory: URL?
     private let artifactDownloader: any ModelArtifactDownloading
+    private let integrityVerifier: ModelIntegrityVerifier
 
     public init(
         records: [InstalledModelRecord] = [],
         stateMachine: InstallStateMachine? = nil,
         recordStore: InstalledModelRecordStore? = nil,
         artifactRootDirectory: URL? = nil,
-        artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader()
+        artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader(),
+        integrityVerifier: ModelIntegrityVerifier = ModelIntegrityVerifier()
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
         self.stateMachine = stateMachine ?? InstallStateMachine(
@@ -23,6 +25,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         self.recordStore = recordStore
         self.artifactRootDirectory = artifactRootDirectory
         self.artifactDownloader = artifactDownloader
+        self.integrityVerifier = integrityVerifier
     }
 
     public static func persisted(recordStore: InstalledModelRecordStore) async throws -> ModelInstallCoordinator {
@@ -51,7 +54,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
                     continuation.yield(.completed(record))
                     continuation.finish()
                 } catch {
-                    continuation.finish(throwing: error)
+                    let llmError = Self.mapInstallError(error)
+                    await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
+                    continuation.yield(.failed(descriptor.id, llmError))
+                    continuation.finish(throwing: llmError)
                 }
             }
         }
@@ -62,6 +68,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
     ) async throws -> InstalledModelRecord {
         try await downloadArtifacts(for: descriptor, continuation: continuation)
+        try await verifyArtifacts(for: descriptor, continuation: continuation)
         await stateMachine.transition(modelID: descriptor.id, to: .ready)
         let record = InstalledModelRecord(descriptor: descriptor, installState: .ready, installedAt: Date())
         records[descriptor.id] = record
@@ -101,6 +108,25 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
         continuation.yield(.stateChanged(descriptor.id, .verifying))
     }
 
+    private func verifyArtifacts(
+        for descriptor: ModelDescriptor,
+        continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation
+    ) async throws {
+        guard let artifactRootDirectory else {
+            if descriptor.source?.artifacts.isEmpty == false {
+                throw LLMError.verificationFailed("No artifact root directory configured for \(descriptor.id.rawValue).")
+            }
+            return
+        }
+
+        if descriptor.source?.artifacts.isEmpty == false {
+            await stateMachine.transition(modelID: descriptor.id, to: .verifying)
+            continuation.yield(.stateChanged(descriptor.id, .verifying))
+        }
+
+        _ = try await integrityVerifier.verify(descriptor, at: artifactRootDirectory)
+    }
+
     private func expectedProgressUnits(for artifacts: [ModelArtifact]) -> Int64 {
         let knownBytes = artifacts.compactMap(\.byteCount)
         let total = knownBytes.reduce(Int64(0), +)
@@ -108,5 +134,36 @@ public actor ModelInstallCoordinator: ModelLifecycleService, InstalledModelProvi
             return total
         }
         return Int64(max(artifacts.count, 1))
+    }
+
+    private static func mapInstallError(_ error: Error) -> LLMError {
+        if let llmError = error as? LLMError {
+            return llmError
+        }
+        if error is CancellationError {
+            return .cancelled
+        }
+        return .executionFailed(String(describing: error))
+    }
+
+    private static func description(for error: LLMError) -> String {
+        switch error {
+        case .downloadFailed(let message),
+             .verificationFailed(let message),
+             .executionFailed(let message),
+             .toolExecutionFailed(let message),
+             .invalidStructuredOutput(let message):
+            return message
+        case .modelNotInstalled(let modelID):
+            return "\(modelID.rawValue) is not installed."
+        case .unsupportedCapabilities:
+            return "Unsupported capabilities."
+        case .cancelled:
+            return "Cancelled."
+        case .unavailable:
+            return "Unavailable."
+        case .compilationFailed:
+            return "Compilation failed."
+        }
     }
 }

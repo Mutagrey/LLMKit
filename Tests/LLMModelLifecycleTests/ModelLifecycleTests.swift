@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LLMCore
 import LLMModelLifecycle
@@ -97,6 +98,54 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     #expect(events.contains(.progress(descriptor.id, 1)))
     #expect(events.contains(.stateChanged(descriptor.id, .verifying)))
     #expect(try await coordinator.state(for: descriptor.id) == .ready)
+}
+
+@Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {
+    let artifactData = Data("weights".utf8)
+    let expectedChecksum = SHA256.hash(data: Data("other-weights".utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-checksum-failure",
+        displayName: "Qwen Checksum Failure",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "mlx-community/Qwen3-0.6B-4bit",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(artifactData.count),
+                    checksum: ModelArtifactChecksum(algorithm: "sha256", value: expectedChecksum)
+                )
+            ]
+        )
+    )
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: WritingArtifactDownloader(data: artifactData)
+    )
+
+    var events: [ModelInstallEvent] = []
+
+    do {
+        for try await event in coordinator.install(descriptor) {
+            events.append(event)
+        }
+        Issue.record("Expected install to fail checksum verification.")
+    } catch let error as LLMError {
+        #expect(error == .verificationFailed("Artifact checksum mismatch for model.safetensors."))
+    }
+
+    #expect(events.contains(.stateChanged(descriptor.id, .verifying)))
+    #expect(events.contains(.failed(descriptor.id, .verificationFailed("Artifact checksum mismatch for model.safetensors."))))
+    #expect(try await coordinator.state(for: descriptor.id) == .failed("Artifact checksum mismatch for model.safetensors."))
 }
 
 @Test func modelInstallCoordinatorRequiresArtifactRootForDownloadableModels() async throws {
@@ -240,4 +289,54 @@ private struct WritingArtifactDownloader: ModelArtifactDownloading {
     } catch {
         #expect(error is DecodingError)
     }
+}
+
+@Test func manifestLoaderRoundTripsManifestThroughStore() async throws {
+    let manifest = CuratedModelManifests.localIPhoneTextModels
+    let store = InMemoryManifestStore()
+    let loader = ManifestLoader()
+
+    try await loader.save(manifest, named: "catalog.json", to: store)
+    let restored = try await loader.load(named: "catalog.json", from: store)
+
+    #expect(restored?.id == manifest.id)
+    #expect(restored?.models.map(\.id) == manifest.models.map(\.id))
+}
+
+@Test func manifestLoaderVerifiesExpectedSignature() throws {
+    let manifest = CuratedModelManifests.localIPhoneTextModels
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let signature = ModelManifestSignature(
+        algorithm: "sha256",
+        value: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    )
+
+    let restored = try loader.load(data: data, expectedSignature: signature)
+
+    #expect(restored.id == manifest.id)
+    #expect(restored.models.map(\.id) == manifest.models.map(\.id))
+}
+
+@Test func manifestLoaderRejectsInvalidExpectedSignature() throws {
+    let manifest = CuratedModelManifests.localIPhoneTextModels
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+
+    #expect(throws: LLMError.verificationFailed("Manifest signature mismatch.")) {
+        try loader.load(
+            data: data,
+            expectedSignature: ModelManifestSignature(algorithm: "sha256", value: String(repeating: "0", count: 64))
+        )
+    }
+}
+
+@Test func defaultModelCatalogRegistersManifestContents() async throws {
+    let manifest = CuratedModelManifests.localIPhoneTextModels
+    let catalog = DefaultModelCatalog()
+
+    await catalog.register(contentsOf: manifest)
+
+    let models = try await catalog.availableModels()
+    #expect(models.map(\.id) == manifest.models.sorted { $0.displayName < $1.displayName }.map(\.id))
 }

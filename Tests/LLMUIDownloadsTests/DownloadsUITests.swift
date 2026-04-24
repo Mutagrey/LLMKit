@@ -46,6 +46,7 @@ private struct ThrowingInstallLifecycleService: ModelLifecycleService {
     func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0.1)))
+            continuation.yield(.failed(descriptor.id, .downloadFailed("offline")))
             continuation.finish(throwing: LLMError.downloadFailed("offline"))
         }
     }
@@ -148,7 +149,7 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
 
     await viewModel.install(descriptor)
 
-    #expect(viewModel.installStates[descriptor.id] == .downloading(progress: 0.1))
+    #expect(viewModel.installStates[descriptor.id] == .failed("downloadFailed(\"offline\")"))
     #expect(viewModel.lastErrorMessage == "downloadFailed(\"offline\")")
     #expect(!viewModel.installingModelIDs.contains(descriptor.id))
 }
@@ -191,4 +192,17 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
     #expect(viewModel.isInstallButtonDisabled(for: ready))
     #expect(viewModel.statusText(for: failed) == "Failed: bad")
     #expect(viewModel.statusText(for: evicted) == "Evicted: userRequested")
+}
+
+@MainActor
+@Test func downloadsViewModelReportsInProgressStates() {
+    let modelID = ModelID(rawValue: "installing")
+    let viewModel = ModelDownloadsViewModel(models: [
+        InstalledModelRecord(
+            descriptor: ModelDescriptor(id: modelID, displayName: "Installing", family: .custom("test"), backend: .coreML, capabilities: []),
+            installState: .verifying
+        )
+    ])
+
+    #expect(viewModel.isInstalling(modelID))
 }

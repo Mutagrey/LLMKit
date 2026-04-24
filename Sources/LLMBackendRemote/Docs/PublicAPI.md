@@ -16,8 +16,9 @@ Public API includes remote backend configuration and generic backend conformers.
 
 When a response body contains server-sent events, `RemoteBackend` maps text deltas into core streaming events and finishes with the accumulated result. For OpenAI Responses and Anthropic Messages, tool call items are mapped into backend-neutral `ToolInvocation` events before completion. Streams that complete without text or tool calls fail with a backend-neutral mapping error.
 
-Generation requests preserve any backend-neutral structured output schema on `GenerationRequest`. Remote generation
-endpoints currently consume that schema through generic prompt rendering rather than provider-native schema fields.
+Generation requests preserve any backend-neutral structured output schema on `GenerationRequest`. OpenAI Responses
+and OpenAI Chat Completions generation map that schema to provider-native JSON schema response fields; other remote
+API styles still use generic prompt rendering until they adopt a dedicated mapping.
 
 OpenAI-compatible response fields for `usage` and `finish_reason`, OpenAI Responses fields for semantic text deltas and function calls, and Anthropic-compatible fields for `usage`, `stop_reason`, and `tool_use`, are mapped into `UsageMetrics`, `StreamFinishReason`, and backend-neutral tool events when present.
 

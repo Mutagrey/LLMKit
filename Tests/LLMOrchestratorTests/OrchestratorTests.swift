@@ -1,4 +1,5 @@
 import LLMCore
+import LLMDeviceProfiling
 import LLMModelLifecycle
 import LLMOrchestrator
 import LLMProtocols
@@ -328,6 +329,76 @@ private actor FailingToolService: ToolService {
     let plan = ExecutionPlanner().plan(models: [remote, local], requirements: requirements)
 
     #expect(plan.candidates.map(\.id) == ["local", "remote"])
+}
+
+@Test func executionPlannerFiltersModelsThatExceedDeviceAndDiskBudgets() {
+    let compact = ModelDescriptor(
+        id: "compact",
+        displayName: "Compact",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 6,
+        estimatedDownloadSizeBytes: 2_000_000_000
+    )
+    let oversized = ModelDescriptor(
+        id: "oversized",
+        displayName: "Oversized",
+        family: .gemma,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 12,
+        minimumFreeDiskGB: 14,
+        estimatedDownloadSizeBytes: 7_000_000_000
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 8 * 1_073_741_824,
+            processorCount: 6
+        ),
+        runtimeConstraints: RuntimeConstraints(minimumFreeDiskGB: 8)
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
+
+    let plan = planner.plan(models: [oversized, compact], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["compact"])
+}
+
+@Test func executionPlannerPrefersLowerFootprintForFastTier() {
+    let lightweight = ModelDescriptor(
+        id: "light",
+        displayName: "Light",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 4,
+        estimatedDownloadSizeBytes: 1_500_000_000
+    )
+    let heavyweight = ModelDescriptor(
+        id: "heavy",
+        displayName: "Heavy",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 8,
+        estimatedDownloadSizeBytes: 4_000_000_000
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 16 * 1_073_741_824,
+            processorCount: 6
+        ),
+        runtimeConstraints: RuntimeConstraints(minimumFreeDiskGB: 32)
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], qualityTier: .fast)
+
+    let plan = planner.plan(models: [heavyweight, lightweight], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["light", "heavy"])
 }
 
 @Test func modelRouterThrowsUnsupportedCapabilitiesWhenNoCandidateMatches() async throws {

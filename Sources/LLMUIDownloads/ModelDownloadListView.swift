@@ -19,15 +19,31 @@ public struct ModelDownloadListView: View {
     }
 
     public var body: some View {
-        List(visibleDescriptors, id: \.id) { descriptor in
-            ModelDownloadCardView(
-                descriptor: descriptor,
-                state: viewModel.installState(for: descriptor.id),
-                isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
-            ) {
-                await viewModel.install(descriptor)
+        List {
+            Section {
+                DownloadsOverviewCard(
+                    totalModels: visibleDescriptors.count,
+                    installedModels: installedDescriptors.count,
+                    inProgressModels: inProgressDescriptors.count
+                )
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
-            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+
+            if !installedDescriptors.isEmpty {
+                Section("Installed") {
+                    ForEach(installedDescriptors, id: \.id) { descriptor in
+                        card(for: descriptor)
+                    }
+                }
+            }
+
+            if !availableDescriptors.isEmpty {
+                Section("Available to Download") {
+                    ForEach(availableDescriptors, id: \.id) { descriptor in
+                        card(for: descriptor)
+                    }
+                }
+            }
         }
         .overlay {
             if let lastErrorMessage = viewModel.lastErrorMessage {
@@ -49,9 +65,39 @@ public struct ModelDownloadListView: View {
 
     private var visibleDescriptors: [ModelDescriptor] {
         var seen = Set<ModelID>()
-        return (configuredDescriptors + viewModel.models.map(\.descriptor)).filter { descriptor in
+        return (configuredDescriptors + viewModel.models.map(\.descriptor))
+            .filter { descriptor in
             seen.insert(descriptor.id).inserted
         }
+        .sorted { lhs, rhs in
+            if viewModel.isInstalled(lhs.id) != viewModel.isInstalled(rhs.id) {
+                return viewModel.isInstalled(lhs.id)
+            }
+            return lhs.displayName < rhs.displayName
+        }
+    }
+
+    private var installedDescriptors: [ModelDescriptor] {
+        visibleDescriptors.filter { viewModel.isInstalled($0.id) }
+    }
+
+    private var availableDescriptors: [ModelDescriptor] {
+        visibleDescriptors.filter { !viewModel.isInstalled($0.id) }
+    }
+
+    private var inProgressDescriptors: [ModelDescriptor] {
+        visibleDescriptors.filter { viewModel.isInstalling($0.id) }
+    }
+
+    private func card(for descriptor: ModelDescriptor) -> some View {
+        ModelDownloadCardView(
+            descriptor: descriptor,
+            state: viewModel.installState(for: descriptor.id),
+            isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
+        ) {
+            await viewModel.install(descriptor)
+        }
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
     }
 }
 
@@ -162,12 +208,52 @@ public final class ModelDownloadsViewModel {
         installingModelIDs.contains(modelID) || isInstalled(modelID)
     }
 
+    public func isInstalling(_ modelID: ModelID) -> Bool {
+        switch installStates[modelID] {
+        case .downloading, .downloaded, .verifying, .compiling:
+            return true
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted, nil:
+            return false
+        }
+    }
+
     private func upsert(_ record: InstalledModelRecord) {
         if let index = models.firstIndex(where: { $0.descriptor.id == record.descriptor.id }) {
             models[index] = record
         } else {
             models.append(record)
         }
+    }
+}
+
+private struct DownloadsOverviewCard: View {
+    let totalModels: Int
+    let installedModels: Int
+    let inProgressModels: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            stat(title: "Catalog", value: "\(totalModels)", tint: .secondary)
+            stat(title: "Installed", value: "\(installedModels)", tint: .green)
+            stat(title: "In Progress", value: "\(inProgressModels)", tint: .blue)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func stat(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(.headline.monospacedDigit())
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

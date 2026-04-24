@@ -40,6 +40,17 @@ public final class LLMKitExampleViewModel {
         return models.first { $0.id == selectedModelID } ?? models.first
     }
 
+    public var selectedModelAvailability: BackendAvailability? {
+        guard let selectedModel else {
+            return nil
+        }
+        return availability[selectedModel.id]
+    }
+
+    public var canChatWithSelectedModel: Bool {
+        selectedModelAvailability?.status == .available
+    }
+
     public var chatRequirements: ExecutionRequirements {
         ExecutionRequirements(
             requiredCapabilities: [.chat],
@@ -92,6 +103,10 @@ public final class LLMKitExampleViewModel {
 
     public func isSystemManaged(_ descriptor: ModelDescriptor) -> Bool {
         descriptor.tags.contains("system-managed")
+    }
+
+    public func isAvailable(_ descriptor: ModelDescriptor) -> Bool {
+        availability[descriptor.id]?.status == .available
     }
 
     private func refreshInstallStates() async throws {

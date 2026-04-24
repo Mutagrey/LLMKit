@@ -30,3 +30,11 @@ import Testing
     #expect(constrained.isLowPowerPreferred == true)
     #expect(constrained.minimumFreeDiskGB == 4)
 }
+
+@Test func runtimeConstraintsCollectorReturnsRuntimeSnapshot() {
+    let constraints = RuntimeConstraintsCollector().currentConstraints()
+
+    if let minimumFreeDiskGB = constraints.minimumFreeDiskGB {
+        #expect(minimumFreeDiskGB >= 0)
+    }
+}

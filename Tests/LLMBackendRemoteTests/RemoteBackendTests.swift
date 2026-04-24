@@ -1,5 +1,5 @@
 import Foundation
-import LLMBackendRemote
+@testable import LLMBackendRemote
 import LLMCore
 import LLMNetworking
 import LLMProtocols
@@ -155,7 +155,7 @@ private actor RecordingTransport: HTTPTransport {
     }
 
     let request = try #require(await transport.requests.first)
-    let body = try requestBodyDictionary(request)
+    let body = try decodeOpenAIResponsesGenerationRequest(request)
 
     #expect(completed?.text == "responses hello")
     #expect(completed?.usage?.tokens.inputTokens == 4)
@@ -163,9 +163,29 @@ private actor RecordingTransport: HTTPTransport {
     #expect(completed?.usage?.tokens.totalTokens == 6)
     #expect(request.url.absoluteString == "https://example.com/v1/responses")
     #expect(request.headers["Authorization"] == "Bearer token")
-    #expect(body["model"] as? String == "gpt-responses-test")
-    #expect(body["input"] as? String == "hello")
-    #expect(body["stream"] as? Bool == true)
+    #expect(body.model == "gpt-responses-test")
+    #expect(body.input == "hello")
+    #expect(body.stream == true)
+    #expect(body.text == nil)
+}
+
+@Test func openAIResponsesStructuredOutputMapperBuildsNativeFormat() throws {
+    let schema = StructuredOutputSchema(name: "Weather Summary", definition: [
+        "type": .string("object"),
+        "properties": .object([
+            "city": .object(["type": .string("string")])
+        ]),
+        "required": .array([.string("city")]),
+        "additionalProperties": .boolean(false)
+    ])
+    let text = try #require(OpenAIResponsesStructuredOutputMapper.textConfiguration(for: schema))
+    let format = text.format
+
+    #expect(format.type == "json_schema")
+    #expect(format.name == "Weather_Summary")
+    #expect(format.strict == true)
+    #expect(format.schema["type"] == .string("object"))
+    #expect(format.schema["required"] == .array([.string("city")]))
 }
 
 @Test func remoteBackendSendsGenerationRequestThroughTransport() async throws {
@@ -251,7 +271,26 @@ private actor RecordingTransport: HTTPTransport {
     #expect(body["model"] as? String == "gpt-test")
     #expect(body["stream"] as? Bool == true)
     #expect(messages == [["role": "user", "content": "hello"]])
+    #expect(body["response_format"] == nil)
     #expect(body["prompt"] == nil)
+}
+
+@Test func openAIChatCompletionsStructuredOutputMapperBuildsNativeFormat() throws {
+    let schema = StructuredOutputSchema(name: "Weather Summary", definition: [
+        "type": .string("object"),
+        "properties": .object([
+            "city": .object(["type": .string("string")])
+        ]),
+        "required": .array([.string("city")]),
+        "additionalProperties": .boolean(false)
+    ])
+    let format = try #require(OpenAIChatCompletionsStructuredOutputMapper.responseFormat(for: schema))
+
+    #expect(format.type == "json_schema")
+    #expect(format.jsonSchema.name == "Weather_Summary")
+    #expect(format.jsonSchema.strict == true)
+    #expect(format.jsonSchema.schema["type"] == .string("object"))
+    #expect(format.jsonSchema.schema["required"] == .array([.string("city")]))
 }
 
 @Test func openAIResponsesChatMapsMessagesAndInstructions() async throws {
@@ -1040,4 +1079,27 @@ private actor RecordingTransport: HTTPTransport {
 private func requestBodyDictionary(_ request: HTTPRequest) throws -> [String: Any] {
     let bodyData = try #require(request.body)
     return try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+}
+
+private struct OpenAIResponsesGenerationRequestBody: Decodable {
+    let model: String
+    let input: String
+    let stream: Bool
+    let text: TextBody?
+
+    struct TextBody: Decodable, Equatable {
+        let format: FormatBody
+    }
+
+    struct FormatBody: Decodable, Equatable {
+        let type: String
+        let name: String
+        let schema: [String: ToolValue]
+        let strict: Bool
+    }
+}
+
+private func decodeOpenAIResponsesGenerationRequest(_ request: HTTPRequest) throws -> OpenAIResponsesGenerationRequestBody {
+    let bodyData = try #require(request.body)
+    return try JSONDecoder().decode(OpenAIResponsesGenerationRequestBody.self, from: bodyData)
 }

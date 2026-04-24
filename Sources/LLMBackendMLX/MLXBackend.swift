@@ -33,6 +33,9 @@ public struct MLXBackend: ModelBackend {
         guard supportMatrix.supports(descriptor.family) else {
             return .unsupported
         }
+        guard supportMatrix.supports(descriptor) else {
+            return BackendAvailability(status: .unavailable(reason: "This MLX adapter currently supports text-only local models."))
+        }
         guard let runtime else {
             return BackendAvailability(status: .unavailable(reason: "MLX runtime is not configured."))
         }
@@ -140,6 +143,10 @@ public struct MLXModelSupportMatrix: Sendable {
         default:
             false
         }
+    }
+
+    public func supports(_ descriptor: ModelDescriptor) -> Bool {
+        supports(descriptor.family) && !descriptor.capabilities.contains(.multimodalInput)
     }
 }
 

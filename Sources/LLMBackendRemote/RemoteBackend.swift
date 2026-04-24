@@ -124,9 +124,10 @@ public struct RemoteBackend: ModelBackend {
                 body: OpenAIChatCompletionRequest(
                     model: request.model.id.rawValue,
                     messages: [
-                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.renderedPrompt, toolCallID: nil)
+                        OpenAIChatMessage(role: MessageRole.user.rawValue, content: request.request.prompt, toolCallID: nil)
                     ],
                     stream: request.model.supportsStreaming,
+                    responseFormat: OpenAIChatCompletionsStructuredOutputMapper.responseFormat(for: request.request.structuredOutputSchema),
                     tools: nil
                 )
             )
@@ -135,9 +136,10 @@ public struct RemoteBackend: ModelBackend {
                 path: configuration?.generationPath,
                 body: OpenAIResponsesRequest(
                     model: request.model.id.rawValue,
-                    input: .text(request.request.renderedPrompt),
+                    input: .text(request.request.prompt),
                     stream: request.model.supportsStreaming,
                     instructions: nil,
+                    text: OpenAIResponsesStructuredOutputMapper.textConfiguration(for: request.request.structuredOutputSchema),
                     tools: nil
                 )
             )
@@ -178,6 +180,7 @@ public struct RemoteBackend: ModelBackend {
                     model: request.model.id.rawValue,
                     messages: messages,
                     stream: request.model.supportsStreaming,
+                    responseFormat: nil,
                     tools: RemoteToolDefinitionMapper.openAIChatTools(from: request.request.tools)
                 )
             )
@@ -190,6 +193,7 @@ public struct RemoteBackend: ModelBackend {
                     input: .items(mapping.items),
                     stream: request.model.supportsStreaming,
                     instructions: mapping.instructions,
+                    text: nil,
                     tools: RemoteToolDefinitionMapper.openAIResponsesTools(from: request.request.tools)
                 )
             )

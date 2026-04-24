@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import SwiftUI
 
@@ -22,11 +23,13 @@ public struct ModelDownloadCardView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            descriptorPills
             metadata
             ModelInstallProgressView(state: state)
             actionRow
         }
-        .padding(.vertical, 6)
+        .padding(16)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var header: some View {
@@ -36,9 +39,7 @@ public struct ModelDownloadCardView: View {
                     .font(.headline)
                     .lineLimit(2)
                 Spacer(minLength: 12)
-                Text(backendTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                DownloadPill(title: installBadgeTitle, tint: installBadgeTint)
             }
 
             if let repository = descriptor.source?.repository {
@@ -50,12 +51,40 @@ public struct ModelDownloadCardView: View {
         }
     }
 
+    private var descriptorPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                DownloadPill(title: backendTitle, tint: .secondary)
+                DownloadPill(title: familyTitle, tint: .secondary)
+                if let quantization = descriptor.quantization?.format {
+                    DownloadPill(title: quantization, tint: .blue)
+                }
+                if let minimumRAMGB = descriptor.minimumRAMGB {
+                    DownloadPill(title: "\(minimumRAMGB) GB RAM", tint: .orange)
+                }
+                if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB {
+                    DownloadPill(title: "\(minimumFreeDiskGB) GB free", tint: .orange)
+                }
+                if descriptor.tags.contains("iphone-recommended") {
+                    DownloadPill(title: "iPhone Recommended", tint: .green)
+                }
+                if descriptor.tags.contains("iphone-pro") {
+                    DownloadPill(title: "iPhone Pro", tint: .purple)
+                }
+            }
+        }
+    }
+
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 8) {
             metadataRow(title: "Quantization", value: descriptor.quantization?.format ?? "Standard")
             metadataRow(title: "Size", value: byteCountTitle(for: descriptor.estimatedDownloadSizeBytes))
             metadataRow(title: "License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
             metadataRow(title: "Context", value: contextTitle)
+            metadataRow(title: "Provider", value: sourceProviderTitle)
+            if let revision = descriptor.source?.revision {
+                metadataRow(title: "Revision", value: String(revision.prefix(10)))
+            }
         }
     }
 
@@ -87,6 +116,23 @@ public struct ModelDownloadCardView: View {
         }
     }
 
+    private var familyTitle: String {
+        switch descriptor.family {
+        case .appleFoundation:
+            return "Apple Foundation"
+        case .qwen:
+            return "Qwen"
+        case .gemma:
+            return "Gemma"
+        case .llama:
+            return "Llama"
+        case .mistral:
+            return "Mistral"
+        case .custom(let value):
+            return value
+        }
+    }
+
     private var backendTitle: String {
         switch descriptor.backend {
         case .foundationModels:
@@ -106,6 +152,23 @@ public struct ModelDownloadCardView: View {
         }
     }
 
+    private var sourceProviderTitle: String {
+        guard let provider = descriptor.source?.provider else {
+            return "Unknown"
+        }
+
+        switch provider {
+        case .huggingFace:
+            return "Hugging Face"
+        case .remoteURL:
+            return "Remote URL"
+        case .bundled:
+            return "Bundled"
+        case .custom(let value):
+            return value
+        }
+    }
+
     private var contextTitle: String {
         if let contextWindowTokens = descriptor.contextWindowTokens {
             return "\(contextWindowTokens) tokens"
@@ -120,7 +183,7 @@ public struct ModelDownloadCardView: View {
         if isInstalling {
             return "Downloading"
         }
-        return "Download"
+        return "Install"
     }
 
     private var actionSymbol: String {
@@ -151,11 +214,45 @@ public struct ModelDownloadCardView: View {
         }
     }
 
+    private var installBadgeTitle: String {
+        if isInstalled {
+            return "Installed"
+        }
+        if isInstalling {
+            return "In Progress"
+        }
+        return "Ready"
+    }
+
+    private var installBadgeTint: Color {
+        if isInstalled {
+            return .green
+        }
+        if isInstalling {
+            return .blue
+        }
+        return .orange
+    }
+
     private func byteCountTitle(for bytes: Int64?) -> String {
         guard let bytes else {
             return "Unknown"
         }
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+private struct DownloadPill: View {
+    let title: String
+    let tint: Color
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(tint.opacity(0.12), in: Capsule(style: .continuous))
     }
 }
 

@@ -7,7 +7,7 @@ public struct LLMKitExampleScreen: View {
     @State private var viewModel: LLMKitExampleViewModel
     private let configuration: LLMKitExampleConfiguration
 
-    public init(configuration: LLMKitExampleConfiguration = .localQwenSmokeTest()) {
+    public init(configuration: LLMKitExampleConfiguration = .localIPhoneCatalog()) {
         self.configuration = configuration
         self._viewModel = State(initialValue: LLMKitExampleViewModel(configuration: configuration))
     }
@@ -43,7 +43,7 @@ private struct ExampleChatTab: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ModelSelectionHeader(viewModel: viewModel)
-                if let descriptor = viewModel.selectedModel {
+                if let descriptor = viewModel.selectedModel, viewModel.canChatWithSelectedModel {
                     ChatScreen(
                         title: descriptor.displayName,
                         viewModel: ChatViewModel(
@@ -52,6 +52,12 @@ private struct ExampleChatTab: View {
                         )
                     )
                     .id(viewModel.chatIdentity)
+                } else if let descriptor = viewModel.selectedModel {
+                    ContentUnavailableView(
+                        "Model Not Ready",
+                        systemImage: "arrow.down.circle",
+                        description: Text("\(descriptor.displayName) is not ready for chat yet. Install it or switch to a ready model in the Models tab.")
+                    )
                 } else {
                     ContentUnavailableView(
                         "No Model",
@@ -81,35 +87,28 @@ private struct ExampleModelsTab: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Available Models") {
-                    ForEach(viewModel.models, id: \.id) { descriptor in
-                        Button {
-                            viewModel.selectedModelID = descriptor.id
-                        } label: {
-                            ModelRow(
-                                descriptor: descriptor,
-                                status: viewModel.statusText(for: descriptor),
-                                isSystemManaged: viewModel.isSystemManaged(descriptor),
-                                isDownloadable: configuration.downloadableModels.contains(where: { $0.id == descriptor.id }),
-                                isSelected: descriptor.id == currentSelectedModelID
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    }
+                Section {
+                    CatalogOverviewCard(
+                        totalModels: viewModel.models.count,
+                        readyModels: readyModels.count,
+                        downloadableModels: configuration.downloadableModels.count,
+                        installedModels: installedModels.count
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
 
                 if let selectedModel = viewModel.selectedModel {
                     Section("Selected Model") {
-                        SelectedModelSummary(
+                        SelectedModelSummaryCard(
                             descriptor: selectedModel,
-                            status: viewModel.statusText(for: selectedModel)
+                            status: viewModel.statusText(for: selectedModel),
+                            isAvailable: viewModel.isAvailable(selectedModel)
                         )
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                     }
 
                     if configuration.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
-                        Section("Download") {
+                        Section("Install / Update") {
                             ModelDownloadCardView(
                                 descriptor: selectedModel,
                                 state: downloadsViewModel.installState(for: selectedModel.id),
@@ -120,18 +119,37 @@ private struct ExampleModelsTab: View {
                             }
                         }
                     }
+                }
 
-                    if !configuration.downloadableModels.isEmpty {
-                        Section("Catalog") {
-                            NavigationLink {
-                                ModelDownloadListView(
-                                    descriptors: configuration.downloadableModels,
-                                    lifecycleService: configuration.container.lifecycle
-                                )
-                                .navigationTitle("Downloads")
-                            } label: {
-                                Label("All Downloadable Models", systemImage: "square.stack.3d.down.right")
-                            }
+                if !readyModels.isEmpty {
+                    Section("Ready for Chat") {
+                        ForEach(readyModels, id: \.id) { descriptor in
+                            modelRowButton(for: descriptor)
+                        }
+                    }
+                }
+
+                if !downloadCandidates.isEmpty {
+                    Section("Downloadable for iPhone") {
+                        ForEach(downloadCandidates, id: \.id) { descriptor in
+                            modelRowButton(for: descriptor)
+                        }
+                    }
+                }
+
+                if !configuration.downloadableModels.isEmpty {
+                    Section("Download Catalog") {
+                        NavigationLink {
+                            ModelDownloadListView(
+                                descriptors: configuration.downloadableModels,
+                                lifecycleService: configuration.container.lifecycle
+                            )
+                            .navigationTitle("Downloads")
+                        } label: {
+                            Label(
+                                "Browse All Downloadable Models",
+                                systemImage: "square.stack.3d.down.right"
+                            )
                         }
                     }
                 }
@@ -154,57 +172,38 @@ private struct ExampleModelsTab: View {
         }
     }
 
-    private var currentSelectedModelID: ModelID? {
-        viewModel.selectedModel?.id
-    }
-}
-
-private struct SelectedModelSummary: View {
-    let descriptor: ModelDescriptor
-    let status: String
-
-    var body: some View {
-        LabeledContent("Name", value: descriptor.displayName)
-        LabeledContent("Backend", value: backendTitle)
-        LabeledContent("Status", value: status)
-
-        if let quantization = descriptor.quantization?.format {
-            LabeledContent("Quantization", value: quantization)
-        }
-
-        if let contextWindowTokens = descriptor.contextWindowTokens {
-            LabeledContent("Context", value: "\(contextWindowTokens) tokens")
-        }
-
-        if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
-            LabeledContent(
-                "Download",
-                value: ByteCountFormatter.string(fromByteCount: estimatedDownloadSizeBytes, countStyle: .file)
+    private func modelRowButton(for descriptor: ModelDescriptor) -> some View {
+        Button {
+            viewModel.selectedModelID = descriptor.id
+        } label: {
+            ModelRow(
+                descriptor: descriptor,
+                status: viewModel.statusText(for: descriptor),
+                isSystemManaged: viewModel.isSystemManaged(descriptor),
+                isDownloadable: configuration.downloadableModels.contains(where: { $0.id == descriptor.id }),
+                isSelected: descriptor.id == currentSelectedModelID,
+                isAvailable: viewModel.isAvailable(descriptor)
             )
         }
-
-        if let repository = descriptor.source?.repository {
-            LabeledContent("Source", value: repository)
-        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }
 
-    private var backendTitle: String {
-        switch descriptor.backend {
-        case .foundationModels:
-            return "Foundation Models"
-        case .coreML:
-            return "Core ML"
-        case .mlx:
-            return "MLX"
-        case .remote:
-            return "Remote"
-        case .executorch:
-            return "ExecuTorch"
-        case .onnxRuntime:
-            return "ONNX Runtime"
-        case .custom(let name):
-            return name
-        }
+    private var readyModels: [ModelDescriptor] {
+        viewModel.models.filter { viewModel.isAvailable($0) }
+    }
+
+    private var installedModels: [ModelDescriptor] {
+        configuration.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }
+    }
+
+    private var downloadCandidates: [ModelDescriptor] {
+        configuration.downloadableModels.filter { !viewModel.isAvailable($0) }
+    }
+
+    private var currentSelectedModelID: ModelID? {
+        viewModel.selectedModel?.id
     }
 }
 
@@ -243,7 +242,7 @@ private struct ExampleSettingsTab: View {
                 Section("Selected Model") {
                     if let descriptor = viewModel.selectedModel {
                         LabeledContent("Name", value: descriptor.displayName)
-                        LabeledContent("Backend", value: backendTitle(for: descriptor.backend))
+                        LabeledContent("Backend", value: exampleBackendTitle(descriptor.backend))
                         LabeledContent("Status", value: viewModel.statusText(for: descriptor))
                     } else {
                         Text("No model selected")
@@ -336,25 +335,6 @@ private struct ExampleSettingsTab: View {
             return "Redact Sensitive"
         }
     }
-
-    private func backendTitle(for backend: BackendKind) -> String {
-        switch backend {
-        case .foundationModels:
-            return "Foundation Models"
-        case .coreML:
-            return "Core ML"
-        case .mlx:
-            return "MLX"
-        case .remote:
-            return "Remote"
-        case .executorch:
-            return "ExecuTorch"
-        case .onnxRuntime:
-            return "ONNX Runtime"
-        case .custom(let name):
-            return name
-        }
-    }
 }
 
 private struct ModelSelectionHeader: View {
@@ -370,7 +350,8 @@ private struct ModelSelectionHeader: View {
                         } label: {
                             ModelSelectionChip(
                                 descriptor: descriptor,
-                                isSelected: descriptor.id == currentSelectedModelID
+                                isSelected: descriptor.id == currentSelectedModelID,
+                                isAvailable: viewModel.isAvailable(descriptor)
                             )
                         }
                         .buttonStyle(.plain)
@@ -390,152 +371,6 @@ private struct ModelSelectionHeader: View {
     }
 }
 
-private struct ModelSelectionChip: View {
-    let descriptor: ModelDescriptor
-    let isSelected: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: descriptor.backend == .foundationModels ? "apple.intelligence" : "cpu")
-                    .font(.caption.weight(.semibold))
-                Text(descriptor.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-            }
-
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(isSelected ? Color.primary.opacity(0.9) : Color.secondary)
-                .lineLimit(1)
-        }
-        .frame(width: 220, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1)
-        }
-    }
-
-    private var subtitle: String {
-        switch descriptor.backend {
-        case .foundationModels:
-            return "System model"
-        case .mlx:
-            return "Local MLX"
-        case .coreML:
-            return "Local Core ML"
-        case .remote:
-            return "Remote"
-        case .executorch:
-            return "ExecuTorch"
-        case .onnxRuntime:
-            return "ONNX Runtime"
-        case .custom(let name):
-            return name
-        }
-    }
-
-    private var backgroundStyle: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.16))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.03))
-    }
-
-    private var borderColor: Color {
-        isSelected ? .accentColor : .secondary.opacity(0.2)
-    }
-}
-
-private struct ModelRow: View {
-    let descriptor: ModelDescriptor
-    let status: String
-    let isSystemManaged: Bool
-    let isDownloadable: Bool
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isSystemManaged ? "apple.intelligence" : "cpu")
-                .font(.headline)
-                .frame(width: 30, height: 30)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .background(iconBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(descriptor.displayName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-
-                    if isDownloadable {
-                        ModelPill(title: "Download", tint: .blue)
-                    } else if isSystemManaged {
-                        ModelPill(title: "System", tint: .secondary)
-                    }
-                }
-
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 12)
-
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.headline)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
-                .accessibilityLabel(isSelected ? "Selected" : "Not selected")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(rowBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(rowBorder, lineWidth: isSelected ? 1.5 : 1)
-        }
-    }
-
-    private var rowBackground: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.05))
-    }
-
-    private var iconBackground: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.03))
-    }
-
-    private var rowBorder: Color {
-        isSelected ? .accentColor : .secondary.opacity(0.2)
-    }
-}
-
-private struct ModelPill: View {
-    let title: String
-    let tint: Color
-
-    var body: some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(tint.opacity(0.12), in: Capsule(style: .continuous))
-    }
-}
-
 #Preview {
-    LLMKitExampleScreen(configuration: .localQwenSmokeTest())
+    LLMKitExampleScreen(configuration: .localIPhoneCatalog())
 }

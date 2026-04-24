@@ -24,6 +24,24 @@ import Testing
     #expect(descriptor.tags.contains("smoke-test"))
 }
 
+@Test func curatedLocalCatalogExposesMultipleIPhoneSizedModels() {
+    let models = LLMKitExampleModels.localIPhoneTextModels
+
+    #expect(models.count >= 5)
+    #expect(models.contains { $0.id.rawValue == "mlx-community.Qwen3-0.6B-4bit" })
+    #expect(models.contains { $0.id.rawValue == "mlx-community.Qwen3-1.7B-4bit" })
+    #expect(models.contains { $0.id.rawValue == "mlx-community.gemma-3-1b-it-4bit" })
+}
+
+@Test func localIPhoneCatalogConfiguresDownloadableModelsFromManifest() async throws {
+    let configuration = LLMKitExampleConfiguration.localIPhoneCatalog()
+    let models = try await configuration.catalog.availableModels()
+
+    #expect(configuration.downloadableModels.count == LLMKitExampleModels.localIPhoneTextModels.count)
+    #expect(models.contains { $0.id == LLMKitExampleModels.appleIntelligence.id })
+    #expect(models.contains { $0.id == LLMKitExampleModels.qwen34BMLX4Bit.id })
+}
+
 @MainActor
 @Test func exampleViewModelDefaultsPreferLocalAppleIntelligenceSmokeTest() {
     let viewModel = LLMKitExampleViewModel(configuration: .appleIntelligenceOnly())

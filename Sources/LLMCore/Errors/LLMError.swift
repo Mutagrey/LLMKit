@@ -5,7 +5,7 @@ public enum LLMError: Error, Equatable, Sendable {
     case unsupportedCapabilities(Set<ModelCapability>)
     case modelNotInstalled(ModelID)
     case downloadFailed(String)
-    case verificationFailed
+    case verificationFailed(String)
     case compilationFailed
     case executionFailed(String)
     case toolExecutionFailed(String)

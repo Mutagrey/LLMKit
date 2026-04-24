@@ -1,4 +1,4 @@
-import LLMBackendFoundationModels
+@testable import LLMBackendFoundationModels
 import LLMCore
 import LLMProtocols
 import Testing
@@ -64,5 +64,43 @@ import Testing
         Issue.record("Expected Foundation Models chat to fail when runtime is unavailable.")
     } catch {
         #expect(error as? LLMError == .unavailable)
+    }
+}
+
+@Test func foundationModelsStructuredOutputMapperBuildsPlanForObjectSchema() throws {
+    let schema = StructuredOutputSchema(name: "WeatherSummary", definition: [
+        "type": .string("object"),
+        "properties": .object([
+            "city": .object(["type": .string("string")]),
+            "temperature": .object(["type": .string("number")]),
+            "tags": .object([
+                "type": .string("array"),
+                "items": .object(["type": .string("string")])
+            ]),
+            "condition": .object([
+                "enum": .array([.string("sunny"), .string("cloudy")])
+            ])
+        ]),
+        "required": .array([.string("city"), .string("condition")])
+    ])
+
+    let plan = try FoundationModelsStructuredOutputMapper.plan(for: schema)
+
+    #expect(plan.rootName == "WeatherSummary")
+    #expect(plan.rootNode == .object([
+        StructuredSchemaProperty(name: "city", isOptional: false, node: .string),
+        StructuredSchemaProperty(name: "condition", isOptional: false, node: .stringEnum(["sunny", "cloudy"])),
+        StructuredSchemaProperty(name: "tags", isOptional: true, node: .array(.string)),
+        StructuredSchemaProperty(name: "temperature", isOptional: true, node: .number)
+    ]))
+}
+
+@Test func foundationModelsStructuredOutputMapperRejectsUnsupportedNullSchemaNodes() throws {
+    let schema = StructuredOutputSchema(name: "NullRoot", definition: [
+        "type": .string("null")
+    ])
+
+    #expect(throws: BackendError.self) {
+        _ = try FoundationModelsStructuredOutputMapper.plan(for: schema)
     }
 }

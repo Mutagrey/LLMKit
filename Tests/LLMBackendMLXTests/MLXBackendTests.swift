@@ -33,6 +33,20 @@ import Testing
     #expect(await backend.availability(for: wrongBackend).status == .unsupported)
 }
 
+@Test func mlxBackendMarksMultimodalDescriptorUnavailable() async {
+    let descriptor = ModelDescriptor(
+        id: "mlx-multimodal",
+        displayName: "Multimodal MLX",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat, .multimodalInput]
+    )
+
+    let availability = await MLXBackend(runtimeAvailable: true).availability(for: descriptor)
+
+    #expect(availability.status == .unavailable(reason: "This MLX adapter currently supports text-only local models."))
+}
+
 @Test func mlxBackendStreamsUnavailableWhenRuntimeIsNotConfigured() async throws {
     let descriptor = ModelDescriptor(id: "mlx", displayName: "MLX", family: .qwen, backend: .mlx, capabilities: [.completion])
     let backend = MLXBackend()

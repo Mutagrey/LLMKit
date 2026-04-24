@@ -41,8 +41,8 @@ private struct DefinitionOnlyRegistry: ToolRegistryProviding {
     do {
         _ = try await coordinator.execute(invocation)
         Issue.record("Expected unregistered tool execution to fail.")
-    } catch {
-        #expect(error as? LLMError == .toolExecutionFailed("Tool not registered: missing"))
+    } catch let error as LLMError {
+        #expect(error == .toolExecutionFailed("Tool not registered: missing"))
     }
 }
 
@@ -94,8 +94,8 @@ private struct DefinitionOnlyRegistry: ToolRegistryProviding {
     do {
         _ = try await coordinator.execute(ToolInvocation(toolName: "echo", arguments: ToolArguments(values: ["text": "hello"])))
         Issue.record("Expected missing executor to fail after validation.")
-    } catch {
-        #expect(error as? LLMError == .toolExecutionFailed("Executor not registered: echo"))
+    } catch let error as LLMError {
+        #expect(error == .toolExecutionFailed("Executor not registered: echo"))
     }
 }
 

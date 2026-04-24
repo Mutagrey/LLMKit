@@ -9,39 +9,39 @@ struct CatalogOverviewCard: View {
     let installedModels: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Local Catalog")
                 .font(.headline)
 
             Text("A lifecycle-owned catalog of on-device models curated for Apple platforms.")
-                .font(.subheadline)
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
-                summaryPill(title: "Total", value: "\(totalModels)", tint: .secondary)
-                summaryPill(title: "Ready", value: "\(readyModels)", tint: .green)
-                summaryPill(title: "Downloadable", value: "\(downloadableModels)", tint: .blue)
-                summaryPill(title: "Installed", value: "\(installedModels)", tint: .orange)
+            Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
+                GridRow {
+                    summaryMetric(title: "Total", value: "\(totalModels)")
+                    summaryMetric(title: "Ready", value: "\(readyModels)", tint: .green)
+                }
+
+                GridRow {
+                    summaryMetric(title: "Downloadable", value: "\(downloadableModels)", tint: .blue)
+                    summaryMetric(title: "Installed", value: "\(installedModels)", tint: .orange)
+                }
             }
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private func summaryPill(title: String, value: String, tint: Color) -> some View {
+    private func summaryMetric(title: String, value: String, tint: Color = .secondary) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.headline.monospacedDigit())
+                .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(.primary)
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.caption)
                 .foregroundStyle(tint)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -51,7 +51,7 @@ struct SelectedModelSummaryCard: View {
     let isAvailable: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(descriptor.displayName)
@@ -67,7 +67,7 @@ struct SelectedModelSummaryCard: View {
                 ModelPill(title: isAvailable ? "Ready" : "Not Ready", tint: isAvailable ? .green : .orange)
             }
 
-            HStack(spacing: 8) {
+            FlowLayout(spacing: 8) {
                 ModelPill(title: exampleBackendTitle(descriptor.backend), tint: .secondary)
                 ModelPill(title: exampleModelFamilyTitle(descriptor.family), tint: .secondary)
                 if let quantization = descriptor.quantization?.format {
@@ -75,7 +75,7 @@ struct SelectedModelSummaryCard: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            FlowLayout(spacing: 8) {
                 if let minimumRAMGB = descriptor.minimumRAMGB {
                     metricPill(systemImage: "memorychip", value: "\(minimumRAMGB) GB RAM")
                 }
@@ -98,65 +98,13 @@ struct SelectedModelSummaryCard: View {
             LabeledContent("Status", value: status)
                 .font(.caption)
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private func metricPill(systemImage: String, value: String) -> some View {
         Label(value, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.05), in: Capsule(style: .continuous))
-    }
-}
-
-struct ModelSelectionChip: View {
-    let descriptor: ModelDescriptor
-    let isSelected: Bool
-    let isAvailable: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: descriptor.backend == .foundationModels ? "apple.intelligence" : "cpu")
-                    .font(.caption.weight(.semibold))
-                Text(descriptor.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-            }
-
-            HStack(spacing: 8) {
-                Text(exampleBackendTitle(descriptor.backend))
-                    .font(.caption)
-                    .foregroundStyle(isSelected ? Color.primary.opacity(0.9) : Color.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Circle()
-                    .fill(isAvailable ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-            }
-        }
-        .frame(width: 220, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1)
-        }
-    }
-
-    private var backgroundStyle: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.16))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.03))
-    }
-
-    private var borderColor: Color {
-        isSelected ? .accentColor : .secondary.opacity(0.2)
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -171,16 +119,15 @@ struct ModelRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: isSystemManaged ? "apple.intelligence" : "cpu")
-                .font(.headline)
-                .frame(width: 30, height: 30)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 24, height: 24)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .background(iconBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text(descriptor.displayName)
-                        .font(.headline)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
@@ -202,11 +149,11 @@ struct ModelRow: View {
                         Text("\(minimumRAMGB) GB RAM")
                     }
                 }
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
 
                 Text(status)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -214,36 +161,11 @@ struct ModelRow: View {
             Spacer(minLength: 12)
 
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.headline)
+                .font(.body)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
                 .accessibilityLabel(isSelected ? "Selected" : "Not selected")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(rowBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(rowBorder, lineWidth: isSelected ? 1.5 : 1)
-        }
-    }
-
-    private var rowBackground: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.05))
-    }
-
-    private var iconBackground: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
-        }
-        return AnyShapeStyle(Color.primary.opacity(0.03))
-    }
-
-    private var rowBorder: Color {
-        isSelected ? .accentColor : .secondary.opacity(0.2)
     }
 }
 
@@ -253,11 +175,11 @@ struct ModelPill: View {
 
     var body: some View {
         Text(title)
-            .font(.caption.weight(.semibold))
+            .font(.caption2.weight(.medium))
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(tint.opacity(0.12), in: Capsule(style: .continuous))
+            .padding(.vertical, 3)
+            .background(.quinary, in: Capsule(style: .continuous))
     }
 }
 

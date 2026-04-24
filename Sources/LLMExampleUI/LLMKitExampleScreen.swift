@@ -41,8 +41,7 @@ private struct ExampleChatTab: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ModelSelectionHeader(viewModel: viewModel)
+            Group {
                 if let descriptor = viewModel.selectedModel, viewModel.canChatWithSelectedModel {
                     ChatScreen(
                         title: descriptor.displayName,
@@ -56,7 +55,7 @@ private struct ExampleChatTab: View {
                     ContentUnavailableView(
                         "Model Not Ready",
                         systemImage: "arrow.down.circle",
-                        description: Text("\(descriptor.displayName) is not ready for chat yet. Install it or switch to a ready model in the Models tab.")
+                        description: Text("\(descriptor.displayName) is not ready for chat yet. Install it or switch to a ready model from the toolbar or the Models tab.")
                     )
                 } else {
                     ContentUnavailableView(
@@ -64,6 +63,26 @@ private struct ExampleChatTab: View {
                         systemImage: "cpu",
                         description: Text("Add a model descriptor to the example catalog.")
                     )
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    ChatModelToolbarMenu(
+                        models: viewModel.models,
+                        selectedModel: viewModel.selectedModel,
+                        statusText: viewModel.selectedModel.map(viewModel.statusText(for:)) ?? "No model selected",
+                        isRefreshing: viewModel.isRefreshing
+                    ) { descriptor in
+                        viewModel.selectedModelID = descriptor.id
+                    }
+                }
+
+                if viewModel.isRefreshing {
+                    ToolbarItem {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing models")
+                    }
                 }
             }
             .navigationTitle("Chat")
@@ -94,7 +113,6 @@ private struct ExampleModelsTab: View {
                         downloadableModels: configuration.downloadableModels.count,
                         installedModels: installedModels.count
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
 
                 if let selectedModel = viewModel.selectedModel {
@@ -104,7 +122,6 @@ private struct ExampleModelsTab: View {
                             status: viewModel.statusText(for: selectedModel),
                             isAvailable: viewModel.isAvailable(selectedModel)
                         )
-                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                     }
 
                     if configuration.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
@@ -187,7 +204,6 @@ private struct ExampleModelsTab: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }
 
     private var readyModels: [ModelDescriptor] {
@@ -334,40 +350,6 @@ private struct ExampleSettingsTab: View {
         case .redactSensitive:
             return "Redact Sensitive"
         }
-    }
-}
-
-private struct ModelSelectionHeader: View {
-    let viewModel: LLMKitExampleViewModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(viewModel.models, id: \.id) { descriptor in
-                        Button {
-                            viewModel.selectedModelID = descriptor.id
-                        } label: {
-                            ModelSelectionChip(
-                                descriptor: descriptor,
-                                isSelected: descriptor.id == currentSelectedModelID,
-                                isAvailable: viewModel.isAvailable(descriptor)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-            Divider()
-        }
-        .background(Color.primary.opacity(0.04))
-    }
-
-    private var currentSelectedModelID: ModelID? {
-        viewModel.selectedModel?.id
     }
 }
 

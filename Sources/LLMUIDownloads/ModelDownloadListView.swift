@@ -108,7 +108,7 @@ public struct ModelDownloadListView: View {
         } deleteAction: {
             await viewModel.delete(descriptor.id)
         }
-        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+//        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
     }
 }
 
@@ -351,7 +351,6 @@ private struct DownloadsOverviewCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func stat(title: String, value: String, tint: Color) -> some View {

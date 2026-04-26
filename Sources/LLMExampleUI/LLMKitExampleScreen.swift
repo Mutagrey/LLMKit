@@ -120,12 +120,6 @@ private struct ExampleModelsTab: View {
                     )
                 }
 
-                if let selectedModel = viewModel.selectedModel {
-                    Section("Current") {
-                        selectedModelSection(for: selectedModel)
-                    }
-                }
-
                 if !installingModels.isEmpty {
                     Section("Installing Now") {
                         ForEach(installingModels, id: \.id) { descriptor in
@@ -199,74 +193,20 @@ private struct ExampleModelsTab: View {
     }
 
     private func modelSelectionRow(for descriptor: ModelDescriptor) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                viewModel.selectedModelID = descriptor.id
-            } label: {
-                ModelRow(
-                    descriptor: descriptor,
-                    status: viewModel.statusText(for: descriptor),
-                    isSelected: descriptor.id == currentSelectedModelID,
-                    isAvailable: viewModel.isAvailable(descriptor)
-                )
-            }
-            .buttonStyle(.plain)
-
-            NavigationLink {
-                ModelDetailView(
-                    descriptor: descriptor,
-                    status: viewModel.statusText(for: descriptor),
-                    isAvailable: viewModel.isAvailable(descriptor)
-                )
-                .navigationTitle(descriptor.displayName)
-            } label: {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Model details")
-            }
-            .buttonStyle(.plain)
-        }
-        .contentShape(Rectangle())
-    }
-
-    private func selectedModelSection(for descriptor: ModelDescriptor) -> some View {
-        let isDownloadable = viewModel.downloadableModels.contains(where: { $0.id == descriptor.id })
-        let installAction: (() async -> Void)? = isDownloadable ? {
-            await downloadsViewModel.beginInstall(descriptor)
-            await viewModel.refresh()
-        } : nil
-        let cancelAction: (() async -> Void)? = isDownloadable ? {
-            await downloadsViewModel.cancelInstall(descriptor.id)
-            await viewModel.refresh()
-        } : nil
-        let deleteAction: (() async -> Void)? = isDownloadable ? {
-            await downloadsViewModel.delete(descriptor.id)
-            await viewModel.refresh()
-        } : nil
-
-        return VStack(alignment: .leading, spacing: 12) {
-            SelectedModelCard(
+        NavigationLink {
+            ModelDetailView(
                 descriptor: descriptor,
                 status: viewModel.statusText(for: descriptor),
-                isAvailable: viewModel.isAvailable(descriptor),
-                installState: downloadsViewModel.installState(for: descriptor.id),
-                installedSizeBytes: downloadsViewModel.storageBytes(for: descriptor.id),
-                isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: descriptor.id),
-                installAction: installAction,
-                cancelAction: cancelAction,
-                deleteAction: deleteAction
+                isAvailable: viewModel.isAvailable(descriptor)
             )
-
-            NavigationLink {
-                ModelDetailView(
-                    descriptor: descriptor,
-                    status: viewModel.statusText(for: descriptor),
-                    isAvailable: viewModel.isAvailable(descriptor)
-                )
-                .navigationTitle(descriptor.displayName)
-            } label: {
-                Label("Open full model details", systemImage: "info.circle")
-            }
+            .navigationTitle(descriptor.displayName)
+        } label: {
+            ModelRow(
+                descriptor: descriptor,
+                status: viewModel.statusText(for: descriptor),
+                isSelected: descriptor.id == currentSelectedModelID,
+                isAvailable: viewModel.isAvailable(descriptor)
+            )
         }
     }
 

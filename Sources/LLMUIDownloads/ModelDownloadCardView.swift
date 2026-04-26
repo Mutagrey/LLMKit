@@ -41,7 +41,6 @@ public struct ModelDownloadCardView: View {
             actionRow
         }
         .padding(14)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var header: some View {

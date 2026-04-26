@@ -10,12 +10,12 @@ struct CatalogOverviewCard: View {
     let installedModels: Int
     let installedSize: String
     let catalogStatus: ModelCatalogStatus
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(catalogTitle)
                 .font(.headline)
-
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text(catalogSubtitle)
                     .font(.caption)
@@ -27,13 +27,13 @@ struct CatalogOverviewCard: View {
                         .lineLimit(2)
                 }
             }
-
+            
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
                 GridRow {
                     summaryMetric(title: "Total", value: "\(totalModels)")
                     summaryMetric(title: "Ready", value: "\(readyModels)", tint: .green)
                 }
-
+                
                 GridRow {
                     summaryMetric(title: "Downloadable", value: "\(downloadableModels)", tint: .blue)
                     summaryMetric(title: "Installed", value: "\(installedModels)", tint: .orange)
@@ -45,7 +45,7 @@ struct CatalogOverviewCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
+    
     private func summaryMetric(title: String, value: String, tint: Color = .secondary) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
@@ -57,7 +57,7 @@ struct CatalogOverviewCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
+    
     private var catalogTitle: String {
         switch catalogStatus.source {
         case .local:
@@ -68,7 +68,7 @@ struct CatalogOverviewCard: View {
             return "Fallback Catalog"
         }
     }
-
+    
     private var catalogSubtitle: String {
         switch catalogStatus.source {
         case .local:
@@ -79,7 +79,7 @@ struct CatalogOverviewCard: View {
             return "Remote catalog could not be used, so the demo is showing the local fallback manifest."
         }
     }
-
+    
     private var catalogMessage: String? {
         guard let message = catalogStatus.message, !message.isEmpty else {
             return nil
@@ -92,13 +92,13 @@ struct CurrentModelSummaryRow: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
-
+    
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: isAvailable ? "checkmark.circle.fill" : "clock")
                 .foregroundStyle(isAvailable ? Color.green : statusTint)
                 .accessibilityHidden(true)
-
+            
             VStack(alignment: .leading, spacing: 3) {
                 Text(descriptor.displayName)
                     .font(.body.weight(.medium))
@@ -108,11 +108,11 @@ struct CurrentModelSummaryRow: View {
                     .foregroundStyle(statusTint)
                     .lineLimit(1)
             }
-
+            
             Spacer(minLength: 12)
         }
     }
-
+    
     private var statusTint: Color {
         statusColor(for: status, isAvailable: isAvailable)
     }
@@ -128,7 +128,7 @@ struct SelectedModelCard: View {
     let installAction: (() async -> Void)?
     let cancelAction: (() async -> Void)?
     let deleteAction: (() async -> Void)?
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -136,21 +136,21 @@ struct SelectedModelCard: View {
                     Text(descriptor.displayName)
                         .font(.headline)
                         .lineLimit(2)
-
+                    
                     Text(exampleModelTraitSummary(for: descriptor))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
-
+                
                 Spacer(minLength: 12)
-
+                
                 VStack(alignment: .trailing, spacing: 8) {
                     statusBadge
                     actionButton
                 }
             }
-
+            
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     compactFact(title: exampleModelFamilyTitle(descriptor.family))
@@ -160,17 +160,17 @@ struct SelectedModelCard: View {
                 }
                 .padding(.vertical, 1)
             }
-
+            
             if !featureHighlights.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                    ForEach(featureHighlights, id: \.self) { title in
-                        compactFeature(title)
+                        ForEach(featureHighlights, id: \.self) { title in
+                            compactFeature(title)
+                        }
                     }
                 }
-                }
             }
-
+            
             if let installState, isInstallable {
                 if isInstalling(state: installState) {
                     ModelInstallProgressView(
@@ -201,7 +201,7 @@ struct SelectedModelCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
-
+    
     private var featureHighlights: [String] {
         var highlights = exampleFeatureHighlights(for: descriptor)
         if highlights.isEmpty {
@@ -209,7 +209,7 @@ struct SelectedModelCard: View {
         }
         return Array(highlights.prefix(3))
     }
-
+    
     private var statusBadge: some View {
         Text(isAvailable ? "Ready" : status)
             .font(.caption.weight(.semibold))
@@ -222,7 +222,7 @@ struct SelectedModelCard: View {
             )
             .multilineTextAlignment(.trailing)
     }
-
+    
     @ViewBuilder
     private var actionButton: some View {
         if let installState, isInstallable {
@@ -244,11 +244,11 @@ struct SelectedModelCard: View {
             }
         }
     }
-
+    
     private var isInstallable: Bool {
         installAction != nil || cancelAction != nil || deleteAction != nil
     }
-
+    
     private func compactFact(title: String) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
@@ -257,7 +257,7 @@ struct SelectedModelCard: View {
             .padding(.vertical, 7)
             .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
     }
-
+    
     private func compactFeature(_ title: String) -> some View {
         Text(title)
             .font(.caption)
@@ -265,7 +265,7 @@ struct SelectedModelCard: View {
             .padding(.vertical, 6)
             .background(Color.accentColor.opacity(0.1), in: Capsule(style: .continuous))
     }
-
+    
     private func isInstalled(state: InstallState) -> Bool {
         switch state {
         case .ready, .warming, .active:
@@ -274,7 +274,7 @@ struct SelectedModelCard: View {
             return false
         }
     }
-
+    
     private func isInstalling(state: InstallState) -> Bool {
         switch state {
         case .downloading, .downloaded, .verifying, .compiling:
@@ -289,7 +289,7 @@ struct ModelDetailView: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
-
+    
     var body: some View {
         List {
             Section("Summary") {
@@ -298,7 +298,7 @@ struct ModelDetailView: View {
                 LabeledContent("Family", value: exampleModelFamilyTitle(descriptor.family))
                 LabeledContent("Model ID", value: descriptor.id.rawValue)
             }
-
+            
             Section("Requirements") {
                 LabeledContent("Download", value: exampleByteCountTitle(descriptor.estimatedDownloadSizeBytes))
                 if let minimumRAMGB = descriptor.minimumRAMGB {
@@ -314,7 +314,7 @@ struct ModelDetailView: View {
                     LabeledContent("Quantization", value: quantization)
                 }
             }
-
+            
             if !descriptor.capabilities.isEmpty {
                 Section("Capabilities") {
                     ForEach(exampleCapabilityTitles(for: descriptor), id: \.self) { capability in
@@ -322,7 +322,7 @@ struct ModelDetailView: View {
                     }
                 }
             }
-
+            
             Section("Source") {
                 LabeledContent("Provider", value: sourceProviderTitle)
                 if let repository = descriptor.source?.repository {
@@ -335,12 +335,12 @@ struct ModelDetailView: View {
             }
         }
     }
-
+    
     private var sourceProviderTitle: String {
         guard let provider = descriptor.source?.provider else {
             return "Unknown"
         }
-
+        
         switch provider {
         case .huggingFace:
             return "Hugging Face"
@@ -359,54 +359,50 @@ struct ModelRow: View {
     let status: String
     let isSelected: Bool
     let isAvailable: Bool
-
+    
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.body)
-                .frame(width: 24, height: 24)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
                 Text(descriptor.displayName)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-
-                Text(exampleModelTraitSummary(for: descriptor))
-                    .font(.caption)
+                Spacer(minLength: 0)
+                compactListFact(exampleModelScore(for: descriptor))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    compactListFact(exampleModelFamilyTitle(descriptor.family))
-                    if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
-                        compactListFact(exampleByteCountTitle(estimatedDownloadSizeBytes))
-                    }
-                    compactListFact(exampleModelScore(for: descriptor))
-                }
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
             }
-
-            Spacer(minLength: 12)
-
-            Text(isAvailable ? "Ready" : status)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    statusColor(for: status, isAvailable: isAvailable).opacity(0.12),
-                    in: Capsule(style: .continuous)
-                )
+            Text(exampleModelTraitSummary(for: descriptor))
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
+            
+            HStack(spacing: 6) {
+                compactListFact(exampleModelFamilyTitle(descriptor.family))
+                if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
+                    compactListFact(exampleByteCountTitle(estimatedDownloadSizeBytes))
+                }
+                
+                Spacer()
+                
+                Text(isAvailable ? "Ready" : status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        statusColor(for: status, isAvailable: isAvailable).opacity(0.12),
+                        in: Capsule(style: .continuous)
+                    )
+                    .lineLimit(1)
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("\(descriptor.displayName), \(isSelected ? "selected" : "not selected")")
     }
-
+    
     private func compactListFact(_ title: String) -> some View {
         Text(title)
             .padding(.horizontal, 7)
@@ -488,7 +484,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
         .longContext,
         .multimodalInput
     ]
-
+    
     let labels: [ModelCapability: String] = [
         .chat: "Chat",
         .completion: "Completion",
@@ -502,7 +498,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
         .longContext: "Long Context",
         .multimodalInput: "Multimodal"
     ]
-
+    
     return preferredOrder.compactMap { capability in
         guard descriptor.capabilities.contains(capability) else {
             return nil
@@ -513,7 +509,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
 
 func exampleFeatureHighlights(for descriptor: ModelDescriptor) -> [String] {
     var highlights: [String] = []
-
+    
     if descriptor.tags.contains("fast") || descriptor.tags.contains("starter") || descriptor.tags.contains("iphone-entry") {
         highlights.append("Fast and lightweight")
     }
@@ -529,7 +525,7 @@ func exampleFeatureHighlights(for descriptor: ModelDescriptor) -> [String] {
     if descriptor.capabilities.contains(.streaming) {
         highlights.append("Streams replies")
     }
-
+    
     return highlights
 }
 
@@ -538,7 +534,7 @@ func exampleModelTraitSummary(for descriptor: ModelDescriptor) -> String {
     if let first = highlights.first {
         return first
     }
-
+    
     if let minimumRAMGB = descriptor.minimumRAMGB, minimumRAMGB <= 8 {
         return "Compact local model"
     }

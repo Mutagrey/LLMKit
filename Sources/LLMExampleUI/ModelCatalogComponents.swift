@@ -10,12 +10,12 @@ struct CatalogOverviewCard: View {
     let installedModels: Int
     let installedSize: String
     let catalogStatus: ModelCatalogStatus
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(catalogTitle)
                 .font(.headline)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(catalogSubtitle)
                     .font(.caption)
@@ -27,17 +27,18 @@ struct CatalogOverviewCard: View {
                         .lineLimit(2)
                 }
             }
-            
+
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
                 GridRow {
                     summaryMetric(title: "Total", value: "\(totalModels)")
                     summaryMetric(title: "Ready", value: "\(readyModels)", tint: .green)
                 }
-                
+
                 GridRow {
                     summaryMetric(title: "Downloadable", value: "\(downloadableModels)", tint: .blue)
                     summaryMetric(title: "Installed", value: "\(installedModels)", tint: .orange)
                 }
+
                 GridRow {
                     summaryMetric(title: "Storage", value: installedSize, tint: .secondary)
                 }
@@ -45,7 +46,7 @@ struct CatalogOverviewCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    
+
     private func summaryMetric(title: String, value: String, tint: Color = .secondary) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
@@ -57,7 +58,7 @@ struct CatalogOverviewCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    
+
     private var catalogTitle: String {
         switch catalogStatus.source {
         case .local:
@@ -68,7 +69,7 @@ struct CatalogOverviewCard: View {
             return "Fallback Catalog"
         }
     }
-    
+
     private var catalogSubtitle: String {
         switch catalogStatus.source {
         case .local:
@@ -79,7 +80,7 @@ struct CatalogOverviewCard: View {
             return "Remote catalog could not be used, so the demo is showing the local fallback manifest."
         }
     }
-    
+
     private var catalogMessage: String? {
         guard let message = catalogStatus.message, !message.isEmpty else {
             return nil
@@ -88,37 +89,7 @@ struct CatalogOverviewCard: View {
     }
 }
 
-struct CurrentModelSummaryRow: View {
-    let descriptor: ModelDescriptor
-    let status: String
-    let isAvailable: Bool
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isAvailable ? "checkmark.circle.fill" : "clock")
-                .foregroundStyle(isAvailable ? Color.green : statusTint)
-                .accessibilityHidden(true)
-            
-            VStack(alignment: .leading, spacing: 3) {
-                Text(descriptor.displayName)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Text("\(exampleBackendTitle(descriptor.backend)) · \(status)")
-                    .font(.caption)
-                    .foregroundStyle(statusTint)
-                    .lineLimit(1)
-            }
-            
-            Spacer(minLength: 12)
-        }
-    }
-    
-    private var statusTint: Color {
-        statusColor(for: status, isAvailable: isAvailable)
-    }
-}
-
-struct SelectedModelCard: View {
+struct ExampleModelCard: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
@@ -127,81 +98,127 @@ struct SelectedModelCard: View {
     let isInstallButtonDisabled: Bool
     let installAction: (() async -> Void)?
     let cancelAction: (() async -> Void)?
-    let deleteAction: (() async -> Void)?
-    
+    let infoAction: () -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(descriptor.displayName)
-                        .font(.headline)
-                        .lineLimit(2)
-                    
-                    Text(exampleModelTraitSummary(for: descriptor))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                
-                Spacer(minLength: 12)
-                
-                VStack(alignment: .trailing, spacing: 8) {
-                    statusBadge
-                    actionButton
-                }
-            }
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    compactFact(title: exampleModelFamilyTitle(descriptor.family))
-                    compactFact(title: exampleBackendTitle(descriptor.backend))
-                    compactFact(title: exampleModelScore(for: descriptor))
-                    compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
-                }
-                .padding(.vertical, 1)
-            }
-            
-            if !featureHighlights.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(featureHighlights, id: \.self) { title in
-                            compactFeature(title)
-                        }
-                    }
-                }
-            }
-            
-            if let installState, isInstallable {
-                if isInstalling(state: installState) {
-                    ModelInstallProgressView(
-                        state: installState,
-                        estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
-                    )
-                } else if isInstalled(state: installState) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Installed locally and ready for use.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if let deleteAction {
-                            Button(role: .destructive) {
-                                Task { await deleteAction() }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                            .font(.caption.weight(.semibold))
-                        }
-                    }
-                }
-            }
+            header
+            factsRow
+            summarySection
+            featureHighlightsSection
+            actionRow
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
-    
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(descriptor.displayName)
+                    .font(.headline)
+                    .lineLimit(2)
+
+                Text("\(exampleBackendTitle(descriptor.backend)) · \(exampleModelScore(for: descriptor))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                Button(action: infoAction) {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Model details")
+
+                statusBadge
+            }
+        }
+    }
+
+    private var factsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                compactFact(title: exampleModelFamilyTitle(descriptor.family))
+                compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
+                if let minimumRAMGB = descriptor.minimumRAMGB {
+                    compactFact(title: "\(minimumRAMGB) GB RAM")
+                }
+            }
+            .padding(.vertical, 1)
+        }
+    }
+
+    @ViewBuilder
+    private var summarySection: some View {
+        if let installState, isInstalling(state: installState) {
+            ModelInstallProgressView(
+                state: installState,
+                estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
+            )
+        } else {
+            Text(exampleModelTraitSummary(for: descriptor))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+    }
+
+    @ViewBuilder
+    private var featureHighlightsSection: some View {
+        if !featureHighlights.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(featureHighlights, id: \.self) { title in
+                        compactFeature(title)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionRow: some View {
+        if let installState {
+            HStack(spacing: 12) {
+                if isInstalling(state: installState), let cancelAction {
+                    Button {
+                        Task { await cancelAction() }
+                    } label: {
+                        Label("Cancel", systemImage: "xmark.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                } else if !isInstalled(state: installState), let installAction {
+                    Button {
+                        Task { await installAction() }
+                    } label: {
+                        Label("Download", systemImage: "arrow.down.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isInstallButtonDisabled)
+                }
+
+                if isInstalled(state: installState) {
+                    Label("Swipe to delete", systemImage: "trash")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                } else if isInstalling(state: installState) {
+                    Label("Install in progress", systemImage: "arrow.down.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private var featureHighlights: [String] {
         var highlights = exampleFeatureHighlights(for: descriptor)
         if highlights.isEmpty {
@@ -209,7 +226,7 @@ struct SelectedModelCard: View {
         }
         return Array(highlights.prefix(3))
     }
-    
+
     private var statusBadge: some View {
         Text(isAvailable ? "Ready" : status)
             .font(.caption.weight(.semibold))
@@ -222,33 +239,7 @@ struct SelectedModelCard: View {
             )
             .multilineTextAlignment(.trailing)
     }
-    
-    @ViewBuilder
-    private var actionButton: some View {
-        if let installState, isInstallable {
-            if isInstalling(state: installState), let cancelAction {
-                Button {
-                    Task { await cancelAction() }
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                }
-                .buttonStyle(.bordered)
-            } else if !isInstalled(state: installState), let installAction {
-                Button {
-                    Task { await installAction() }
-                } label: {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isInstallButtonDisabled)
-            }
-        }
-    }
-    
-    private var isInstallable: Bool {
-        installAction != nil || cancelAction != nil || deleteAction != nil
-    }
-    
+
     private func compactFact(title: String) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
@@ -257,7 +248,7 @@ struct SelectedModelCard: View {
             .padding(.vertical, 7)
             .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
     }
-    
+
     private func compactFeature(_ title: String) -> some View {
         Text(title)
             .font(.caption)
@@ -265,7 +256,7 @@ struct SelectedModelCard: View {
             .padding(.vertical, 6)
             .background(Color.accentColor.opacity(0.1), in: Capsule(style: .continuous))
     }
-    
+
     private func isInstalled(state: InstallState) -> Bool {
         switch state {
         case .ready, .warming, .active:
@@ -274,7 +265,7 @@ struct SelectedModelCard: View {
             return false
         }
     }
-    
+
     private func isInstalling(state: InstallState) -> Bool {
         switch state {
         case .downloading, .downloaded, .verifying, .compiling:
@@ -289,7 +280,7 @@ struct ModelDetailView: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
-    
+
     var body: some View {
         List {
             Section("Summary") {
@@ -298,7 +289,7 @@ struct ModelDetailView: View {
                 LabeledContent("Family", value: exampleModelFamilyTitle(descriptor.family))
                 LabeledContent("Model ID", value: descriptor.id.rawValue)
             }
-            
+
             Section("Requirements") {
                 LabeledContent("Download", value: exampleByteCountTitle(descriptor.estimatedDownloadSizeBytes))
                 if let minimumRAMGB = descriptor.minimumRAMGB {
@@ -314,7 +305,7 @@ struct ModelDetailView: View {
                     LabeledContent("Quantization", value: quantization)
                 }
             }
-            
+
             if !descriptor.capabilities.isEmpty {
                 Section("Capabilities") {
                     ForEach(exampleCapabilityTitles(for: descriptor), id: \.self) { capability in
@@ -322,7 +313,7 @@ struct ModelDetailView: View {
                     }
                 }
             }
-            
+
             Section("Source") {
                 LabeledContent("Provider", value: sourceProviderTitle)
                 if let repository = descriptor.source?.repository {
@@ -335,12 +326,12 @@ struct ModelDetailView: View {
             }
         }
     }
-    
+
     private var sourceProviderTitle: String {
         guard let provider = descriptor.source?.provider else {
             return "Unknown"
         }
-        
+
         switch provider {
         case .huggingFace:
             return "Hugging Face"
@@ -354,63 +345,6 @@ struct ModelDetailView: View {
     }
 }
 
-struct ModelRow: View {
-    let descriptor: ModelDescriptor
-    let status: String
-    let isSelected: Bool
-    let isAvailable: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(descriptor.displayName)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                compactListFact(exampleModelScore(for: descriptor))
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            Text(exampleModelTraitSummary(for: descriptor))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            
-            HStack(spacing: 6) {
-                compactListFact(exampleModelFamilyTitle(descriptor.family))
-                if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
-                    compactListFact(exampleByteCountTitle(estimatedDownloadSizeBytes))
-                }
-                
-                Spacer()
-                
-                Text(isAvailable ? "Ready" : status)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        statusColor(for: status, isAvailable: isAvailable).opacity(0.12),
-                        in: Capsule(style: .continuous)
-                    )
-                    .lineLimit(1)
-            }
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("\(descriptor.displayName), \(isSelected ? "selected" : "not selected")")
-    }
-    
-    private func compactListFact(_ title: String) -> some View {
-        Text(title)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
-    }
-}
-
 private func statusColor(for status: String, isAvailable: Bool) -> Color {
     if isAvailable || status == "Ready" || status == "Active" {
         return .green
@@ -421,7 +355,7 @@ private func statusColor(for status: String, isAvailable: Bool) -> Color {
     if status.hasPrefix("Failed") {
         return .red
     }
-    if status.hasPrefix("Evicted") || status == "Install required" || status == "Network required" {
+    if status.hasPrefix("Evicted") || status == "Install required" || status == "Network required" || status == "Not installed" {
         return .orange
     }
     return .secondary
@@ -484,7 +418,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
         .longContext,
         .multimodalInput
     ]
-    
+
     let labels: [ModelCapability: String] = [
         .chat: "Chat",
         .completion: "Completion",
@@ -498,7 +432,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
         .longContext: "Long Context",
         .multimodalInput: "Multimodal"
     ]
-    
+
     return preferredOrder.compactMap { capability in
         guard descriptor.capabilities.contains(capability) else {
             return nil
@@ -509,7 +443,7 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
 
 func exampleFeatureHighlights(for descriptor: ModelDescriptor) -> [String] {
     var highlights: [String] = []
-    
+
     if descriptor.tags.contains("fast") || descriptor.tags.contains("starter") || descriptor.tags.contains("iphone-entry") {
         highlights.append("Fast and lightweight")
     }
@@ -525,7 +459,7 @@ func exampleFeatureHighlights(for descriptor: ModelDescriptor) -> [String] {
     if descriptor.capabilities.contains(.streaming) {
         highlights.append("Streams replies")
     }
-    
+
     return highlights
 }
 
@@ -534,7 +468,7 @@ func exampleModelTraitSummary(for descriptor: ModelDescriptor) -> String {
     if let first = highlights.first {
         return first
     }
-    
+
     if let minimumRAMGB = descriptor.minimumRAMGB, minimumRAMGB <= 8 {
         return "Compact local model"
     }
@@ -554,4 +488,25 @@ func exampleModelScore(for descriptor: ModelDescriptor) -> String {
         score = "4.5★"
     }
     return score
+}
+
+#Preview {
+    ExampleModelCard(
+        descriptor: .init(
+            id: "test",
+            displayName: "Test Model",
+            family: .custom("Custom Family"),
+            backend: .coreML,
+            capabilities: [.offline, .chat],
+            minimumRAMGB: 8,
+            tags: ["downloadable"]
+        ),
+        status: "Not installed",
+        isAvailable: false,
+        installState: .notInstalled,
+        installedSizeBytes: nil,
+        isInstallButtonDisabled: false,
+        installAction: {},
+        cancelAction: nil
+    ) {}
 }

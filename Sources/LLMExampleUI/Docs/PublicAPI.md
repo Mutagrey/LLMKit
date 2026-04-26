@@ -26,8 +26,8 @@ network cases.
 
 `LLMKitExampleScreen` presents:
 
-- Chat tab for sending prompts through the selected model, with a toolbar-based model picker and compact reusable chat UI.
-- Models tab for catalog source status, a compact selected-model card with inline lifecycle controls, storage totals, and grouped model sections for in-progress installs, chat-ready models, installed-but-not-ready models, and downloadable models.
+- Chat tab for sending prompts through the selected model, with a toolbar-based model picker that reflects shared lifecycle status and compact reusable chat UI.
+- Models tab for catalog source status, storage totals, and a single lifecycle-oriented card style that handles installed, installing, and downloadable models inline.
 - Settings tab for generation quality, routing mode, privacy mode, response token budget, and catalog source diagnostics.
 
 The chat tab sets `ExecutionRequirements.allowsFallback` to `false` so demo-only backends do not silently answer when the

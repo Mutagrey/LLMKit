@@ -4,9 +4,10 @@ import SwiftUI
 struct ChatModelToolbarMenu: View {
     let models: [ModelDescriptor]
     let selectedModel: ModelDescriptor?
-    let statusText: String
+    let selectedStatusText: String
     let isRefreshing: Bool
     let selectModel: (ModelDescriptor) -> Void
+    let statusText: (ModelDescriptor) -> String
 
     var body: some View {
         Menu {
@@ -51,7 +52,7 @@ struct ChatModelToolbarMenu: View {
         guard let selectedModel else {
             return "No model selected"
         }
-        return "\(exampleBackendTitle(selectedModel.backend)) · \(statusText)"
+        return "\(exampleBackendTitle(selectedModel.backend)) · \(selectedStatusText)"
     }
 
     private var selectedModelIconName: String {
@@ -62,31 +63,38 @@ struct ChatModelToolbarMenu: View {
     }
 
     private var selectedModelTint: Color {
-        if statusText == "Available" || statusText == "Ready" || statusText == "Active" {
-            return .green
-        }
-        if statusText.hasPrefix("Downloading") || statusText == "Verifying" || statusText == "Compiling" {
-            return .blue
-        }
-        if statusText.hasPrefix("Failed") {
-            return .red
-        }
-        return .secondary
+        tint(for: selectedStatusText)
     }
 
     @ViewBuilder
     private func modelMenuLabel(for descriptor: ModelDescriptor) -> some View {
         HStack(spacing: 10) {
             Image(systemName: descriptor.id == selectedModel?.id ? "checkmark" : menuIconName(for: descriptor))
-                .foregroundStyle(descriptor.id == selectedModel?.id ? Color.accentColor : .secondary)
+                .foregroundStyle(descriptor.id == selectedModel?.id ? Color.accentColor : tint(for: statusText(descriptor)))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(descriptor.displayName)
-                Text(exampleBackendTitle(descriptor.backend))
+                Text("\(exampleBackendTitle(descriptor.backend)) · \(statusText(descriptor))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func tint(for statusText: String) -> Color {
+        if statusText == "Available" || statusText == "Ready" || statusText == "Active" {
+            return .green
+        }
+        if statusText.hasPrefix("Downloading") || statusText == "Downloaded" || statusText == "Verifying" || statusText == "Compiling" {
+            return .blue
+        }
+        if statusText.hasPrefix("Failed") {
+            return .red
+        }
+        if statusText == "Install required" || statusText == "Not installed" || statusText.hasPrefix("Evicted") {
+            return .orange
+        }
+        return .secondary
     }
 
     private func menuIconName(for descriptor: ModelDescriptor) -> String {

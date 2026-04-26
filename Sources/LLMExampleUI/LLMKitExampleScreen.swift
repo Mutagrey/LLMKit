@@ -5,21 +5,36 @@ import SwiftUI
 
 public struct LLMKitExampleScreen: View {
     @State private var viewModel: LLMKitExampleViewModel
+    @State private var downloadsViewModel: ModelDownloadsViewModel
     private let configuration: LLMKitExampleConfiguration
 
     public init(configuration: LLMKitExampleConfiguration = .localIPhoneCatalog()) {
         self.configuration = configuration
         self._viewModel = State(initialValue: LLMKitExampleViewModel(configuration: configuration))
+        self._downloadsViewModel = State(
+            initialValue: ModelDownloadsViewModel(
+                descriptors: configuration.downloadableModels,
+                lifecycleService: configuration.container.lifecycle
+            )
+        )
     }
 
     public var body: some View {
         TabView {
-            ExampleChatTab(viewModel: viewModel, configuration: configuration)
+            ExampleChatTab(
+                viewModel: viewModel,
+                downloadsViewModel: downloadsViewModel,
+                configuration: configuration
+            )
                 .tabItem {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
                 }
 
-            ExampleModelsTab(viewModel: viewModel, configuration: configuration)
+            ExampleModelsTab(
+                viewModel: viewModel,
+                downloadsViewModel: downloadsViewModel,
+                configuration: configuration
+            )
                 .tabItem {
                     Label("Models", systemImage: "cpu")
                 }
@@ -30,13 +45,20 @@ public struct LLMKitExampleScreen: View {
                 }
         }
         .task {
-            await viewModel.refresh()
+            await refreshAll()
         }
+    }
+
+    private func refreshAll() async {
+        await viewModel.refresh()
+        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.refresh()
     }
 }
 
 private struct ExampleChatTab: View {
     let viewModel: LLMKitExampleViewModel
+    let downloadsViewModel: ModelDownloadsViewModel
     let configuration: LLMKitExampleConfiguration
 
     var body: some View {
@@ -70,10 +92,12 @@ private struct ExampleChatTab: View {
                     ChatModelToolbarMenu(
                         models: viewModel.models,
                         selectedModel: viewModel.selectedModel,
-                        statusText: viewModel.selectedModel.map(viewModel.statusText(for:)) ?? "No model selected",
+                        selectedStatusText: viewModel.selectedModel.map(statusText(for:)) ?? "No model selected",
                         isRefreshing: viewModel.isRefreshing
                     ) { descriptor in
                         viewModel.selectedModelID = descriptor.id
+                    } statusText: { descriptor in
+                        statusText(for: descriptor)
                     }
                 }
 
@@ -88,23 +112,27 @@ private struct ExampleChatTab: View {
             .navigationTitle("Chat")
         }
     }
+
+    private func installState(for descriptor: ModelDescriptor) -> InstallState? {
+        guard viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) else {
+            return nil
+        }
+        return downloadsViewModel.installState(for: descriptor.id)
+    }
+
+    private func statusText(for descriptor: ModelDescriptor) -> String {
+        if installState(for: descriptor) != nil {
+            return downloadsViewModel.statusText(for: descriptor.id)
+        }
+        return viewModel.statusText(for: descriptor)
+    }
 }
 
 private struct ExampleModelsTab: View {
     let viewModel: LLMKitExampleViewModel
+    let downloadsViewModel: ModelDownloadsViewModel
     let configuration: LLMKitExampleConfiguration
-    @State private var downloadsViewModel: ModelDownloadsViewModel
-
-    init(viewModel: LLMKitExampleViewModel, configuration: LLMKitExampleConfiguration) {
-        self.viewModel = viewModel
-        self.configuration = configuration
-        self._downloadsViewModel = State(
-            initialValue: ModelDownloadsViewModel(
-                descriptors: configuration.downloadableModels,
-                lifecycleService: configuration.container.lifecycle
-            )
-        )
-    }
+    @State private var presentedDetail: PresentedModelDetail?
 
     var body: some View {
         NavigationStack {
@@ -112,60 +140,17 @@ private struct ExampleModelsTab: View {
                 Section {
                     CatalogOverviewCard(
                         totalModels: viewModel.models.count,
-                        readyModels: readyModels.count,
+                        readyModels: readyModelCount,
                         downloadableModels: viewModel.downloadableModels.count,
-                        installedModels: installedModels.count,
+                        installedModels: installedModelCount,
                         installedSize: downloadsViewModel.installedStorageTitle,
                         catalogStatus: viewModel.catalogStatus
                     )
                 }
 
-                if !installingModels.isEmpty {
-                    Section("Installing Now") {
-                        ForEach(installingModels, id: \.id) { descriptor in
-                            modelSelectionRow(for: descriptor)
-                        }
-                    }
-                }
-
-                if !readyModels.isEmpty {
-                    Section("Ready for Chat") {
-                        ForEach(readyModels, id: \.id) { descriptor in
-                            modelSelectionRow(for: descriptor)
-                        }
-                    }
-                }
-
-                if !installedButUnavailableModels.isEmpty {
-                    Section("Installed on Device") {
-                        ForEach(installedButUnavailableModels, id: \.id) { descriptor in
-                            modelSelectionRow(for: descriptor)
-                        }
-                    }
-                }
-
-                if !downloadCandidates.isEmpty {
-                    Section("Available to Download") {
-                        ForEach(downloadCandidates, id: \.id) { descriptor in
-                            modelSelectionRow(for: descriptor)
-                        }
-                    }
-                }
-
-                if !viewModel.downloadableModels.isEmpty {
-                    Section("Download Catalog") {
-                        NavigationLink {
-                            ModelDownloadListView(
-                                descriptors: viewModel.downloadableModels,
-                                lifecycleService: configuration.container.lifecycle
-                            )
-                            .navigationTitle("Downloads")
-                        } label: {
-                            Label(
-                                "Browse All Downloadable Models",
-                                systemImage: "square.stack.3d.down.right"
-                            )
-                        }
+                Section("Model Catalog") {
+                    ForEach(catalogModels, id: \.id) { descriptor in
+                        modelCard(for: descriptor)
                     }
                 }
             }
@@ -177,82 +162,200 @@ private struct ExampleModelsTab: View {
                         .accessibilityLabel("Refreshing models")
                 }
             }
-            .refreshable {
-                await viewModel.refresh()
-                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
-                await downloadsViewModel.refresh()
+            .safeAreaInset(edge: .bottom) {
+                if let errorMessage = downloadsViewModel.lastErrorMessage ?? viewModel.lastErrorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.background)
+                }
             }
-            .task {
-                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
-                await downloadsViewModel.refresh()
+            .refreshable {
+                await refreshAll()
             }
             .task(id: trackedDownloadablesKey) {
                 downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
             }
+            .task(id: installLifecycleKey) {
+                guard !viewModel.downloadableModels.isEmpty else {
+                    return
+                }
+                await viewModel.refresh()
+            }
+            .sheet(item: $presentedDetail) { detail in
+                NavigationStack {
+                    ModelDetailView(
+                        descriptor: detail.descriptor,
+                        status: statusText(for: detail.descriptor),
+                        isAvailable: isReadyForChat(detail.descriptor)
+                    )
+                    .navigationTitle(detail.descriptor.displayName)
+                }
+            }
         }
     }
 
-    private func modelSelectionRow(for descriptor: ModelDescriptor) -> some View {
-        NavigationLink {
-            ModelDetailView(
-                descriptor: descriptor,
-                status: viewModel.statusText(for: descriptor),
-                isAvailable: viewModel.isAvailable(descriptor)
-            )
-            .navigationTitle(descriptor.displayName)
-        } label: {
-            ModelRow(
-                descriptor: descriptor,
-                status: viewModel.statusText(for: descriptor),
-                isSelected: descriptor.id == currentSelectedModelID,
-                isAvailable: viewModel.isAvailable(descriptor)
-            )
+    private func modelCard(for descriptor: ModelDescriptor) -> some View {
+        ExampleModelCard(
+            descriptor: descriptor,
+            status: statusText(for: descriptor),
+            isAvailable: isReadyForChat(descriptor),
+            installState: installState(for: descriptor),
+            installedSizeBytes: downloadsViewModel.storageBytes(for: descriptor.id),
+            isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: descriptor.id),
+            installAction: installAction(for: descriptor),
+            cancelAction: cancelAction(for: descriptor)
+        ) {
+            presentedDetail = PresentedModelDetail(descriptor: descriptor)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if downloadsViewModel.isInstalled(descriptor.id) {
+                Button(role: .destructive) {
+                    Task {
+                        await downloadsViewModel.delete(descriptor.id)
+                        await viewModel.refresh()
+                    }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+    }
+
+    private var catalogModels: [ModelDescriptor] {
+        viewModel.models.sorted { lhs, rhs in
+            let lhsPriority = modelPriority(for: lhs)
+            let rhsPriority = modelPriority(for: rhs)
+            if lhsPriority != rhsPriority {
+                return lhsPriority < rhsPriority
+            }
+            return lhs.displayName < rhs.displayName
         }
     }
 
-    private var readyModels: [ModelDescriptor] {
-        viewModel.models
-            .filter { $0.id != currentSelectedModelID && viewModel.isAvailable($0) }
-            .sorted { $0.displayName < $1.displayName }
+    private var readyModelCount: Int {
+        viewModel.models.filter(isReadyForChat).count
     }
 
-    private var installingModels: [ModelDescriptor] {
-        viewModel.downloadableModels
-            .filter { $0.id != currentSelectedModelID && downloadsViewModel.isInstalling($0.id) }
-            .sorted { $0.displayName < $1.displayName }
-    }
-
-    private var installedModels: [ModelDescriptor] {
-        viewModel.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }
-    }
-
-    private var installedButUnavailableModels: [ModelDescriptor] {
-        viewModel.downloadableModels
-            .filter {
-                $0.id != currentSelectedModelID &&
-                downloadsViewModel.isInstalled($0.id) &&
-                !downloadsViewModel.isInstalling($0.id) &&
-                !viewModel.isAvailable($0)
-            }
-            .sorted { $0.displayName < $1.displayName }
-    }
-
-    private var downloadCandidates: [ModelDescriptor] {
-        viewModel.downloadableModels
-            .filter {
-                $0.id != currentSelectedModelID &&
-                !downloadsViewModel.isInstalled($0.id) &&
-                !downloadsViewModel.isInstalling($0.id)
-            }
-            .sorted { $0.displayName < $1.displayName }
-    }
-
-    private var currentSelectedModelID: ModelID? {
-        viewModel.selectedModel?.id
+    private var installedModelCount: Int {
+        viewModel.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }.count
     }
 
     private var trackedDownloadablesKey: String {
         viewModel.downloadableModels.map { $0.id.rawValue }.joined(separator: "|")
+    }
+
+    private var installLifecycleKey: String {
+        viewModel.downloadableModels
+            .map { descriptor in
+                "\(descriptor.id.rawValue):\(installLifecyclePhase(for: descriptor.id))"
+            }
+            .joined(separator: "|")
+    }
+
+    private func modelPriority(for descriptor: ModelDescriptor) -> Int {
+        if isReadyForChat(descriptor) {
+            return 0
+        }
+        if downloadsViewModel.isInstalling(descriptor.id) {
+            return 1
+        }
+        if downloadsViewModel.isInstalled(descriptor.id) {
+            return 2
+        }
+        return 3
+    }
+
+    private func installState(for descriptor: ModelDescriptor) -> InstallState? {
+        guard viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) else {
+            return nil
+        }
+        return downloadsViewModel.installState(for: descriptor.id)
+    }
+
+    private func statusText(for descriptor: ModelDescriptor) -> String {
+        if installState(for: descriptor) != nil {
+            return downloadsViewModel.statusText(for: descriptor.id)
+        }
+        return viewModel.statusText(for: descriptor)
+    }
+
+    private func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
+        if let installState = installState(for: descriptor) {
+            switch installState {
+            case .ready, .warming, .active:
+                return true
+            case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+                return viewModel.isAvailable(descriptor)
+            }
+        }
+        return viewModel.isAvailable(descriptor)
+    }
+
+    private func installAction(for descriptor: ModelDescriptor) -> (() async -> Void)? {
+        guard installState(for: descriptor) != nil else {
+            return nil
+        }
+        return {
+            await downloadsViewModel.beginInstall(descriptor)
+        }
+    }
+
+    private func cancelAction(for descriptor: ModelDescriptor) -> (() async -> Void)? {
+        guard downloadsViewModel.isInstalling(descriptor.id) else {
+            return nil
+        }
+        return {
+            await downloadsViewModel.cancelInstall(descriptor.id)
+            await viewModel.refresh()
+        }
+    }
+
+    private func installLifecyclePhase(for modelID: ModelID) -> String {
+        switch downloadsViewModel.installState(for: modelID) {
+        case .notInstalled:
+            return "notInstalled"
+        case .downloading:
+            return "downloading"
+        case .downloaded:
+            return "downloaded"
+        case .verifying:
+            return "verifying"
+        case .compiling:
+            return "compiling"
+        case .ready:
+            return "ready"
+        case .warming:
+            return "warming"
+        case .active:
+            return "active"
+        case .failed:
+            return "failed"
+        case .evicted:
+            return "evicted"
+        }
+    }
+
+    private func refreshAll() async {
+        await viewModel.refresh()
+        await refreshDownloads()
+    }
+
+    private func refreshDownloads() async {
+        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.refresh()
+    }
+}
+
+private struct PresentedModelDetail: Identifiable {
+    let descriptor: ModelDescriptor
+
+    var id: ModelID {
+        descriptor.id
     }
 }
 

@@ -96,6 +96,38 @@ import Testing
 }
 
 @MainActor
+@Test func liveHuggingFaceCatalogSurfacesFeaturedRemoteModels() async throws {
+    let configuration = LLMKitExampleConfiguration.liveHuggingFaceCatalog(
+        fetchCatalogData: { url in
+            guard url.absoluteString.contains("Qwen3.5-2B-OptiQ-4bit") else {
+                throw URLError(.badURL)
+            }
+
+            return Data(
+                """
+                {
+                  "sha": "deadbeef",
+                  "siblings": [
+                    { "rfilename": "config.json", "size": 128 },
+                    { "rfilename": "tokenizer.json", "size": 256 },
+                    { "rfilename": "model.safetensors", "size": 1024 },
+                    { "rfilename": "README.md", "size": 64 }
+                  ]
+                }
+                """.utf8
+            )
+        }
+    )
+    let viewModel = LLMKitExampleViewModel(configuration: configuration)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.models.contains { $0.id.rawValue == "mlx-community.Qwen3.5-2B-OptiQ-4bit" })
+    #expect(viewModel.downloadableModels.contains { $0.id.rawValue == "mlx-community.Qwen3.5-2B-OptiQ-4bit" })
+    #expect(viewModel.catalogStatus.source == .remoteVerified)
+}
+
+@MainActor
 @Test func dynamicRemoteManifestConfigurationReportsFallbackStatusWhenRemoteCatalogFails() async throws {
     let configuration = LLMKitExampleConfiguration.dynamicRemoteManifest(
         remoteSource: RemoteModelCatalogSource(

@@ -1,17 +1,14 @@
 import Foundation
-import LLMBackendFoundationModels
-import LLMBackendMLX
 import LLMCore
 import LLMExampleUI
 import LLMModelLifecycle
-import LLMOrchestrator
 import LLMProtocols
 
 enum DemoConfiguration {
     static func make() -> LLMKitExampleConfiguration {
         let fallbackManifest = ModelManifest(
             id: "llmkit.demo.fallback-catalog",
-            models: [demoEchoModel] + LLMKitExampleModels.localIPhoneTextModels
+            models: LLMKitExampleModels.localIPhoneTextModels
         )
         if let remoteSource = remoteCatalogSourceFromEnvironment() {
             return .dynamicRemoteManifest(
@@ -19,30 +16,15 @@ enum DemoConfiguration {
                 fallbackManifest: fallbackManifest,
                 includeAppleIntelligence: true,
                 runtimeAvailable: true,
-                additionalBackends: [DemoEchoBackend()],
                 lifecycle: makeLifecycle()
             )
         }
 
-        let downloadableModels = fallbackManifest.models.filter { $0.tags.contains("downloadable") }
-        let models = [LLMKitExampleModels.appleIntelligence] + fallbackManifest.models
-        let catalog = DefaultModelCatalog(models: models)
-        let backends: [any ModelBackend] = [
-            FoundationModelsBackend(),
-            MLXBackend(runtimeAvailable: true),
-            DemoEchoBackend()
-        ]
-        let container = LLMKitFactory.makeContainer(
-            catalog: catalog,
-            backends: backends,
+        return .liveHuggingFaceCatalog(
+            fallbackManifest: fallbackManifest,
+            includeAppleIntelligence: true,
+            runtimeAvailable: true,
             lifecycle: makeLifecycle()
-        )
-
-        return LLMKitExampleConfiguration(
-            container: container,
-            catalog: catalog,
-            backends: backends,
-            downloadableModels: downloadableModels
         )
     }
 
@@ -79,26 +61,6 @@ enum DemoConfiguration {
             )
         )
     }
-
-    private static let demoEchoModel = ModelDescriptor(
-        id: "demo.echo",
-        displayName: "Demo Echo",
-        family: .custom("demo"),
-        backend: .custom("demo"),
-        capabilities: [
-            .chat,
-            .completion,
-            .streaming,
-            .offline,
-            .lowLatency
-        ],
-        contextWindowTokens: 4096,
-        supportsStreaming: true,
-        tags: [
-            "demo",
-            "simulator-safe"
-        ]
-    )
 }
 
 private actor DemoManifestFileStore: ManifestStore {

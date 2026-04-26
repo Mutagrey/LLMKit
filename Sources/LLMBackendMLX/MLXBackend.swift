@@ -125,6 +125,10 @@ public struct MLXBackend: ModelBackend {
         if error is CancellationError {
             return .cancelled
         }
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileNoSuchFileError {
+            return .executionFailed("Model files are incomplete or missing. Re-download the model.")
+        }
         return .executionFailed(String(describing: error))
     }
 }

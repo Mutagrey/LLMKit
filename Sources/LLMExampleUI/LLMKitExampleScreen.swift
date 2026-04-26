@@ -122,40 +122,7 @@ private struct ExampleModelsTab: View {
 
                 if let selectedModel = viewModel.selectedModel {
                     Section("Current") {
-                        NavigationLink {
-                            ModelDetailView(
-                                descriptor: selectedModel,
-                                status: viewModel.statusText(for: selectedModel),
-                                isAvailable: viewModel.isAvailable(selectedModel)
-                            )
-                            .navigationTitle(selectedModel.displayName)
-                        } label: {
-                            CurrentModelSummaryRow(
-                                descriptor: selectedModel,
-                                status: viewModel.statusText(for: selectedModel),
-                                isAvailable: viewModel.isAvailable(selectedModel)
-                            )
-                        }
-                    }
-
-                    if viewModel.downloadableModels.contains(where: { $0.id == selectedModel.id }) {
-                        Section("Install") {
-                            ModelDownloadCardView(
-                                descriptor: selectedModel,
-                                state: downloadsViewModel.installState(for: selectedModel.id),
-                                installedSizeBytes: downloadsViewModel.storageBytes(for: selectedModel.id),
-                                isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: selectedModel.id)
-                            ) {
-                                await downloadsViewModel.beginInstall(selectedModel)
-                                await viewModel.refresh()
-                            } cancelAction: {
-                                await downloadsViewModel.cancelInstall(selectedModel.id)
-                                await viewModel.refresh()
-                            } deleteAction: {
-                                await downloadsViewModel.delete(selectedModel.id)
-                                await viewModel.refresh()
-                            }
-                        }
+                        selectedModelSection(for: selectedModel)
                     }
                 }
 
@@ -260,6 +227,47 @@ private struct ExampleModelsTab: View {
             .buttonStyle(.plain)
         }
         .contentShape(Rectangle())
+    }
+
+    private func selectedModelSection(for descriptor: ModelDescriptor) -> some View {
+        let isDownloadable = viewModel.downloadableModels.contains(where: { $0.id == descriptor.id })
+        let installAction: (() async -> Void)? = isDownloadable ? {
+            await downloadsViewModel.beginInstall(descriptor)
+            await viewModel.refresh()
+        } : nil
+        let cancelAction: (() async -> Void)? = isDownloadable ? {
+            await downloadsViewModel.cancelInstall(descriptor.id)
+            await viewModel.refresh()
+        } : nil
+        let deleteAction: (() async -> Void)? = isDownloadable ? {
+            await downloadsViewModel.delete(descriptor.id)
+            await viewModel.refresh()
+        } : nil
+
+        return VStack(alignment: .leading, spacing: 12) {
+            SelectedModelCard(
+                descriptor: descriptor,
+                status: viewModel.statusText(for: descriptor),
+                isAvailable: viewModel.isAvailable(descriptor),
+                installState: downloadsViewModel.installState(for: descriptor.id),
+                installedSizeBytes: downloadsViewModel.storageBytes(for: descriptor.id),
+                isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: descriptor.id),
+                installAction: installAction,
+                cancelAction: cancelAction,
+                deleteAction: deleteAction
+            )
+
+            NavigationLink {
+                ModelDetailView(
+                    descriptor: descriptor,
+                    status: viewModel.statusText(for: descriptor),
+                    isAvailable: viewModel.isAvailable(descriptor)
+                )
+                .navigationTitle(descriptor.displayName)
+            } label: {
+                Label("Open full model details", systemImage: "info.circle")
+            }
+        }
     }
 
     private var readyModels: [ModelDescriptor] {

@@ -18,6 +18,9 @@ public final class ChatViewModel {
     @ObservationIgnored
     private let requirements: ExecutionRequirements
 
+    @ObservationIgnored
+    private var sendTask: Task<Void, Never>?
+
     public init(
         messages: [ChatMessage] = [],
         chatService: (any ChatService)? = nil,
@@ -36,7 +39,11 @@ public final class ChatViewModel {
         appendMessage(message)
     }
 
-    public func send(_ text: String) async {
+    public func submit(_ text: String) {
+        guard sendTask == nil else {
+            return
+        }
+
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -44,7 +51,27 @@ public final class ChatViewModel {
 
         let userMessage = ChatMessage(role: .user, content: MessageContent(text: trimmed))
         appendMessage(userMessage)
+
+        sendTask = Task { [weak self] in
+            await self?.sendCurrentTranscript()
+        }
+    }
+
+    public func send(_ text: String) async {
+        submit(text)
+        await sendTask?.value
+    }
+
+    public func cancelStreaming() {
+        sendTask?.cancel()
+        sendTask = nil
+        streamingText = ""
+        isStreaming = false
+    }
+
+    private func sendCurrentTranscript() async {
         guard let chatService else {
+            sendTask = nil
             return
         }
 
@@ -56,6 +83,7 @@ public final class ChatViewModel {
         do {
             let request = ChatRequest(messages: messages, requirements: requirements)
             for try await event in chatService.send(request) {
+                try Task.checkCancellation()
                 switch event {
                 case .delta(let text):
                     accumulator.append(text)
@@ -77,12 +105,17 @@ public final class ChatViewModel {
             if !accumulator.isEmpty, messages.last?.role != .assistant {
                 appendMessage(ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)))
             }
+        } catch is CancellationError {
+            lastError = nil
+        } catch let error as LLMError where error == .cancelled {
+            lastError = nil
         } catch {
             lastError = ChatErrorPresentation(error: error)
         }
 
         streamingText = ""
         isStreaming = false
+        sendTask = nil
     }
 
     private func appendMessage(_ message: ChatMessage) {

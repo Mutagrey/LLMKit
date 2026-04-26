@@ -138,6 +138,48 @@ public struct LLMKitExampleConfiguration: Sendable {
         )
     }
 
+    public static func liveHuggingFaceCatalog(
+        fallbackManifest: ModelManifest = CuratedModelManifests.localIPhoneTextModels,
+        includeAppleIntelligence: Bool = true,
+        runtimeAvailable: Bool = true,
+        additionalBackends: [any ModelBackend] = [],
+        lifecycle: (any ModelLifecycleService)? = nil,
+        fetchCatalogData: @escaping @Sendable (URL) async throws -> Data = HuggingFaceFeaturedModelCatalog.defaultFetchData
+    ) -> LLMKitExampleConfiguration {
+        let fallbackCatalogManifest = includeAppleIntelligence
+            ? CuratedModelManifests.merged(
+                id: "llmkit.example.live-fallback-catalog",
+                manifests: [CuratedModelManifests.appleFoundation, fallbackManifest]
+            )
+            : fallbackManifest
+        let fallbackCatalog = DefaultModelCatalog(manifest: fallbackCatalogManifest)
+        let liveCatalog = HuggingFaceFeaturedModelCatalog(
+            fallbackCatalog: fallbackCatalog,
+            fetchData: fetchCatalogData
+        )
+
+        var resolvedBackends: [any ModelBackend] = []
+        if includeAppleIntelligence {
+            resolvedBackends.append(FoundationModelsBackend())
+        }
+        resolvedBackends.append(MLXBackend(runtimeAvailable: runtimeAvailable))
+        resolvedBackends.append(contentsOf: additionalBackends)
+
+        let container = LLMKitFactory.makeContainer(
+            catalog: liveCatalog,
+            backends: resolvedBackends,
+            lifecycle: lifecycle
+        )
+
+        return LLMKitExampleConfiguration(
+            container: container,
+            catalog: liveCatalog,
+            catalogStatusProvider: liveCatalog,
+            backends: resolvedBackends,
+            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") }
+        )
+    }
+
     func backend(for kind: BackendKind) -> (any ModelBackend)? {
         backends.first { $0.backendKind == kind }
     }

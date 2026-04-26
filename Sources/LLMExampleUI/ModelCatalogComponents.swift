@@ -1,5 +1,6 @@
 import Foundation
 import LLMCore
+import LLMUIDownloads
 import SwiftUI
 
 struct CatalogOverviewCard: View {
@@ -73,7 +74,7 @@ struct CatalogOverviewCard: View {
         case .local:
             return "A lifecycle-owned catalog of on-device models curated for Apple platforms."
         case .remoteVerified:
-            return "Loaded from a signed remote manifest and merged into the demo catalog."
+            return "Loaded from a live remote catalog and merged with the local fallback models."
         case .fallback:
             return "Remote catalog could not be used, so the demo is showing the local fallback manifest."
         }
@@ -114,6 +115,173 @@ struct CurrentModelSummaryRow: View {
 
     private var statusTint: Color {
         statusColor(for: status, isAvailable: isAvailable)
+    }
+}
+
+struct SelectedModelCard: View {
+    let descriptor: ModelDescriptor
+    let status: String
+    let isAvailable: Bool
+    let installState: InstallState?
+    let installedSizeBytes: Int64?
+    let isInstallButtonDisabled: Bool
+    let installAction: (() async -> Void)?
+    let cancelAction: (() async -> Void)?
+    let deleteAction: (() async -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(descriptor.displayName)
+                        .font(.headline)
+                        .lineLimit(2)
+
+                    Text(exampleModelTraitSummary(for: descriptor))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    statusBadge
+                    actionButton
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    compactFact(title: exampleModelFamilyTitle(descriptor.family))
+                    compactFact(title: exampleBackendTitle(descriptor.backend))
+                    compactFact(title: exampleModelScore(for: descriptor))
+                    compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
+                }
+                .padding(.vertical, 1)
+            }
+
+            if !featureHighlights.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                    ForEach(featureHighlights, id: \.self) { title in
+                        compactFeature(title)
+                    }
+                }
+                }
+            }
+
+            if let installState, isInstallable {
+                if isInstalling(state: installState) {
+                    ModelInstallProgressView(
+                        state: installState,
+                        estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
+                    )
+                } else if isInstalled(state: installState) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Installed locally and ready for use.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if let deleteAction {
+                            Button(role: .destructive) {
+                                Task { await deleteAction() }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .font(.caption.weight(.semibold))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var featureHighlights: [String] {
+        var highlights = exampleFeatureHighlights(for: descriptor)
+        if highlights.isEmpty {
+            highlights = exampleCapabilityTitles(for: descriptor)
+        }
+        return Array(highlights.prefix(3))
+    }
+
+    private var statusBadge: some View {
+        Text(isAvailable ? "Ready" : status)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                statusColor(for: status, isAvailable: isAvailable).opacity(0.12),
+                in: Capsule(style: .continuous)
+            )
+            .multilineTextAlignment(.trailing)
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if let installState, isInstallable {
+            if isInstalling(state: installState), let cancelAction {
+                Button {
+                    Task { await cancelAction() }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .buttonStyle(.bordered)
+            } else if !isInstalled(state: installState), let installAction {
+                Button {
+                    Task { await installAction() }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isInstallButtonDisabled)
+            }
+        }
+    }
+
+    private var isInstallable: Bool {
+        installAction != nil || cancelAction != nil || deleteAction != nil
+    }
+
+    private func compactFact(title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
+    }
+
+    private func compactFeature(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.accentColor.opacity(0.1), in: Capsule(style: .continuous))
+    }
+
+    private func isInstalled(state: InstallState) -> Bool {
+        switch state {
+        case .ready, .warming, .active:
+            return true
+        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+            return false
+        }
+    }
+
+    private func isInstalling(state: InstallState) -> Bool {
+        switch state {
+        case .downloading, .downloaded, .verifying, .compiling:
+            return true
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return false
+        }
     }
 }
 
@@ -206,26 +374,44 @@ struct ModelRow: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    Text(exampleBackendTitle(descriptor.backend))
-                    Text(exampleModelFamilyTitle(descriptor.family))
+                Text(exampleModelTraitSummary(for: descriptor))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    compactListFact(exampleModelFamilyTitle(descriptor.family))
                     if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
-                        Text(exampleByteCountTitle(estimatedDownloadSizeBytes))
+                        compactListFact(exampleByteCountTitle(estimatedDownloadSizeBytes))
                     }
+                    compactListFact(exampleModelScore(for: descriptor))
                 }
-                .font(.caption2)
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 12)
 
             Text(isAvailable ? "Ready" : status)
-                .font(.caption.weight(.medium))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(statusColor(for: status, isAvailable: isAvailable))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    statusColor(for: status, isAvailable: isAvailable).opacity(0.12),
+                    in: Capsule(style: .continuous)
+                )
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("\(descriptor.displayName), \(isSelected ? "selected" : "not selected")")
+    }
+
+    private func compactListFact(_ title: String) -> some View {
+        Text(title)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
     }
 }
 
@@ -323,4 +509,53 @@ func exampleCapabilityTitles(for descriptor: ModelDescriptor) -> [String] {
         }
         return labels[capability]
     }
+}
+
+func exampleFeatureHighlights(for descriptor: ModelDescriptor) -> [String] {
+    var highlights: [String] = []
+
+    if descriptor.tags.contains("fast") || descriptor.tags.contains("starter") || descriptor.tags.contains("iphone-entry") {
+        highlights.append("Fast and lightweight")
+    }
+    if descriptor.tags.contains("balanced") || descriptor.tags.contains("recommended") || descriptor.tags.contains("iphone-recommended") {
+        highlights.append("Balanced daily driver")
+    }
+    if descriptor.tags.contains("quality") || descriptor.tags.contains("pro") || descriptor.tags.contains("iphone-pro") {
+        highlights.append("Higher quality output")
+    }
+    if descriptor.capabilities.contains(.offline) {
+        highlights.append("Fully offline")
+    }
+    if descriptor.capabilities.contains(.streaming) {
+        highlights.append("Streams replies")
+    }
+
+    return highlights
+}
+
+func exampleModelTraitSummary(for descriptor: ModelDescriptor) -> String {
+    let highlights = exampleFeatureHighlights(for: descriptor)
+    if let first = highlights.first {
+        return first
+    }
+
+    if let minimumRAMGB = descriptor.minimumRAMGB, minimumRAMGB <= 8 {
+        return "Compact local model"
+    }
+    if descriptor.family == .appleFoundation {
+        return "System model managed by Apple"
+    }
+    return "General-purpose local model"
+}
+
+func exampleModelScore(for descriptor: ModelDescriptor) -> String {
+    let score: String
+    if descriptor.tags.contains("quality") || descriptor.tags.contains("pro") || descriptor.family == .appleFoundation {
+        score = "4.9★"
+    } else if descriptor.tags.contains("balanced") || descriptor.tags.contains("recommended") || descriptor.tags.contains("iphone-recommended") {
+        score = "4.7★"
+    } else {
+        score = "4.5★"
+    }
+    return score
 }

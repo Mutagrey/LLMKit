@@ -15,6 +15,10 @@ downloadable remote artifacts, caches the accepted manifest, and falls back to a
 fetching or verification fails. It also exposes `ModelCatalogStatusProviding` so host UI can explain when the signed
 remote manifest is active versus when a fallback catalog is being used.
 
+`HuggingFaceFeaturedModelCatalog` is a lifecycle-owned live internet catalog for demo/example hosts. It resolves a curated
+set of featured MLX repositories through Hugging Face model metadata, builds artifact lists from the live repository file
+set, merges those descriptors with a local fallback catalog, and reports fallback status when the remote fetch fails.
+
 `CompositeModelCatalog` combines multiple backend-neutral catalogs into one sorted model list, with later catalogs
 replacing descriptors that share the same `ModelID`.
 
@@ -27,8 +31,11 @@ instead of waiting for the current artifact to finish.
 `ModelIntegrityVerifier` validates manifest signatures plus downloaded artifact size and checksum metadata.
 `ModelInstallCoordinator` now transitions installs through download and verification phases before marking a
 model ready, and it records `.failed(...)` install state when download or integrity checks fail.
-When an install is cancelled, the coordinator removes partial artifacts for that model and returns the install state to
-`.notInstalled` rather than leaving a misleading terminal failure state behind.
+`ModelInstallInterruptionPolicy` defines how cancellation cleanup behaves. The default policy preserves already verified
+artifacts so a later install can resume from completed files while still deleting invalid leftovers from an interrupted
+attempt. Callers that prefer the previous eager cleanup behavior can opt into `.removeAllArtifacts`.
+When an install is cancelled, the coordinator still returns the install state to `.notInstalled` rather than leaving a
+misleading terminal failure state behind.
 Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk
 and reuses it when size and checksum validation pass, so repeated installs after restart can resume from completed files
 instead of always downloading the full manifest again.

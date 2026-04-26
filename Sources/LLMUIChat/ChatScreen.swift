@@ -38,6 +38,7 @@ public struct ChatScreen: View {
                     isComposerFocused: $isComposerFocused,
                     isStreaming: viewModel.isStreaming,
                     send: sendDraft,
+                    stop: viewModel.cancelStreaming,
                     dismissKeyboard: dismissKeyboard
                 )
             }
@@ -61,9 +62,7 @@ public struct ChatScreen: View {
     private func sendDraft() {
         let text = draftText
         draftText = ""
-        Task {
-            await viewModel.send(text)
-        }
+        viewModel.submit(text)
     }
 
     private func dismissKeyboard() {

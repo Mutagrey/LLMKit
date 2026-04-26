@@ -91,6 +91,45 @@ private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifa
     }
 }
 
+private actor DownloadedArtifactLog {
+    private(set) var artifactIDs: [String] = []
+
+    func record(_ artifactID: String) {
+        artifactIDs.append(artifactID)
+    }
+
+    func snapshot() -> [String] {
+        artifactIDs
+    }
+}
+
+private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
+    let payloadsByArtifactID: [String: Data]
+    let log: DownloadedArtifactLog
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        await log.record(artifact.id)
+        try Task.checkCancellation()
+
+        guard let data = payloadsByArtifactID[artifact.id] else {
+            throw LLMError.downloadFailed("Missing test payload for \(artifact.id).")
+        }
+
+        if artifact.id == "tokenizer" {
+            await Task.yield()
+            try Task.checkCancellation()
+        }
+
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: destination, options: [.atomic])
+
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(data.count))
+    }
+}
+
 @Test func modelInstallCoordinatorPublishesReadyRecord() async throws {
     let descriptor = ModelDescriptor(
         id: "local-model",
@@ -285,6 +324,154 @@ private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifa
 
     #expect(await counter.count == 1)
     #expect(try Data(contentsOf: invalidURL) == validData)
+}
+
+@Test func cancelledInstallPreservesVerifiedArtifactsForResumeByDefault() async throws {
+    let weightsData = Data("weights".utf8)
+    let tokenizerData = Data("tokenizer".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-cancel-resume",
+        displayName: "Qwen Cancel Resume",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(weightsData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: weightsData).map { String(format: "%02x", $0) }.joined()
+                    )
+                ),
+                ModelArtifact(
+                    id: "tokenizer",
+                    url: URL(string: "https://example.com/tokenizer.json")!,
+                    relativePath: "tokenizer.json",
+                    byteCount: Int64(tokenizerData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: tokenizerData).map { String(format: "%02x", $0) }.joined()
+                    )
+                )
+            ]
+        )
+    )
+    let firstLog = DownloadedArtifactLog()
+    let firstCoordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CancellationAwareArtifactDownloader(
+            payloadsByArtifactID: [
+                "weights": weightsData,
+                "tokenizer": tokenizerData
+            ],
+            log: firstLog
+        )
+    )
+
+    let installTask = Task {
+        for try await _ in firstCoordinator.install(descriptor) {}
+    }
+    while await firstLog.snapshot().isEmpty {
+        await Task.yield()
+    }
+    installTask.cancel()
+    _ = await installTask.result
+
+    let resolver = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+    let weightsURL = try resolver.artifactURL(modelID: descriptor.id, artifact: descriptor.source!.artifacts[0])
+    let tokenizerURL = try resolver.artifactURL(modelID: descriptor.id, artifact: descriptor.source!.artifacts[1])
+
+    #expect(FileManager.default.fileExists(atPath: weightsURL.path))
+    #expect(!FileManager.default.fileExists(atPath: tokenizerURL.path))
+
+    let secondLog = DownloadedArtifactLog()
+    let secondCoordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CancellationAwareArtifactDownloader(
+            payloadsByArtifactID: [
+                "weights": weightsData,
+                "tokenizer": tokenizerData
+            ],
+            log: secondLog
+        )
+    )
+
+    for try await _ in secondCoordinator.install(descriptor) {}
+
+    #expect(await secondLog.snapshot() == ["tokenizer"])
+}
+
+@Test func cancelledInstallCanRemoveArtifactsWhenPolicyRequestsCleanup() async throws {
+    let weightsData = Data("weights".utf8)
+    let tokenizerData = Data("tokenizer".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-cancel-cleanup",
+        displayName: "Qwen Cancel Cleanup",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(weightsData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: weightsData).map { String(format: "%02x", $0) }.joined()
+                    )
+                ),
+                ModelArtifact(
+                    id: "tokenizer",
+                    url: URL(string: "https://example.com/tokenizer.json")!,
+                    relativePath: "tokenizer.json",
+                    byteCount: Int64(tokenizerData.count),
+                    checksum: ModelArtifactChecksum(
+                        algorithm: "sha256",
+                        value: SHA256.hash(data: tokenizerData).map { String(format: "%02x", $0) }.joined()
+                    )
+                )
+            ]
+        )
+    )
+    let log = DownloadedArtifactLog()
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CancellationAwareArtifactDownloader(
+            payloadsByArtifactID: [
+                "weights": weightsData,
+                "tokenizer": tokenizerData
+            ],
+            log: log
+        ),
+        interruptionPolicy: ModelInstallInterruptionPolicy(cancellationBehavior: .removeAllArtifacts)
+    )
+
+    let installTask = Task {
+        for try await _ in coordinator.install(descriptor) {}
+    }
+    while await log.snapshot().isEmpty {
+        await Task.yield()
+    }
+    installTask.cancel()
+    _ = await installTask.result
+
+    let modelDirectory = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+        .modelDirectory(for: descriptor.id)
+    #expect(!FileManager.default.fileExists(atPath: modelDirectory.path))
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {

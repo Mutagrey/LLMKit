@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(FoundationModels) && !os(tvOS) && !os(watchOS)
 import FoundationModels
 #endif
@@ -20,8 +21,17 @@ enum FoundationModelsRuntimeProbe {
     static func currentAvailability() -> FoundationModelsRuntimeAvailability {
         #if canImport(FoundationModels) && !os(tvOS) && !os(watchOS)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
+            let model = SystemLanguageModel.default
+            switch model.availability {
             case .available:
+                let locale = Locale.autoupdatingCurrent
+                guard model.supportsLocale(locale) else {
+                    let identifier = locale.identifier.isEmpty ? "current locale" : locale.identifier
+                    return FoundationModelsRuntimeAvailability(
+                        isAvailable: false,
+                        reason: "Apple Intelligence does not support the current locale (\(identifier))."
+                    )
+                }
                 return FoundationModelsRuntimeAvailability(isAvailable: true)
             case .unavailable(let reason):
                 return FoundationModelsRuntimeAvailability(isAvailable: false, reason: unavailableReasonDescription(reason))

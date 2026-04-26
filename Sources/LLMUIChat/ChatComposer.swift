@@ -5,6 +5,7 @@ struct ChatComposer: View {
     let isComposerFocused: FocusState<Bool>.Binding
     let isStreaming: Bool
     let send: () -> Void
+    let stop: () -> Void
     let dismissKeyboard: () -> Void
 
     var body: some View {
@@ -29,22 +30,17 @@ struct ChatComposer: View {
                                 .strokeBorder(Color.secondary.opacity(0.12), lineWidth: 1)
                         }
 
-                    Button(action: send) {
-                        Group {
-                            if isStreaming {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "paperplane.fill")
-                                    .font(.headline.weight(.semibold))
-                            }
-                        }
+                    Button(action: isStreaming ? stop : send) {
+                        Image(systemName: isStreaming ? "stop.fill" : "paperplane.fill")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 30, height: 30)
+                            .contentTransition(.symbolEffect(.replace))
                         .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.borderedProminent)
                     .clipShape(.capsule)
                     .disabled(isSendDisabled)
-                    .accessibilityLabel("Send")
+                    .accessibilityLabel(isStreaming ? "Stop" : "Send")
                 }
 
                 if isStreaming {
@@ -55,6 +51,8 @@ struct ChatComposer: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Spacer()
+                        Button("Stop", action: stop)
+                            .font(.caption2.weight(.semibold))
                     }
                 }
             }
@@ -66,6 +64,9 @@ struct ChatComposer: View {
     }
 
     private var isSendDisabled: Bool {
-        draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isStreaming
+        if isStreaming {
+            return false
+        }
+        return draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

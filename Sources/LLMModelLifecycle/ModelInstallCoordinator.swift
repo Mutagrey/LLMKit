@@ -9,6 +9,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private let artifactRootDirectory: URL?
     private let artifactDownloader: any ModelArtifactDownloading
     private let integrityVerifier: ModelIntegrityVerifier
+    private let interruptionPolicy: ModelInstallInterruptionPolicy
     private var hasLoadedPersistedRecords: Bool
 
     public init(
@@ -18,6 +19,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         artifactRootDirectory: URL? = nil,
         artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader(),
         integrityVerifier: ModelIntegrityVerifier = ModelIntegrityVerifier(),
+        interruptionPolicy: ModelInstallInterruptionPolicy = .default,
         loadedPersistedRecords: Bool? = nil
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
@@ -28,6 +30,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         self.artifactRootDirectory = artifactRootDirectory
         self.artifactDownloader = artifactDownloader
         self.integrityVerifier = integrityVerifier
+        self.interruptionPolicy = interruptionPolicy
         self.hasLoadedPersistedRecords = loadedPersistedRecords ?? (recordStore == nil || !records.isEmpty)
     }
 
@@ -99,7 +102,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                 } catch {
                     let llmError = Self.mapInstallError(error)
                     if llmError == .cancelled {
-                        try? await cleanupPartialArtifacts(for: descriptor.id)
+                        try? await handleCancellation(for: descriptor)
                         await stateMachine.transition(modelID: descriptor.id, to: .notInstalled)
                         continuation.yield(.stateChanged(descriptor.id, .notInstalled))
                     } else {
@@ -250,7 +253,47 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         _ = try await integrityVerifier.verify(descriptor, at: artifactRootDirectory)
     }
 
-    private func cleanupPartialArtifacts(for modelID: ModelID) async throws {
+    private func handleCancellation(for descriptor: ModelDescriptor) async throws {
+        switch interruptionPolicy.cancellationBehavior {
+        case .preserveVerifiedArtifactsForResume:
+            try await cleanupInterruptedArtifactsForResume(descriptor)
+        case .removeAllArtifacts:
+            try await cleanupAllArtifacts(for: descriptor.id)
+        }
+    }
+
+    private func cleanupInterruptedArtifactsForResume(_ descriptor: ModelDescriptor) async throws {
+        guard
+            let artifactRootDirectory,
+            let artifacts = descriptor.source?.artifacts,
+            !artifacts.isEmpty
+        else {
+            return
+        }
+
+        for artifact in artifacts {
+            let artifactURL = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+                .artifactURL(modelID: descriptor.id, artifact: artifact)
+            guard FileManager.default.fileExists(atPath: artifactURL.path) else {
+                continue
+            }
+
+            do {
+                _ = try integrityVerifier.verifyArtifact(
+                    artifact,
+                    modelID: descriptor.id,
+                    at: artifactRootDirectory
+                )
+            } catch let error as LLMError {
+                guard case .verificationFailed = error else {
+                    throw error
+                }
+                try FileManager.default.removeItem(at: artifactURL)
+            }
+        }
+    }
+
+    private func cleanupAllArtifacts(for modelID: ModelID) async throws {
         guard let artifactRootDirectory else {
             return
         }
@@ -392,6 +435,13 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
         if let urlError = error as? URLError, urlError.code == .cancelled {
             return .cancelled
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileNoSuchFileError {
+            return .downloadFailed("A downloaded model file is missing. Retry the installation.")
+        }
+        if nsError.domain == NSURLErrorDomain, nsError.code == URLError.fileDoesNotExist.rawValue {
+            return .downloadFailed("The remote artifact could not be resolved. Retry the installation.")
         }
         return .executionFailed(String(describing: error))
     }

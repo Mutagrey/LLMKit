@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMProtocols
 
@@ -11,6 +12,9 @@ enum FoundationModelsNativeRuntime {
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             let model = SystemLanguageModel.default
             guard model.isAvailable else {
+                throw LLMError.unavailable
+            }
+            guard model.supportsLocale(.autoupdatingCurrent) else {
                 throw LLMError.unavailable
             }
 
@@ -46,6 +50,9 @@ enum FoundationModelsNativeRuntime {
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             let model = SystemLanguageModel.default
             guard model.isAvailable else {
+                throw LLMError.unavailable
+            }
+            guard model.supportsLocale(.autoupdatingCurrent) else {
                 throw LLMError.unavailable
             }
 

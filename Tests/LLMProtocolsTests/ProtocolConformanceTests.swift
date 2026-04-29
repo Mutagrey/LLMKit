@@ -35,7 +35,7 @@ private struct FakeBackend: ModelBackend {
     }
 }
 
-@Test func modelBackendContractCanStreamCoreEvents() async throws {
+@Test func modelBackendContractExposesBackendNeutralSurface() async throws {
     let descriptor = ModelDescriptor(
         id: "remote-test",
         displayName: "Remote Test",
@@ -45,14 +45,12 @@ private struct FakeBackend: ModelBackend {
         isRemote: true
     )
     let backend = FakeBackend()
-    let request = BackendGenerationRequest(request: GenerationRequest(prompt: "hi"), model: descriptor)
 
-    var completed: GenerationResult?
-    for try await event in backend.generate(request) {
-        if case .completed(let result) = event {
-            completed = result
-        }
-    }
+    let availability = await backend.availability(for: descriptor)
+    let handle = try await backend.loadModel(descriptor)
 
-    #expect(completed?.text == "ok")
+    #expect(availability.status == .available)
+    #expect(backend.supports(.completion, model: descriptor))
+    #expect(handle.id == descriptor.id)
+    #expect(handle.backend == descriptor.backend)
 }

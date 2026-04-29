@@ -837,91 +837,65 @@ private actor RecordingTransport: HTTPTransport {
 }
 
 @Test func remoteBackendFailsOnProviderHTTPError() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
-        transport: RecordingTransport(responseBody: #"{"error":"nope"}"#, statusCode: 500)
+    let message = RemoteProviderErrorMapper.message(
+        statusCode: 500,
+        headers: [:],
+        body: Data(#"{"error":"nope"}"#.utf8),
+        decoder: JSONDecoder()
     )
-    let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
 
-    do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
-        Issue.record("Expected remote backend to fail on non-2xx provider response.")
-    } catch {
-        #expect(error as? BackendError == .providerFailed("HTTP 500"))
-    }
+    #expect(message == "HTTP 500")
 }
 
 @Test func remoteBackendMapsOpenAIProviderErrorMessage() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration.openAI(apiKey: "token", baseURL: url),
-        transport: RecordingTransport(
-            responseBody: #"{"error":{"message":"invalid api key","type":"invalid_request_error","code":"invalid_api_key"}}"#,
-            statusCode: 401,
-            responseHeaders: ["x-request-id": "req-openai"]
-        )
+    let message = RemoteProviderErrorMapper.message(
+        statusCode: 401,
+        headers: ["x-request-id": "req-openai"],
+        body: Data(#"{"error":{"message":"invalid api key","type":"invalid_request_error","code":"invalid_api_key"}}"#.utf8),
+        decoder: JSONDecoder()
     )
-    let model = ModelDescriptor(id: "gpt-test", displayName: "GPT Test", family: .custom("openai"), backend: .remote, capabilities: [.completion], isRemote: true)
 
-    do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
-        Issue.record("Expected remote backend to fail with the provider error message.")
-    } catch {
-        #expect(error as? BackendError == .providerFailed("HTTP 401: invalid api key (type=invalid_request_error, code=invalid_api_key, request_id=req-openai)"))
-    }
+    #expect(message == "HTTP 401: invalid api key (type=invalid_request_error, code=invalid_api_key, request_id=req-openai)")
 }
 
 @Test func remoteBackendMapsAnthropicProviderErrorMessage() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
-        transport: RecordingTransport(
-            responseBody: #"{"type":"error","error":{"type":"rate_limit_error","message":"rate limit exceeded"},"request_id":"req-anthropic"}"#,
-            statusCode: 429
-        )
+    let message = RemoteProviderErrorMapper.message(
+        statusCode: 429,
+        headers: [:],
+        body: Data(#"{"type":"error","error":{"type":"rate_limit_error","message":"rate limit exceeded"},"request_id":"req-anthropic"}"#.utf8),
+        decoder: JSONDecoder()
     )
-    let model = ModelDescriptor(id: "claude-test", displayName: "Claude Test", family: .custom("anthropic"), backend: .remote, capabilities: [.completion], isRemote: true)
 
-    do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
-        Issue.record("Expected remote backend to fail with the Anthropic provider error message.")
-    } catch {
-        #expect(error as? BackendError == .providerFailed("HTTP 429: rate limit exceeded (type=rate_limit_error, request_id=req-anthropic)"))
-    }
+    #expect(message == "HTTP 429: rate limit exceeded (type=rate_limit_error, request_id=req-anthropic)")
 }
 
 @Test func anthropicChatFailsForToolRoleMessagesWithoutReference() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration.anthropic(apiKey: "token", baseURL: url),
-        transport: RecordingTransport(responseBody: #"{"content":[{"type":"text","text":"unused"}]}"#)
-    )
-    let model = ModelDescriptor(id: "claude-chat", displayName: "Claude Chat", family: .custom("anthropic"), backend: .remote, capabilities: [.chat], isRemote: true)
     let toolMessage = ChatMessage(role: .tool, content: MessageContent(text: "tool result"))
 
     do {
-        for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
+        _ = try AnthropicMessageMapper.map([toolMessage])
         Issue.record("Expected Anthropic mapping to reject tool messages without tool call metadata.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("Anthropic tool messages require a tool call reference."))
+        guard case .mappingFailed(let message) = error as? BackendError else {
+            Issue.record("Expected mappingFailed error, got \(error)")
+            return
+        }
+        #expect(message == "Anthropic tool messages require a tool call reference.")
     }
 }
 
 @Test func openAIResponsesChatFailsForToolRoleMessagesWithoutReference() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration.openAIResponses(apiKey: "token", baseURL: url),
-        transport: RecordingTransport(responseBody: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"unused"}]}]}"#)
-    )
-    let model = RemoteModelDescriptors.openAIResponses(id: "gpt-responses-chat")
     let toolMessage = ChatMessage(role: .tool, content: MessageContent(text: "tool result"))
 
     do {
-        for try await _ in backend.chat(BackendChatRequest(request: ChatRequest(messages: [toolMessage]), model: model)) {}
+        _ = try OpenAIResponsesMessageMapper.map([toolMessage])
         Issue.record("Expected OpenAI Responses mapping to reject tool messages without tool call metadata.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("OpenAI Responses tool messages require a tool call reference."))
+        guard case .mappingFailed(let message) = error as? BackendError else {
+            Issue.record("Expected mappingFailed error, got \(error)")
+            return
+        }
+        #expect(message == "OpenAI Responses tool messages require a tool call reference.")
     }
 }
 
@@ -992,76 +966,59 @@ private actor RecordingTransport: HTTPTransport {
 }
 
 @Test func remoteBackendFailsWhenNonStreamingResponseHasNoText() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
-        transport: RecordingTransport(responseBody: #"{"choices":[{}]}"#)
-    )
-    let model = ModelDescriptor(id: "remote-model", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let mapper = RemoteResponseMapper(apiStyle: nil, decoder: JSONDecoder())
 
     do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        _ = try mapper.decodeTextPayload(Data(#"{"choices":[{}]}"#.utf8))
         Issue.record("Expected remote backend to fail when response has no text field.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("Remote response did not contain text."))
+        guard case .mappingFailed(let message) = error as? BackendError else {
+            Issue.record("Expected mappingFailed error, got \(error)")
+            return
+        }
+        #expect(message == "Remote response did not contain text.")
     }
 }
 
 @Test func remoteBackendFailsWhenStreamingDeltaHasNoText() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
     let body = """
     data: {"choices":[{}]}
 
     data: [DONE]
 
     """
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
-        transport: RecordingTransport(responseBody: body)
-    )
-    let model = ModelDescriptor(
-        id: "remote-model",
-        displayName: "Remote",
-        family: .custom("test"),
-        backend: .remote,
-        capabilities: [.completion],
-        supportsStreaming: true,
-        isRemote: true
-    )
+    let mapper = RemoteResponseMapper(apiStyle: nil, decoder: JSONDecoder())
+    let events = try #require(mapper.streamEvents(from: Data(body.utf8)))
 
     do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        _ = try mapper.collectStreamText(events) { _ in }
         Issue.record("Expected remote backend to fail when streaming delta has no text field.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("Remote response did not contain text."))
+        guard case .mappingFailed(let message) = error as? BackendError else {
+            Issue.record("Expected mappingFailed error, got \(error)")
+            return
+        }
+        #expect(message == "Remote response did not contain text.")
     }
 }
 
 @Test func remoteBackendFailsWhenStreamContainsNoTextDeltas() async throws {
-    let url = try #require(URL(string: "https://example.com/v1"))
     let body = """
     data: [DONE]
 
     """
-    let backend = RemoteBackend(
-        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
-        transport: RecordingTransport(responseBody: body)
-    )
-    let model = ModelDescriptor(
-        id: "remote-model",
-        displayName: "Remote",
-        family: .custom("test"),
-        backend: .remote,
-        capabilities: [.completion],
-        supportsStreaming: true,
-        isRemote: true
-    )
+    let mapper = RemoteResponseMapper(apiStyle: nil, decoder: JSONDecoder())
+    let events = try #require(mapper.streamEvents(from: Data(body.utf8)))
 
     do {
-        for try await _ in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {}
+        _ = try mapper.collectStreamText(events) { _ in }
         Issue.record("Expected remote backend to fail when stream has no text deltas.")
     } catch {
-        #expect(error as? BackendError == .mappingFailed("Remote stream did not contain text."))
+        guard case .mappingFailed(let message) = error as? BackendError else {
+            Issue.record("Expected mappingFailed error, got \(error)")
+            return
+        }
+        #expect(message == "Remote stream did not contain text.")
     }
 }
 

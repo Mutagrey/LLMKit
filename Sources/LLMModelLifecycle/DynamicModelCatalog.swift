@@ -8,10 +8,16 @@ import LLMProtocols
 public struct RemoteModelCatalogSource: Hashable, Sendable {
     public let url: URL
     public let signature: ModelManifestSignature
+    public let trustPolicy: RemoteManifestTrustPolicy
 
-    public init(url: URL, signature: ModelManifestSignature) {
+    public init(
+        url: URL,
+        signature: ModelManifestSignature,
+        trustPolicy: RemoteManifestTrustPolicy = .default
+    ) {
         self.url = url
         self.signature = signature
+        self.trustPolicy = trustPolicy
     }
 }
 
@@ -86,6 +92,7 @@ public actor DynamicModelCatalog: ModelCatalogProviding, ModelManifestProviding,
               remoteSource.signature.publicKeyValue != nil else {
             throw LLMError.verificationFailed("Remote model catalogs require an Ed25519 manifest signature.")
         }
+        try remoteSource.trustPolicy.validate(url: remoteSource.url, signature: remoteSource.signature)
         let data = try await fetchManifestData(remoteSource.url)
         let manifest = try loader.load(data: data, expectedSignature: remoteSource.signature)
         try validator.validateInternetLoadedManifest(manifest)

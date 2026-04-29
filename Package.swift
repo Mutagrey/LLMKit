@@ -307,7 +307,10 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMOrchestrator",
+                "LLMPrompting",
+                "LLMSessions",
                 "LLMModelLifecycle",
+                "LLMStorage",
                 "LLMBackendFoundationModels",
                 "LLMBackendMLX",
                 "LLMUIChat",
@@ -391,7 +394,9 @@ let package = Package(
             name: "LLMExampleUITests",
             dependencies: [
                 "LLMCore",
-                "LLMExampleUI"
+                "LLMExampleUI",
+                "LLMStorage",
+                "LLMSessions"
             ]
         ),
         .testTarget(

@@ -7,3 +7,5 @@ catalog registration through `DefaultModelCatalog(manifest:)` plus manifest merg
 `DynamicModelCatalog` for signed internet-loaded catalogs with fallback to a local catalog.
 Interrupted install handling also lives here through `ModelInstallInterruptionPolicy`, so cancellation cleanup and
 resume behavior stay in the lifecycle layer rather than leaking into backends or UI.
+Remote catalog trust controls also live here through `RemoteManifestTrustPolicy`, including HTTPS enforcement, host
+allowlisting, and trusted signing-key pinning for internet-loaded manifests.

@@ -14,6 +14,8 @@ supports SHA-256 digest checks for local compatibility and Ed25519 signatures fo
 downloadable remote artifacts, caches the accepted manifest, and falls back to a caller-provided catalog when
 fetching or verification fails. It also exposes `ModelCatalogStatusProviding` so host UI can explain when the signed
 remote manifest is active versus when a fallback catalog is being used.
+`RemoteManifestTrustPolicy` lets hosts restrict internet-loaded catalogs to HTTPS, an explicit host allowlist, and
+one or more trusted Ed25519 public keys so key rotation can happen without moving trust decisions into UI code.
 
 `HuggingFaceFeaturedModelCatalog` is a lifecycle-owned live internet catalog for demo/example hosts. It resolves a curated
 set of featured MLX repositories through Hugging Face model metadata, builds artifact lists from the live repository file

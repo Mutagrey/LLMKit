@@ -9,20 +9,23 @@
 /* Begin PBXBuildFile section */
 		0A1000010000000000000006 /* LLMKitExampleUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000002 /* LLMKitExampleUI */; };
 		0A1000010000000000000007 /* LLMKitLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 0A10000F0000000000000003 /* LLMKitLocal */; };
-		417866002F9B80DF0029F88C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417865FB2F9B80DF0029F88C /* ContentView.swift */; };
-		417866012F9B80DF0029F88C /* LLMKitDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417865FE2F9B80DF0029F88C /* LLMKitDemoApp.swift */; };
-		417866022F9B80DF0029F88C /* DemoConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417865FC2F9B80DF0029F88C /* DemoConfiguration.swift */; };
-		417866032F9B80DF0029F88C /* DemoEchoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417865FD2F9B80DF0029F88C /* DemoEchoBackend.swift */; };
-		417866072F9B82560029F88C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 417865FA2F9B80DF0029F88C /* Assets.xcassets */; };
+		4178660F2F9EB0E30029F88C /* LLMKitDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4178660D2F9EB0E30029F88C /* LLMKitDemoApp.swift */; };
+		417866102F9EB0E30029F88C /* DemoEchoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4178660C2F9EB0E30029F88C /* DemoEchoBackend.swift */; };
+		417866112F9EB0E30029F88C /* DemoConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4178660B2F9EB0E30029F88C /* DemoConfiguration.swift */; };
+		417866122F9EB0E30029F88C /* DemoAutomationBackgroundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4178660A2F9EB0E30029F88C /* DemoAutomationBackgroundController.swift */; };
+		417866132F9EB0E30029F88C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417866092F9EB0E30029F88C /* ContentView.swift */; };
+		417866142F9EB0E30029F88C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 417866082F9EB0E30029F88C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0A1000030000000000000001 /* LLMKitDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLMKitDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		417865FA2F9B80DF0029F88C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		417865FB2F9B80DF0029F88C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		417865FC2F9B80DF0029F88C /* DemoConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfiguration.swift; sourceTree = "<group>"; };
-		417865FD2F9B80DF0029F88C /* DemoEchoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoEchoBackend.swift; sourceTree = "<group>"; };
-		417865FE2F9B80DF0029F88C /* LLMKitDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMKitDemoApp.swift; sourceTree = "<group>"; };
+		417866082F9EB0E30029F88C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		417866092F9EB0E30029F88C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4178660A2F9EB0E30029F88C /* DemoAutomationBackgroundController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoAutomationBackgroundController.swift; sourceTree = "<group>"; };
+		4178660B2F9EB0E30029F88C /* DemoConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfiguration.swift; sourceTree = "<group>"; };
+		4178660C2F9EB0E30029F88C /* DemoEchoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoEchoBackend.swift; sourceTree = "<group>"; };
+		4178660D2F9EB0E30029F88C /* LLMKitDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMKitDemoApp.swift; sourceTree = "<group>"; };
+		417866152F9EB1650029F88C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -41,7 +44,7 @@
 		0A1000050000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				417865FF2F9B80DF0029F88C /* LLMKitDemo */,
+				4178660E2F9EB0E30029F88C /* LLMKitDemo */,
 				0A1000070000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,14 +57,16 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		417865FF2F9B80DF0029F88C /* LLMKitDemo */ = {
+		4178660E2F9EB0E30029F88C /* LLMKitDemo */ = {
 			isa = PBXGroup;
 			children = (
-				417865FA2F9B80DF0029F88C /* Assets.xcassets */,
-				417865FB2F9B80DF0029F88C /* ContentView.swift */,
-				417865FC2F9B80DF0029F88C /* DemoConfiguration.swift */,
-				417865FD2F9B80DF0029F88C /* DemoEchoBackend.swift */,
-				417865FE2F9B80DF0029F88C /* LLMKitDemoApp.swift */,
+				417866152F9EB1650029F88C /* Info.plist */,
+				417866082F9EB0E30029F88C /* Assets.xcassets */,
+				417866092F9EB0E30029F88C /* ContentView.swift */,
+				4178660A2F9EB0E30029F88C /* DemoAutomationBackgroundController.swift */,
+				4178660B2F9EB0E30029F88C /* DemoConfiguration.swift */,
+				4178660C2F9EB0E30029F88C /* DemoEchoBackend.swift */,
+				4178660D2F9EB0E30029F88C /* LLMKitDemoApp.swift */,
 			);
 			path = LLMKitDemo;
 			sourceTree = "<group>";
@@ -132,7 +137,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				417866072F9B82560029F88C /* Assets.xcassets in Resources */,
+				417866142F9EB0E30029F88C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -143,10 +148,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				417866002F9B80DF0029F88C /* ContentView.swift in Sources */,
-				417866012F9B80DF0029F88C /* LLMKitDemoApp.swift in Sources */,
-				417866022F9B80DF0029F88C /* DemoConfiguration.swift in Sources */,
-				417866032F9B80DF0029F88C /* DemoEchoBackend.swift in Sources */,
+				4178660F2F9EB0E30029F88C /* LLMKitDemoApp.swift in Sources */,
+				417866102F9EB0E30029F88C /* DemoEchoBackend.swift in Sources */,
+				417866112F9EB0E30029F88C /* DemoConfiguration.swift in Sources */,
+				417866122F9EB0E30029F88C /* DemoAutomationBackgroundController.swift in Sources */,
+				417866132F9EB0E30029F88C /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -253,9 +259,12 @@
 				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LLMKitDemo/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).automation";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -281,9 +290,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LLMKitDemo/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).automation";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = processing;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";

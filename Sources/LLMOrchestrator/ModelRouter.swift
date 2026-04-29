@@ -14,9 +14,18 @@ public struct ModelRouter: Sendable {
         let models = try await catalog.availableModels()
         let plan = planner.plan(models: models, requirements: requirements)
         guard !plan.candidates.isEmpty else {
+            if case .require(let modelID) = requirements.selectionPolicy {
+                throw LLMError.modelSelectionFailed("Required model \(modelID.rawValue) does not satisfy the current request or is unavailable in the active catalog.")
+            }
             throw LLMError.unsupportedCapabilities(requirements.requiredCapabilities)
         }
-        guard let preferred = requirements.preferredModel,
+        if case .require(let modelID) = requirements.selectionPolicy {
+            guard let requiredModel = plan.candidates.first(where: { $0.id == modelID }) else {
+                throw LLMError.modelSelectionFailed("Required model \(modelID.rawValue) does not satisfy the current request or is unavailable in the active catalog.")
+            }
+            return ExecutionPlan(candidates: [requiredModel], requirements: requirements)
+        }
+        guard case .prefer(let preferred) = requirements.selectionPolicy,
               let preferredIndex = plan.candidates.firstIndex(where: { $0.id == preferred }) else {
             return plan
         }

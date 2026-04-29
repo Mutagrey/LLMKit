@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMProtocols
 import LLMSessions
@@ -10,6 +11,10 @@ private actor InMemorySessionStore: SessionStore {
 
     init(snapshots: [SessionSnapshot] = []) {
         self.snapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+    }
+
+    func listSessions() async throws -> [SessionOverview] {
+        snapshots.values.map(\.overview).sorted { $0.updatedAt > $1.updatedAt }
     }
 
     func loadSession(id: SessionID) async throws -> SessionSnapshot? {
@@ -36,6 +41,46 @@ private actor InMemorySessionStore: SessionStore {
 
     #expect(updated.messages.count == 1)
     #expect(updated.messages.first?.content.text == "Hello")
+}
+
+@Test func sessionCoordinatorCreatesAutomatedSessionWithExecutionProfile() async throws {
+    let coordinator = SessionCoordinator()
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.chat],
+        selectionPolicy: .require("mlx-community.qwen"),
+        preferredLatency: .background,
+        budget: ExecutionBudget(maxInputTokens: 4096, maxOutputTokens: 512)
+    )
+    let definition = AutomatedConversationDefinition(
+        topic: "Discuss model routing",
+        participants: [
+            AutomatedConversationParticipant(
+                id: "speaker-a",
+                displayName: "Planner",
+                role: "Build the first position."
+            ),
+            AutomatedConversationParticipant(
+                id: "speaker-b",
+                displayName: "Reviewer",
+                role: "Challenge the weak points."
+            )
+        ],
+        sharedExecutionRequirements: requirements,
+        maxTurns: 8
+    )
+
+    let snapshot = try await coordinator.createSession(
+        title: "Routing Debate",
+        kind: .automatedConversation,
+        executionRequirements: requirements,
+        automationDefinition: definition,
+        automationState: AutomatedConversationRunState()
+    )
+
+    #expect(snapshot.kind == .automatedConversation)
+    #expect(snapshot.executionRequirements == requirements)
+    #expect(snapshot.automationDefinition?.topic == "Discuss model routing")
+    #expect(snapshot.automationState?.phase == .idle)
 }
 
 @Test func conversationTranscriptAppendingReturnsNewTranscript() {
@@ -105,4 +150,50 @@ private actor InMemorySessionStore: SessionStore {
     #expect(first?.id == sessionID)
     #expect(second?.id == sessionID)
     #expect(await store.loadedIDs == [sessionID])
+}
+
+@Test func sessionCoordinatorListsStoredSessionsWithoutLoadingSnapshots() async throws {
+    let older = SessionSnapshot(
+        id: "older",
+        descriptor: SessionDescriptor(
+            id: "older",
+            title: "Older",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        ),
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "Older"))]
+    )
+    let newer = SessionSnapshot(
+        id: "newer",
+        descriptor: SessionDescriptor(
+            id: "newer",
+            title: "Newer",
+            createdAt: Date(timeIntervalSince1970: 20),
+            updatedAt: Date(timeIntervalSince1970: 20)
+        ),
+        kind: .automatedConversation,
+        messages: [ChatMessage(role: .assistant, content: MessageContent(text: "Newer"))],
+        automationState: AutomatedConversationRunState(phase: .running)
+    )
+    let store = InMemorySessionStore(snapshots: [older, newer])
+    let coordinator = SessionCoordinator(store: store)
+
+    let sessions = try await coordinator.listSessions()
+
+    #expect(sessions.map { $0.id } == ["newer", "older"])
+    #expect(await store.loadedIDs.isEmpty)
+}
+
+@Test func sessionCoordinatorDeletesPersistedSession() async throws {
+    let stored = SessionSnapshot(
+        id: "delete-me",
+        descriptor: SessionDescriptor(id: "delete-me", title: "Delete me")
+    )
+    let store = InMemorySessionStore(snapshots: [stored])
+    let coordinator = SessionCoordinator(store: store)
+
+    try await coordinator.deleteSession(id: stored.id)
+    let loaded = try await coordinator.loadSession(id: stored.id)
+
+    #expect(loaded == nil)
 }

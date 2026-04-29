@@ -70,7 +70,7 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 delegate.onComplete = { result in
-                    session.invalidateAndCancel()
+                    session.finishTasksAndInvalidate()
                     continuation.resume(with: result)
                 }
                 downloadTask.resume()
@@ -90,7 +90,7 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
     var onComplete: ((Result<ModelArtifactDownloadResult, Error>) -> Void)?
 
     private let lock = NSLock()
-    private var temporaryURL: URL?
+    private var completionResult: Result<ModelArtifactDownloadResult, Error>?
     private var completed = false
 
     init(
@@ -127,9 +127,34 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        lock.lock()
-        temporaryURL = location
-        lock.unlock()
+        do {
+            if let httpResponse = downloadTask.response as? HTTPURLResponse,
+               !(200..<300).contains(httpResponse.statusCode) {
+                throw LLMError.downloadFailed("HTTP \(httpResponse.statusCode) for \(artifact.id)")
+            }
+
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: location, to: destination)
+            let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+            let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+
+            lock.lock()
+            completionResult = .success(ModelArtifactDownloadResult(
+                artifactID: artifact.id,
+                bytesWritten: byteCount
+            ))
+            lock.unlock()
+        } catch {
+            lock.lock()
+            completionResult = .failure(error)
+            lock.unlock()
+        }
     }
 
     func urlSession(
@@ -146,37 +171,16 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
             return
         }
 
-        do {
-            guard let response = task.response else {
-                throw LLMError.downloadFailed("Missing response for \(artifact.id)")
-            }
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200..<300).contains(httpResponse.statusCode) {
-                throw LLMError.downloadFailed("HTTP \(httpResponse.statusCode) for \(artifact.id)")
-            }
+        lock.lock()
+        let completionResult = self.completionResult
+        lock.unlock()
 
-            guard let temporaryURL else {
-                throw LLMError.downloadFailed("Missing downloaded file for \(artifact.id)")
-            }
-
-            try FileManager.default.createDirectory(
-                at: destination.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: temporaryURL, to: destination)
-            let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
-            let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-
-            finish(with: .success(ModelArtifactDownloadResult(
-                artifactID: artifact.id,
-                bytesWritten: byteCount
-            )))
-        } catch {
-            finish(with: .failure(error))
+        guard let completionResult else {
+            finish(with: .failure(LLMError.downloadFailed("Missing downloaded file for \(artifact.id)")))
+            return
         }
+
+        finish(with: completionResult)
     }
 
     private func finish(with result: Result<ModelArtifactDownloadResult, Error>) {

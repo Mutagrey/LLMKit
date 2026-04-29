@@ -458,6 +458,9 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             return "\(modelID.rawValue) is not installed."
         case .unsupportedCapabilities:
             return "Unsupported capabilities."
+        case .unsupportedLocale(let message),
+             .modelSelectionFailed(let message):
+            return message
         case .cancelled:
             return "Cancelled."
         case .unavailable:

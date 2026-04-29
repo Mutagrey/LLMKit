@@ -23,7 +23,12 @@ public struct FoundationModelsBackend: ModelBackend {
 
         let runtimeAvailability = configuredAvailability ?? FoundationModelsRuntimeAvailability.current
         guard runtimeAvailability.isAvailable else {
-            return BackendAvailability(status: .unavailable(reason: runtimeAvailability.reason ?? "Foundation Models runtime is unavailable."))
+            let reason = runtimeAvailability.reason ?? "Foundation Models runtime is unavailable."
+            return BackendAvailability(
+                status: .unavailable(reason: reason),
+                reason: reason,
+                failure: runtimeAvailability.failure ?? .unavailable
+            )
         }
         return .available
     }
@@ -36,8 +41,9 @@ public struct FoundationModelsBackend: ModelBackend {
     }
 
     public func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
-        guard await availability(for: descriptor).status == .available else {
-            throw LLMError.unavailable
+        let availability = await availability(for: descriptor)
+        guard availability.status == .available else {
+            throw availability.failure ?? .unavailable
         }
         return LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
     }
@@ -96,8 +102,9 @@ public struct FoundationModelsBackend: ModelBackend {
     }
 
     private func ensureAvailable(_ descriptor: ModelDescriptor) async throws {
-        guard await availability(for: descriptor).status == .available else {
-            throw LLMError.unavailable
+        let availability = await availability(for: descriptor)
+        guard availability.status == .available else {
+            throw availability.failure ?? .unavailable
         }
     }
 }

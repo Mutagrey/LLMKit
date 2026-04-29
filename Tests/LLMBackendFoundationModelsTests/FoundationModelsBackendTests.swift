@@ -25,6 +25,28 @@ import Testing
     #expect(handle.backend == .foundationModels)
 }
 
+@Test func foundationModelsBackendSurfacesLocaleFailureFromAvailability() async throws {
+    let descriptor = ModelDescriptor(
+        id: "foundation-model",
+        displayName: "Foundation Model",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let message = "Apple Intelligence does not support the current locale (ru_RU)."
+    let backend = FoundationModelsBackend(
+        runtimeAvailability: FoundationModelsRuntimeAvailability(
+            isAvailable: false,
+            reason: message,
+            failure: .unsupportedLocale(message)
+        )
+    )
+
+    let availability = await backend.availability(for: descriptor)
+
+    #expect(availability.failure == .unsupportedLocale(message))
+}
+
 @Test func foundationModelsBackendRejectsWrongBackendDescriptor() async throws {
     let descriptor = ModelDescriptor(id: "remote", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
     let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true))

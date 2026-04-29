@@ -1,4 +1,5 @@
 import Foundation
+import LLMCore
 import LLMStorage
 import Testing
 
@@ -49,4 +50,50 @@ import Testing
     try? FileManager.default.removeItem(at: directory)
 
     #expect(loaded == Data("second".utf8))
+}
+
+@Test func sessionFileStorePersistsSnapshotsAndIndex() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitStorageTests")
+        .appendingPathComponent(UUID().uuidString)
+    let store = SessionFileStore(paths: StoragePaths(rootDirectory: directory))
+    let snapshot = SessionSnapshot(
+        id: "session-1",
+        descriptor: SessionDescriptor(id: "session-1", title: "Stored chat"),
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "hello"))],
+        executionRequirements: ExecutionRequirements(requiredCapabilities: [.chat])
+    )
+
+    try await store.saveSession(snapshot)
+    let loaded = try await store.loadSession(id: snapshot.id)
+    let overviews = try await store.listSessions()
+    try? FileManager.default.removeItem(at: directory)
+
+    #expect(loaded == snapshot)
+    #expect(overviews.count == 1)
+    #expect(overviews.first?.title == "Stored chat")
+}
+
+@Test func sessionFileStoreRebuildsIndexFromSnapshotsWhenIndexIsMissing() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitStorageTests")
+        .appendingPathComponent(UUID().uuidString)
+    let paths = StoragePaths(rootDirectory: directory)
+    let store = SessionFileStore(paths: paths)
+    let snapshot = SessionSnapshot(
+        id: "session-2",
+        descriptor: SessionDescriptor(id: "session-2", title: "Cold start"),
+        messages: [ChatMessage(role: .assistant, content: MessageContent(text: "restored"))]
+    )
+    let encoder = JSONEncoder()
+    try FileManager.default.createDirectory(at: paths.sessionsDirectory, withIntermediateDirectories: true)
+    try encoder.encode(snapshot).write(to: paths.sessionURL(id: snapshot.id), options: [.atomic])
+
+    let overviews = try await store.listSessions()
+    let rebuiltIndexData = try Data(contentsOf: paths.sessionIndexURL)
+    let rebuiltIndex = try JSONDecoder().decode([SessionOverview].self, from: rebuiltIndexData)
+    try? FileManager.default.removeItem(at: directory)
+
+    #expect(overviews.map { $0.id } == [snapshot.id])
+    #expect(rebuiltIndex.map { $0.id } == [snapshot.id])
 }

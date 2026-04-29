@@ -3,6 +3,7 @@ import Foundation
 import LLMCore
 import LLMExampleUI
 import LLMModelLifecycle
+import LLMStorage
 import Testing
 
 @Test func appleIntelligenceExampleDescriptorIsSystemManagedChatModel() {
@@ -224,4 +225,70 @@ import Testing
 
 private func hexString(for data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
+}
+
+@MainActor
+@Test func manualSessionsKeepLockedModelSelectionAfterGlobalSelectionChanges() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMExampleUITests")
+        .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionStore = SessionFileStore(paths: StoragePaths(rootDirectory: directory))
+    let configuration = LLMKitExampleConfiguration.localIPhoneCatalog(sessionStore: sessionStore)
+    let viewModel = LLMKitExampleViewModel(configuration: configuration)
+
+    await viewModel.refresh()
+    viewModel.selectedModelID = LLMKitExampleModels.qwen25HalfBInstructMLX4Bit.id
+    let first = try await viewModel.createManualSession()
+
+    viewModel.selectedModelID = LLMKitExampleModels.qwen31Point7BMLX4Bit.id
+    let second = try await viewModel.createManualSession()
+
+    let reloadedFirst = try await viewModel.loadSession(id: first.id)
+    let reloadedSecond = try await viewModel.loadSession(id: second.id)
+
+    #expect(reloadedFirst?.executionRequirements?.selectionPolicy == .require(LLMKitExampleModels.qwen25HalfBInstructMLX4Bit.id))
+    #expect(reloadedSecond?.executionRequirements?.selectionPolicy == .require(LLMKitExampleModels.qwen31Point7BMLX4Bit.id))
+}
+
+@MainActor
+@Test func persistedSessionsAreRestoredIntoNewViewModelInstances() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMExampleUITests")
+        .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionStore = SessionFileStore(paths: StoragePaths(rootDirectory: directory))
+    let configuration = LLMKitExampleConfiguration.localIPhoneCatalog(sessionStore: sessionStore)
+    let firstViewModel = LLMKitExampleViewModel(configuration: configuration)
+
+    await firstViewModel.refresh()
+    _ = try await firstViewModel.createManualSession()
+    let automationRequirements = firstViewModel.requirements(
+        for: LLMKitExampleModels.qwen25HalfBInstructMLX4Bit,
+        preferredLatency: .background
+    )
+    let definition = AutomatedConversationDefinition(
+        topic: "Persisted automation",
+        participants: [
+            AutomatedConversationParticipant(
+                id: "speaker-a",
+                displayName: "Planner",
+                role: "Open the discussion."
+            )
+        ],
+        sharedExecutionRequirements: automationRequirements,
+        maxTurns: 4
+    )
+    _ = try await firstViewModel.createAutomatedSession(
+        title: "Automation",
+        definition: definition,
+        executionRequirements: automationRequirements
+    )
+
+    let secondViewModel = LLMKitExampleViewModel(configuration: configuration)
+    await secondViewModel.refresh()
+
+    #expect(secondViewModel.sessions.count == 2)
+    #expect(secondViewModel.sessions.contains { $0.kind == .manualChat })
+    #expect(secondViewModel.sessions.contains { $0.kind == .automatedConversation })
 }

@@ -21,9 +21,8 @@ public struct LLMKitExampleScreen: View {
 
     public var body: some View {
         TabView {
-            ExampleChatTab(
+            ExampleSessionChatTab(
                 viewModel: viewModel,
-                downloadsViewModel: downloadsViewModel,
                 configuration: configuration
             )
                 .tabItem {
@@ -32,8 +31,7 @@ public struct LLMKitExampleScreen: View {
 
             ExampleModelsTab(
                 viewModel: viewModel,
-                downloadsViewModel: downloadsViewModel,
-                configuration: configuration
+                downloadsViewModel: downloadsViewModel
             )
                 .tabItem {
                     Label("Models", systemImage: "cpu")
@@ -60,6 +58,13 @@ private struct ExampleChatTab: View {
     let viewModel: LLMKitExampleViewModel
     let downloadsViewModel: ModelDownloadsViewModel
     let configuration: LLMKitExampleConfiguration
+
+    private var presentation: ExampleModelPresentation {
+        ExampleModelPresentation(
+            viewModel: viewModel,
+            downloadsViewModel: downloadsViewModel
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -92,12 +97,12 @@ private struct ExampleChatTab: View {
                     ChatModelToolbarMenu(
                         models: viewModel.models,
                         selectedModel: viewModel.selectedModel,
-                        selectedStatusText: viewModel.selectedModel.map(statusText(for:)) ?? "No model selected",
+                        selectedStatusText: viewModel.selectedModel.map(presentation.statusText(for:)) ?? "No model selected",
                         isRefreshing: viewModel.isRefreshing
                     ) { descriptor in
                         viewModel.selectedModelID = descriptor.id
                     } statusText: { descriptor in
-                        statusText(for: descriptor)
+                        presentation.statusText(for: descriptor)
                     }
                 }
 
@@ -112,27 +117,19 @@ private struct ExampleChatTab: View {
             .navigationTitle("Chat")
         }
     }
-
-    private func installState(for descriptor: ModelDescriptor) -> InstallState? {
-        guard viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) else {
-            return nil
-        }
-        return downloadsViewModel.installState(for: descriptor.id)
-    }
-
-    private func statusText(for descriptor: ModelDescriptor) -> String {
-        if installState(for: descriptor) != nil {
-            return downloadsViewModel.statusText(for: descriptor.id)
-        }
-        return viewModel.statusText(for: descriptor)
-    }
 }
 
 private struct ExampleModelsTab: View {
     let viewModel: LLMKitExampleViewModel
     let downloadsViewModel: ModelDownloadsViewModel
-    let configuration: LLMKitExampleConfiguration
     @State private var presentedDetail: PresentedModelDetail?
+
+    private var presentation: ExampleModelPresentation {
+        ExampleModelPresentation(
+            viewModel: viewModel,
+            downloadsViewModel: downloadsViewModel
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -189,8 +186,8 @@ private struct ExampleModelsTab: View {
                 NavigationStack {
                     ModelDetailView(
                         descriptor: detail.descriptor,
-                        status: statusText(for: detail.descriptor),
-                        isAvailable: isReadyForChat(detail.descriptor)
+                        status: presentation.statusText(for: detail.descriptor),
+                        isAvailable: presentation.isReadyForChat(detail.descriptor)
                     )
                     .navigationTitle(detail.descriptor.displayName)
                 }
@@ -201,9 +198,9 @@ private struct ExampleModelsTab: View {
     private func modelCard(for descriptor: ModelDescriptor) -> some View {
         ExampleModelCard(
             descriptor: descriptor,
-            status: statusText(for: descriptor),
-            isAvailable: isReadyForChat(descriptor),
-            installState: installState(for: descriptor),
+            status: presentation.statusText(for: descriptor),
+            isAvailable: presentation.isReadyForChat(descriptor),
+            installState: presentation.installState(for: descriptor),
             installedSizeBytes: downloadsViewModel.storageBytes(for: descriptor.id),
             isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: descriptor.id),
             installAction: installAction(for: descriptor),
@@ -228,8 +225,8 @@ private struct ExampleModelsTab: View {
 
     private var catalogModels: [ModelDescriptor] {
         viewModel.models.sorted { lhs, rhs in
-            let lhsPriority = modelPriority(for: lhs)
-            let rhsPriority = modelPriority(for: rhs)
+            let lhsPriority = presentation.modelPriority(for: lhs)
+            let rhsPriority = presentation.modelPriority(for: rhs)
             if lhsPriority != rhsPriority {
                 return lhsPriority < rhsPriority
             }
@@ -238,7 +235,7 @@ private struct ExampleModelsTab: View {
     }
 
     private var readyModelCount: Int {
-        viewModel.models.filter(isReadyForChat).count
+        viewModel.models.filter(presentation.isReadyForChat).count
     }
 
     private var installedModelCount: Int {
@@ -257,47 +254,8 @@ private struct ExampleModelsTab: View {
             .joined(separator: "|")
     }
 
-    private func modelPriority(for descriptor: ModelDescriptor) -> Int {
-        if isReadyForChat(descriptor) {
-            return 0
-        }
-        if downloadsViewModel.isInstalling(descriptor.id) {
-            return 1
-        }
-        if downloadsViewModel.isInstalled(descriptor.id) {
-            return 2
-        }
-        return 3
-    }
-
-    private func installState(for descriptor: ModelDescriptor) -> InstallState? {
-        guard viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) else {
-            return nil
-        }
-        return downloadsViewModel.installState(for: descriptor.id)
-    }
-
-    private func statusText(for descriptor: ModelDescriptor) -> String {
-        if installState(for: descriptor) != nil {
-            return downloadsViewModel.statusText(for: descriptor.id)
-        }
-        return viewModel.statusText(for: descriptor)
-    }
-
-    private func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
-        if let installState = installState(for: descriptor) {
-            switch installState {
-            case .ready, .warming, .active:
-                return true
-            case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
-                return viewModel.isAvailable(descriptor)
-            }
-        }
-        return viewModel.isAvailable(descriptor)
-    }
-
     private func installAction(for descriptor: ModelDescriptor) -> (() async -> Void)? {
-        guard installState(for: descriptor) != nil else {
+        guard presentation.installState(for: descriptor) != nil else {
             return nil
         }
         return {
@@ -356,6 +314,51 @@ private struct PresentedModelDetail: Identifiable {
 
     var id: ModelID {
         descriptor.id
+    }
+}
+
+@MainActor
+private struct ExampleModelPresentation {
+    let viewModel: LLMKitExampleViewModel
+    let downloadsViewModel: ModelDownloadsViewModel
+
+    func installState(for descriptor: ModelDescriptor) -> InstallState? {
+        guard viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) else {
+            return nil
+        }
+        return downloadsViewModel.installState(for: descriptor.id)
+    }
+
+    func statusText(for descriptor: ModelDescriptor) -> String {
+        if installState(for: descriptor) != nil {
+            return downloadsViewModel.statusText(for: descriptor.id)
+        }
+        return viewModel.statusText(for: descriptor)
+    }
+
+    func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
+        if let installState = installState(for: descriptor) {
+            switch installState {
+            case .ready, .warming, .active:
+                return true
+            case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+                return viewModel.isAvailable(descriptor)
+            }
+        }
+        return viewModel.isAvailable(descriptor)
+    }
+
+    func modelPriority(for descriptor: ModelDescriptor) -> Int {
+        if isReadyForChat(descriptor) {
+            return 0
+        }
+        if downloadsViewModel.isInstalling(descriptor.id) {
+            return 1
+        }
+        if downloadsViewModel.isInstalled(descriptor.id) {
+            return 2
+        }
+        return 3
     }
 }
 

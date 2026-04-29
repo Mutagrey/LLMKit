@@ -528,8 +528,7 @@ private actor FailingToolService: ToolService {
     let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
     let requirements = ExecutionRequirements(
         requiredCapabilities: [.completion],
-        preferredModel: "remote",
-        allowsFallback: false
+        selectionPolicy: .require("remote")
     )
 
     do {
@@ -568,6 +567,36 @@ private actor FailingToolService: ToolService {
     let plan = try await router.plan(requirements: requirements)
 
     #expect(plan.candidates.map(\.id) == ["remote", "local"])
+}
+
+@Test func routerRequiresExactModelWhenSelectionPolicyIsStrict() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.completion], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let router = ModelRouter(catalog: catalog)
+
+    let plan = try await router.plan(requirements: ExecutionRequirements(
+        requiredCapabilities: [.completion],
+        selectionPolicy: .require("remote")
+    ))
+
+    #expect(plan.candidates.map(\.id) == ["remote"])
+}
+
+@Test func routerFailsWhenRequiredModelCannotBeSelected() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let catalog = DefaultModelCatalog(models: [local])
+    let router = ModelRouter(catalog: catalog)
+
+    do {
+        _ = try await router.plan(requirements: ExecutionRequirements(
+            requiredCapabilities: [.completion],
+            selectionPolicy: .require("missing")
+        ))
+        Issue.record("Expected strict model selection to fail.")
+    } catch {
+        #expect(error as? LLMError == .modelSelectionFailed("Required model missing does not satisfy the current request or is unavailable in the active catalog."))
+    }
 }
 
 @Test func chatServiceFallsBackToNextCandidate() async throws {
@@ -630,14 +659,35 @@ private actor FailingToolService: ToolService {
         messages: [userMessage],
         requirements: ExecutionRequirements(
             requiredCapabilities: [.chat],
-            preferredModel: "remote",
-            allowsFallback: false
+            selectionPolicy: .require("remote")
         )
     )
 
     do {
         for try await _ in service.send(request) {}
         Issue.record("Expected disabled fallback to surface the preferred model failure.")
+    } catch {
+        #expect(error as? LLMError == .executionFailed("stream threw"))
+    }
+}
+
+@Test func chatServiceDoesNotFallbackWhenSelectionPolicyRequiresSingleModel() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [local, remote])
+    let registry = BackendRegistry(backends: [
+        StreamingBackend(backendKind: .coreML, responseText: "should not execute"),
+        ThrowingBackend(backendKind: .remote)
+    ])
+    let service = DefaultChatService(router: ModelRouter(catalog: catalog), registry: registry)
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "hi"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat], selectionPolicy: .require("remote"))
+    )
+
+    do {
+        for try await _ in service.send(request) {}
+        Issue.record("Expected strict model selection to keep the request on the required model.")
     } catch {
         #expect(error as? LLMError == .executionFailed("stream threw"))
     }

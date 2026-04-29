@@ -64,20 +64,16 @@ public struct MLXBackend: ModelBackend {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    guard let runtime else {
+                    guard runtime != nil else {
                         throw LLMError.unavailable
                     }
                     continuation.yield(.started(request.model))
-                    var output = ""
-                    let stream = try await runtime.stream(
+                    let output = try await streamSanitizedText(
                         prompt: request.request.renderedPrompt,
                         model: request.model,
-                        maxTokens: request.request.requirements.budget?.maxOutputTokens
+                        maxTokens: request.request.requirements.budget?.maxOutputTokens,
+                        onDelta: { continuation.yield(.delta($0)) }
                     )
-                    for try await delta in stream {
-                        output += delta
-                        continuation.yield(.delta(delta))
-                    }
                     continuation.yield(.completed(GenerationResult(text: output, model: request.model)))
                     continuation.finish()
                 } catch {
@@ -91,23 +87,19 @@ public struct MLXBackend: ModelBackend {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    guard let runtime else {
+                    guard runtime != nil else {
                         throw LLMError.unavailable
                     }
                     let prompt = request.request.messages.map { message in
                         "\(message.role.rawValue): \(message.content.text)"
                     }.joined(separator: "\n")
                     continuation.yield(.started(request.model))
-                    var output = ""
-                    let stream = try await runtime.stream(
+                    let output = try await streamSanitizedText(
                         prompt: prompt,
                         model: request.model,
-                        maxTokens: request.request.requirements.budget?.maxOutputTokens
+                        maxTokens: request.request.requirements.budget?.maxOutputTokens,
+                        onDelta: { continuation.yield(.delta($0)) }
                     )
-                    for try await delta in stream {
-                        output += delta
-                        continuation.yield(.delta(delta))
-                    }
                     let message = ChatMessage(role: .assistant, content: MessageContent(text: output))
                     continuation.yield(.completed(ChatResult(message: message, model: request.model)))
                     continuation.finish()
@@ -116,6 +108,42 @@ public struct MLXBackend: ModelBackend {
                 }
             }
         }
+    }
+
+    private func streamSanitizedText(
+        prompt: String,
+        model: ModelDescriptor,
+        maxTokens: Int?,
+        onDelta: (String) -> Void
+    ) async throws -> String {
+        guard let runtime else {
+            throw LLMError.unavailable
+        }
+
+        let stream = try await runtime.stream(
+            prompt: prompt,
+            model: model,
+            maxTokens: maxTokens
+        )
+
+        var sanitizer = MLXStreamOutputSanitizer()
+        var output = ""
+        for try await delta in stream {
+            let visibleDelta = sanitizer.append(delta)
+            guard !visibleDelta.isEmpty else {
+                continue
+            }
+            output += visibleDelta
+            onDelta(visibleDelta)
+        }
+
+        let trailingText = sanitizer.finish()
+        if !trailingText.isEmpty {
+            output += trailingText
+            onDelta(trailingText)
+        }
+
+        return output
     }
 
     private func mapRuntimeError(_ error: Error) -> LLMError {

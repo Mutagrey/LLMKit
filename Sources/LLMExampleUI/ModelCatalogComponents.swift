@@ -103,47 +103,45 @@ struct ExampleModelCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            progressSection
             factsRow
             summarySection
-            featureHighlightsSection
-            actionRow
         }
-        .padding(16)
+        .padding(.vertical, 8)
+        .padding(.horizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(.rect)
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(descriptor.displayName)
-                    .font(.headline)
-                    .lineLimit(2)
+                HStack(alignment: .top) {
+                    Text(descriptor.displayName)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Button(action: infoAction) {
+                        Image(systemName: "info.circle")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Model details")
 
+                }
                 Text("\(exampleBackendTitle(descriptor.backend)) · \(exampleModelScore(for: descriptor))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 0)
 
-            VStack(alignment: .trailing, spacing: 8) {
-                Button(action: infoAction) {
-                    Image(systemName: "info.circle")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Model details")
-
-                statusBadge
-            }
+            controls
         }
     }
 
     private var factsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 compactFact(title: exampleModelFamilyTitle(descriptor.family))
                 compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
@@ -152,79 +150,70 @@ struct ExampleModelCard: View {
                 }
             }
             .padding(.vertical, 1)
-        }
     }
 
     @ViewBuilder
-    private var summarySection: some View {
+    private var progressSection: some View {
         if let installState, isInstalling(state: installState) {
             ModelInstallProgressView(
                 state: installState,
                 estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
             )
-        } else {
+            .frame(maxWidth: 320, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var summarySection: some View {
+        if !isInstalling {
             Text(exampleModelTraitSummary(for: descriptor))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+        } else {
+            EmptyView()
         }
     }
 
     @ViewBuilder
-    private var featureHighlightsSection: some View {
-        if !featureHighlights.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(featureHighlights, id: \.self) { title in
-                        compactFeature(title)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var actionRow: some View {
+    private var controls: some View {
         if let installState {
-            HStack(spacing: 12) {
+            VStack(alignment: .trailing, spacing: 8) {
                 if isInstalling(state: installState), let cancelAction {
                     Button {
                         Task { await cancelAction() }
                     } label: {
-                        Label("Cancel", systemImage: "xmark.circle")
-                            .frame(maxWidth: .infinity)
+                        Image(systemName: "xmark.circle")
                     }
                     .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 } else if !isInstalled(state: installState), let installAction {
                     Button {
                         Task { await installAction() }
                     } label: {
-                        Label("Download", systemImage: "arrow.down.circle")
-                            .frame(maxWidth: .infinity)
+                        Text("Download")
                     }
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
                     .disabled(isInstallButtonDisabled)
                 }
 
-                if isInstalled(state: installState) {
-                    Label("Swipe to delete", systemImage: "trash")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                } else if isInstalling(state: installState) {
-                    Label("Install in progress", systemImage: "arrow.down.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
+                statusBadge
             }
+            .font(.caption)
+
+        } else {
+            statusBadge
+                .font(.caption)
+
         }
     }
 
-    private var featureHighlights: [String] {
-        var highlights = exampleFeatureHighlights(for: descriptor)
-        if highlights.isEmpty {
-            highlights = exampleCapabilityTitles(for: descriptor)
+    private var isInstalling: Bool {
+        guard let installState else {
+            return false
         }
-        return Array(highlights.prefix(3))
+        return isInstalling(state: installState)
     }
 
     private var statusBadge: some View {
@@ -247,14 +236,6 @@ struct ExampleModelCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
-    }
-
-    private func compactFeature(_ title: String) -> some View {
-        Text(title)
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.accentColor.opacity(0.1), in: Capsule(style: .continuous))
     }
 
     private func isInstalled(state: InstallState) -> Bool {

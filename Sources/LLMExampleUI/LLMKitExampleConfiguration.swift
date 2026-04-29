@@ -3,8 +3,11 @@ import LLMBackendFoundationModels
 import LLMBackendMLX
 import LLMCore
 import LLMModelLifecycle
+import LLMPrompting
 import LLMOrchestrator
 import LLMProtocols
+import LLMSessions
+import LLMStorage
 
 public struct LLMKitExampleConfiguration: Sendable {
     public let container: LLMKitContainer
@@ -12,59 +15,80 @@ public struct LLMKitExampleConfiguration: Sendable {
     public let catalogStatusProvider: (any ModelCatalogStatusProviding)?
     public let backends: [any ModelBackend]
     public let downloadableModels: [ModelDescriptor]
+    public let sessionStore: (any SessionStore)?
 
     public init(
         container: LLMKitContainer,
         catalog: any ModelCatalogProviding,
         catalogStatusProvider: (any ModelCatalogStatusProviding)? = nil,
         backends: [any ModelBackend],
-        downloadableModels: [ModelDescriptor] = []
+        downloadableModels: [ModelDescriptor] = [],
+        sessionStore: (any SessionStore)? = nil
     ) {
         self.container = container
         self.catalog = catalog
         self.catalogStatusProvider = catalogStatusProvider
         self.backends = backends
         self.downloadableModels = downloadableModels
+        self.sessionStore = sessionStore
+    }
+
+    public func makeAutomationCoordinator() -> AutomatedConversationCoordinator {
+        AutomatedConversationCoordinator(
+            sessionService: container.sessions,
+            chatService: container.chat,
+            promptRenderer: AutomatedConversationPromptRenderer()
+        )
     }
 
     public static func appleIntelligenceOnly(
-        downloadableModels: [ModelDescriptor] = []
+        downloadableModels: [ModelDescriptor] = [],
+        sessionStore: (any SessionStore)? = defaultSessionStore()
     ) -> LLMKitExampleConfiguration {
         configuration(
             localManifest: ModelManifest(id: "llmkit.example.apple-only", models: downloadableModels),
             includeAppleIntelligence: true,
-            runtimeAvailable: !downloadableModels.isEmpty
+            runtimeAvailable: !downloadableModels.isEmpty,
+            sessionStore: sessionStore
         )
     }
 
-    public static func localIPhoneCatalog() -> LLMKitExampleConfiguration {
+    public static func localIPhoneCatalog(
+        sessionStore: (any SessionStore)? = defaultSessionStore()
+    ) -> LLMKitExampleConfiguration {
         configuration(
             localManifest: CuratedModelManifests.localIPhoneTextModels,
             includeAppleIntelligence: true,
-            runtimeAvailable: true
+            runtimeAvailable: true,
+            sessionStore: sessionStore
         )
     }
 
-    public static func localQwenSmokeTest() -> LLMKitExampleConfiguration {
+    public static func localQwenSmokeTest(
+        sessionStore: (any SessionStore)? = defaultSessionStore()
+    ) -> LLMKitExampleConfiguration {
         configuration(
             localManifest: ModelManifest(
                 id: "llmkit.example.qwen-smoke-test",
                 models: [CuratedModelManifests.qwen25HalfBInstructMLX4Bit]
             ),
             includeAppleIntelligence: true,
-            runtimeAvailable: true
+            runtimeAvailable: true,
+            sessionStore: sessionStore
         )
     }
 
     public static func manifest(
         _ manifest: ModelManifest,
         includeAppleIntelligence: Bool = true,
-        runtimeAvailable: Bool = true
+        runtimeAvailable: Bool = true,
+        sessionStore: (any SessionStore)? = defaultSessionStore()
     ) -> LLMKitExampleConfiguration {
         configuration(
             localManifest: manifest,
             includeAppleIntelligence: includeAppleIntelligence,
-            runtimeAvailable: runtimeAvailable
+            runtimeAvailable: runtimeAvailable,
+            sessionStore: sessionStore
         )
     }
 
@@ -72,7 +96,8 @@ public struct LLMKitExampleConfiguration: Sendable {
         _ manifestURL: URL,
         expectedSignature: ModelManifestSignature? = nil,
         includeAppleIntelligence: Bool = true,
-        runtimeAvailable: Bool = true
+        runtimeAvailable: Bool = true,
+        sessionStore: (any SessionStore)? = defaultSessionStore()
     ) async throws -> LLMKitExampleConfiguration {
         let manifest = try await ManifestLoader().load(
             remoteManifestAt: manifestURL,
@@ -81,7 +106,8 @@ public struct LLMKitExampleConfiguration: Sendable {
         return configuration(
             localManifest: manifest,
             includeAppleIntelligence: includeAppleIntelligence,
-            runtimeAvailable: runtimeAvailable
+            runtimeAvailable: runtimeAvailable,
+            sessionStore: sessionStore
         )
     }
 
@@ -92,6 +118,7 @@ public struct LLMKitExampleConfiguration: Sendable {
         runtimeAvailable: Bool = true,
         additionalBackends: [any ModelBackend] = [],
         lifecycle: (any ModelLifecycleService)? = nil,
+        sessionStore: (any SessionStore)? = defaultSessionStore(),
         fetchManifestData: @escaping @Sendable (URL) async throws -> Data = DynamicModelCatalog.defaultFetchManifestData
     ) -> LLMKitExampleConfiguration {
         let fallbackCatalogManifest = includeAppleIntelligence
@@ -126,7 +153,8 @@ public struct LLMKitExampleConfiguration: Sendable {
         let container = LLMKitFactory.makeContainer(
             catalog: catalog,
             backends: resolvedBackends,
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            sessionStore: sessionStore
         )
 
         return LLMKitExampleConfiguration(
@@ -134,7 +162,8 @@ public struct LLMKitExampleConfiguration: Sendable {
             catalog: catalog,
             catalogStatusProvider: remoteCatalog,
             backends: resolvedBackends,
-            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") }
+            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
+            sessionStore: sessionStore
         )
     }
 
@@ -144,6 +173,7 @@ public struct LLMKitExampleConfiguration: Sendable {
         runtimeAvailable: Bool = true,
         additionalBackends: [any ModelBackend] = [],
         lifecycle: (any ModelLifecycleService)? = nil,
+        sessionStore: (any SessionStore)? = defaultSessionStore(),
         fetchCatalogData: @escaping @Sendable (URL) async throws -> Data = HuggingFaceFeaturedModelCatalog.defaultFetchData
     ) -> LLMKitExampleConfiguration {
         let fallbackCatalogManifest = includeAppleIntelligence
@@ -168,7 +198,8 @@ public struct LLMKitExampleConfiguration: Sendable {
         let container = LLMKitFactory.makeContainer(
             catalog: liveCatalog,
             backends: resolvedBackends,
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            sessionStore: sessionStore
         )
 
         return LLMKitExampleConfiguration(
@@ -176,7 +207,8 @@ public struct LLMKitExampleConfiguration: Sendable {
             catalog: liveCatalog,
             catalogStatusProvider: liveCatalog,
             backends: resolvedBackends,
-            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") }
+            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
+            sessionStore: sessionStore
         )
     }
 
@@ -187,7 +219,8 @@ public struct LLMKitExampleConfiguration: Sendable {
     private static func configuration(
         localManifest: ModelManifest,
         includeAppleIntelligence: Bool,
-        runtimeAvailable: Bool
+        runtimeAvailable: Bool,
+        sessionStore: (any SessionStore)? = defaultSessionStore()
     ) -> LLMKitExampleConfiguration {
         let catalogManifest = includeAppleIntelligence
             ? CuratedModelManifests.merged(
@@ -208,7 +241,8 @@ public struct LLMKitExampleConfiguration: Sendable {
 
         let container = LLMKitFactory.makeContainer(
             catalog: catalog,
-            backends: resolvedBackends
+            backends: resolvedBackends,
+            sessionStore: sessionStore
         )
 
         return LLMKitExampleConfiguration(
@@ -216,7 +250,15 @@ public struct LLMKitExampleConfiguration: Sendable {
             catalog: catalog,
             catalogStatusProvider: nil,
             backends: resolvedBackends,
-            downloadableModels: downloadableModels
+            downloadableModels: downloadableModels,
+            sessionStore: sessionStore
         )
+    }
+
+    public static func defaultSessionStore() -> (any SessionStore)? {
+        guard let rootDirectory = StoragePaths.defaultRootDirectory() else {
+            return nil
+        }
+        return SessionFileStore(paths: StoragePaths(rootDirectory: rootDirectory))
     }
 }

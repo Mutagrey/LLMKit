@@ -22,6 +22,10 @@ public struct ChatErrorPresentation: Hashable, Sendable {
                 self.init(title: "Unavailable", message: "The selected model is currently unavailable.")
             case .unsupportedCapabilities:
                 self.init(title: "Unsupported", message: "The selected model does not support this request.")
+            case .unsupportedLocale(let localeIdentifier):
+                self.init(title: "Unsupported Locale", message: localeIdentifier)
+            case .modelSelectionFailed(let message):
+                self.init(title: "Model Selection Failed", message: message)
             case .modelNotInstalled(let modelID):
                 self.init(title: "Model Missing", message: "\(modelID.rawValue) is not installed.")
             case .downloadFailed(let message):

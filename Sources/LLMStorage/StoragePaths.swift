@@ -8,6 +8,12 @@ public struct StoragePaths: Hashable, Sendable {
         self.rootDirectory = rootDirectory
     }
 
+    public static func defaultRootDirectory() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("LLMKit", isDirectory: true)
+    }
+
     public var manifestsDirectory: URL {
         rootDirectory.appendingPathComponent("manifests", isDirectory: true)
     }
@@ -16,7 +22,22 @@ public struct StoragePaths: Hashable, Sendable {
         rootDirectory.appendingPathComponent("models", isDirectory: true)
     }
 
+    public var sessionsDirectory: URL {
+        rootDirectory.appendingPathComponent("Sessions", isDirectory: true)
+    }
+
+    public var sessionIndexURL: URL {
+        sessionsDirectory.appendingPathComponent("index.json")
+    }
+
     public func sessionURL(id: SessionID) -> URL {
-        rootDirectory.appendingPathComponent("sessions", isDirectory: true).appendingPathComponent("\(id.rawValue).json")
+        sessionsDirectory.appendingPathComponent("\(safeFileName(for: id)).json")
+    }
+
+    private func safeFileName(for id: SessionID) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return id.rawValue.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? String(scalar) : "_"
+        }.joined()
     }
 }

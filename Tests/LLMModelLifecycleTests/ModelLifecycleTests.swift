@@ -108,7 +108,6 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     let log: DownloadedArtifactLog
 
     func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
-        await log.record(artifact.id)
         try Task.checkCancellation()
 
         guard let data = payloadsByArtifactID[artifact.id] else {
@@ -116,15 +115,17 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
         }
 
         if artifact.id == "tokenizer" {
-            await Task.yield()
-            try Task.checkCancellation()
+            try await Task.sleep(nanoseconds: 20_000_000)
         }
+
+        try Task.checkCancellation()
 
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try data.write(to: destination, options: [.atomic])
+        await log.record(artifact.id)
 
         return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(data.count))
     }
@@ -326,6 +327,30 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     #expect(try Data(contentsOf: invalidURL) == validData)
 }
 
+@Test func urlSessionArtifactDownloaderMovesDownloadedFileIntoDestination() async throws {
+    let sourceData = Data("local-model-artifact".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let sourceURL = rootDirectory.appendingPathComponent("source.safetensors")
+    let destinationURL = rootDirectory
+        .appendingPathComponent("Artifacts", isDirectory: true)
+        .appendingPathComponent("model.safetensors")
+
+    try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+    try sourceData.write(to: sourceURL, options: [.atomic])
+
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: sourceURL,
+        relativePath: "model.safetensors"
+    )
+    let result = try await URLSessionModelArtifactDownloader().download(artifact, to: destinationURL)
+
+    #expect(result.artifactID == "weights")
+    #expect(result.bytesWritten == Int64(sourceData.count))
+    #expect(try Data(contentsOf: destinationURL) == sourceData)
+}
+
 @Test func cancelledInstallPreservesVerifiedArtifactsForResumeByDefault() async throws {
     let weightsData = Data("weights".utf8)
     let tokenizerData = Data("tokenizer".utf8)
@@ -471,6 +496,9 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
 
     let modelDirectory = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
         .modelDirectory(for: descriptor.id)
+    for _ in 0..<20 where FileManager.default.fileExists(atPath: modelDirectory.path) {
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
     #expect(!FileManager.default.fileExists(atPath: modelDirectory.path))
 }
 
@@ -819,6 +847,120 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     let models = try await catalog.availableModels()
 
     #expect(models.map(\.id) == [descriptor.id])
+}
+
+@Test func dynamicModelCatalogFallsBackWhenRemoteHostIsNotAllowlisted() async throws {
+    let fallback = ModelDescriptor(
+        id: "fallback-host",
+        displayName: "Fallback Host",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let descriptor = downloadableDescriptor(
+        id: "remote-host-blocked",
+        checksum: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+    )
+    let manifest = ModelManifest(id: "remote", models: [descriptor])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let privateKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try privateKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://blocked.example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: privateKey.publicKey.rawRepresentation)
+            ),
+            trustPolicy: RemoteManifestTrustPolicy(
+                allowedHosts: ["catalog.example.com"]
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: [fallback]),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [fallback.id])
+}
+
+@Test func dynamicModelCatalogAcceptsAnyTrustedSigningKeyFromRotationSet() async throws {
+    let descriptor = downloadableDescriptor(
+        id: "remote-rotated-key",
+        checksum: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+    )
+    let manifest = ModelManifest(id: "remote", models: [descriptor])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let activeKey = Curve25519.Signing.PrivateKey()
+    let standbyKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try activeKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://catalog.example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: activeKey.publicKey.rawRepresentation)
+            ),
+            trustPolicy: RemoteManifestTrustPolicy(
+                allowedHosts: ["catalog.example.com"],
+                trustedSigningPublicKeys: [
+                    hexString(for: standbyKey.publicKey.rawRepresentation),
+                    hexString(for: activeKey.publicKey.rawRepresentation)
+                ]
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: []),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [descriptor.id])
+}
+
+@Test func dynamicModelCatalogFallsBackWhenSigningKeyIsNotTrusted() async throws {
+    let fallback = ModelDescriptor(
+        id: "fallback-key",
+        displayName: "Fallback Key",
+        family: .appleFoundation,
+        backend: .foundationModels,
+        capabilities: [.chat]
+    )
+    let descriptor = downloadableDescriptor(
+        id: "remote-untrusted-key",
+        checksum: SHA256.hash(data: Data("weights".utf8)).map { String(format: "%02x", $0) }.joined()
+    )
+    let manifest = ModelManifest(id: "remote", models: [descriptor])
+    let loader = ManifestLoader()
+    let data = try loader.encoded(manifest)
+    let activeKey = Curve25519.Signing.PrivateKey()
+    let untrustedKey = Curve25519.Signing.PrivateKey()
+    let signatureData = try activeKey.signature(for: data)
+    let catalog = DynamicModelCatalog(
+        remoteSource: RemoteModelCatalogSource(
+            url: URL(string: "https://catalog.example.com/catalog.json")!,
+            signature: ModelManifestSignature(
+                algorithm: "ed25519",
+                value: hexString(for: signatureData),
+                publicKeyValue: hexString(for: activeKey.publicKey.rawRepresentation)
+            ),
+            trustPolicy: RemoteManifestTrustPolicy(
+                allowedHosts: ["catalog.example.com"],
+                trustedSigningPublicKeys: [hexString(for: untrustedKey.publicKey.rawRepresentation)]
+            )
+        ),
+        fallbackCatalog: DefaultModelCatalog(models: [fallback]),
+        fetchManifestData: { _ in data }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.map(\.id) == [fallback.id])
 }
 
 @Test func dynamicModelCatalogFallsBackWhenRemoteSignatureFails() async throws {

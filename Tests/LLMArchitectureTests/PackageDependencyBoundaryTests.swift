@@ -177,7 +177,10 @@ private struct PackageManifest {
             "LLMCore",
             "LLMModelLifecycle",
             "LLMOrchestrator",
+            "LLMPrompting",
             "LLMProtocols",
+            "LLMSessions",
+            "LLMStorage",
             "LLMUIChat",
             "LLMUIDownloads"
         ]

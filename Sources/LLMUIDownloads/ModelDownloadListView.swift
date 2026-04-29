@@ -108,7 +108,6 @@ public struct ModelDownloadListView: View {
         } deleteAction: {
             await viewModel.delete(descriptor.id)
         }
-//        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
     }
 }
 

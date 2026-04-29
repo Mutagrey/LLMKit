@@ -8,7 +8,8 @@ public enum LLMKitFactory {
         catalog: any ModelCatalogProviding,
         backends: [any ModelBackend],
         lifecycle: (any ModelLifecycleService)? = nil,
-        tools: (any ToolService)? = nil
+        tools: (any ToolService)? = nil,
+        sessionStore: (any SessionStore)? = nil
     ) -> LLMKitContainer {
         let registry = BackendRegistry(backends: backends)
         let router = ModelRouter(catalog: catalog)
@@ -18,7 +19,7 @@ public enum LLMKitFactory {
         let lifecycle = lifecycle ?? ModelInstallCoordinator(
             artifactRootDirectory: ModelArtifactLocationResolver.defaultRootDirectory()
         )
-        let sessions = SessionCoordinator()
+        let sessions = SessionCoordinator(store: sessionStore)
         return LLMKitContainer(
             generation: generation,
             chat: chat,

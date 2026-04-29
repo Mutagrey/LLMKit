@@ -1,4 +1,5 @@
 import Foundation
+import LLMCore
 #if canImport(FoundationModels) && !os(tvOS) && !os(watchOS)
 import FoundationModels
 #endif
@@ -6,10 +7,12 @@ import FoundationModels
 public struct FoundationModelsRuntimeAvailability: Hashable, Sendable {
     public let isAvailable: Bool
     public let reason: String?
+    public let failure: LLMError?
 
-    public init(isAvailable: Bool, reason: String? = nil) {
+    public init(isAvailable: Bool, reason: String? = nil, failure: LLMError? = nil) {
         self.isAvailable = isAvailable
         self.reason = reason
+        self.failure = failure
     }
 
     public static var current: FoundationModelsRuntimeAvailability {
@@ -29,19 +32,22 @@ enum FoundationModelsRuntimeProbe {
                     let identifier = locale.identifier.isEmpty ? "current locale" : locale.identifier
                     return FoundationModelsRuntimeAvailability(
                         isAvailable: false,
-                        reason: "Apple Intelligence does not support the current locale (\(identifier))."
+                        reason: "Apple Intelligence does not support the current locale (\(identifier)).",
+                        failure: .unsupportedLocale("Apple Intelligence does not support the current locale (\(identifier)).")
                     )
                 }
                 return FoundationModelsRuntimeAvailability(isAvailable: true)
             case .unavailable(let reason):
-                return FoundationModelsRuntimeAvailability(isAvailable: false, reason: unavailableReasonDescription(reason))
+                let reasonText = unavailableReasonDescription(reason)
+                return FoundationModelsRuntimeAvailability(isAvailable: false, reason: reasonText, failure: .unavailable)
             }
         }
         #endif
 
         return FoundationModelsRuntimeAvailability(
             isAvailable: false,
-            reason: "Foundation Models requires iOS 26, macOS 26, or visionOS 26."
+            reason: "Foundation Models requires iOS 26, macOS 26, or visionOS 26.",
+            failure: .unavailable
         )
     }
 

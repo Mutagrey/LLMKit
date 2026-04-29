@@ -61,7 +61,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
             }
             let availability = await backend.availability(for: model)
             guard availability.status == .available else {
-                lastError = LLMError.unavailable
+                lastError = error(for: availability, model: model)
                 guard request.requirements.allowsFallback else {
                     throw lastError ?? LLMError.unavailable
                 }
@@ -102,5 +102,28 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
         }
 
         throw lastError ?? LLMError.unavailable
+    }
+
+    private func error(for availability: BackendAvailability, model: ModelDescriptor) -> LLMError {
+        if let failure = availability.failure {
+            return failure
+        }
+        switch availability.status {
+        case .requiresInstall:
+            return .modelNotInstalled(model.id)
+        case .unavailable(let reason):
+            return .executionFailed(reason)
+        case .requiresNetwork:
+            return .executionFailed("Network access is required for the selected model.")
+        case .unsupported:
+            return .unsupportedCapabilities(requestedCapabilities(for: model))
+        case .available:
+            return .unavailable
+        }
+    }
+
+    private func requestedCapabilities(for model: ModelDescriptor) -> Set<ModelCapability> {
+        let completionCapabilities: Set<ModelCapability> = [.completion]
+        return model.capabilities.intersection(completionCapabilities).isEmpty ? completionCapabilities : model.capabilities
     }
 }

@@ -55,7 +55,7 @@ public struct DefaultChatService: ChatService {
             }
             let availability = await backend.availability(for: model)
             guard availability.status == .available else {
-                lastError = LLMError.unavailable
+                lastError = error(for: availability, model: model)
                 guard request.requirements.allowsFallback else {
                     throw lastError ?? LLMError.unavailable
                 }
@@ -245,5 +245,23 @@ public struct DefaultChatService: ChatService {
             return false
         }
         return fallback.shouldFallback(after: error)
+    }
+
+    private func error(for availability: BackendAvailability, model: ModelDescriptor) -> LLMError {
+        if let failure = availability.failure {
+            return failure
+        }
+        switch availability.status {
+        case .requiresInstall:
+            return .modelNotInstalled(model.id)
+        case .unavailable(let reason):
+            return .executionFailed(reason)
+        case .requiresNetwork:
+            return .executionFailed("Network access is required for the selected model.")
+        case .unsupported:
+            return .unsupportedCapabilities([.chat])
+        case .available:
+            return .unavailable
+        }
     }
 }

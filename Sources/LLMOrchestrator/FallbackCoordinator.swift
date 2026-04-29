@@ -11,9 +11,9 @@ public struct FallbackCoordinator: Sendable {
             return true
         }
         switch llmError {
-        case .cancelled, .unsupportedCapabilities:
+        case .cancelled, .unsupportedCapabilities, .modelSelectionFailed:
             return false
-        case .unavailable, .modelNotInstalled, .downloadFailed, .verificationFailed, .compilationFailed, .executionFailed, .toolExecutionFailed, .invalidStructuredOutput:
+        case .unavailable, .unsupportedLocale, .modelNotInstalled, .downloadFailed, .verificationFailed, .compilationFailed, .executionFailed, .toolExecutionFailed, .invalidStructuredOutput:
             return true
         }
     }

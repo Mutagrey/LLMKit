@@ -1,3 +1,3 @@
 # LLMModelLifecycle TODO
 
-- Add trust policy controls for remote manifests, including host allowlisting and key rotation/distribution.
+- No queued follow-up items in the current phase.

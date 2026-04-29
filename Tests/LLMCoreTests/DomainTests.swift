@@ -55,17 +55,43 @@ import Testing
 @Test func generationRequestCarriesExecutionRequirements() {
     let requirements = ExecutionRequirements(
         requiredCapabilities: [.completion, .offline],
+        selectionPolicy: .prefer("local-fast"),
         executionMode: .offlineOnly,
         preferredLatency: .interactive,
         qualityTier: .fast,
-        preferredModel: "local-fast"
+        preferredModel: "ignored-by-selection-policy"
     )
     let request = GenerationRequest(prompt: "Summarize", requirements: requirements, sessionID: "session-1")
 
     #expect(request.requirements.requiredCapabilities.contains(.offline))
+    #expect(request.requirements.selectionPolicy == .prefer("local-fast"))
+    #expect(request.requirements.preferredModel == "local-fast")
+    #expect(request.requirements.allowsFallback)
     #expect(request.sessionID == "session-1")
     #expect(request.structuredOutputSchema == nil)
     #expect(request.renderedPrompt == "Summarize")
+}
+
+@Test func executionRequirementsDecodesLegacyPreferredModelAndFallback() throws {
+    let data = Data(
+        """
+        {
+          "requiredCapabilities": [],
+          "executionMode": "hybrid",
+          "preferredLatency": "interactive",
+          "qualityTier": "balanced",
+          "preferredModel": "legacy.model",
+          "privacyMode": "standard",
+          "allowsFallback": false
+        }
+        """.utf8
+    )
+
+    let decoded = try JSONDecoder().decode(ExecutionRequirements.self, from: data)
+
+    #expect(decoded.selectionPolicy == .require("legacy.model"))
+    #expect(decoded.preferredModel == "legacy.model")
+    #expect(decoded.allowsFallback == false)
 }
 
 @Test func lifecycleStatesAreEquatable() {

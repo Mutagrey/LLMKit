@@ -19,17 +19,27 @@ public final class ChatViewModel {
     private let requirements: ExecutionRequirements
 
     @ObservationIgnored
+    private let sessionID: SessionID?
+
+    @ObservationIgnored
+    private let onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)?
+
+    @ObservationIgnored
     private var sendTask: Task<Void, Never>?
 
     public init(
         messages: [ChatMessage] = [],
         chatService: (any ChatService)? = nil,
-        requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.chat])
+        requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.chat]),
+        sessionID: SessionID? = nil,
+        onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)? = nil
     ) {
         self.messages = messages
         self.transcriptItems = messages.map(ChatTranscriptItem.message)
         self.chatService = chatService
         self.requirements = requirements
+        self.sessionID = sessionID
+        self.onMessageAppended = onMessageAppended
         self.isStreaming = false
         self.streamingText = ""
         self.lastError = nil
@@ -81,7 +91,7 @@ public final class ChatViewModel {
 
         var accumulator = StreamedTextAccumulator()
         do {
-            let request = ChatRequest(messages: messages, requirements: requirements)
+            let request = ChatRequest(messages: messages, requirements: requirements, sessionID: sessionID)
             for try await event in chatService.send(request) {
                 try Task.checkCancellation()
                 switch event {
@@ -121,6 +131,7 @@ public final class ChatViewModel {
     private func appendMessage(_ message: ChatMessage) {
         messages.append(message)
         transcriptItems.append(.message(message))
+        onMessageAppended?(message)
     }
 
     private func upsertToolCall(_ invocation: ToolInvocation) {

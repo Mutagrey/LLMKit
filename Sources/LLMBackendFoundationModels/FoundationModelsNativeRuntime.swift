@@ -15,7 +15,9 @@ enum FoundationModelsNativeRuntime {
                 throw LLMError.unavailable
             }
             guard model.supportsLocale(.autoupdatingCurrent) else {
-                throw LLMError.unavailable
+                let locale = Locale.autoupdatingCurrent
+                let identifier = locale.identifier.isEmpty ? "current locale" : locale.identifier
+                throw LLMError.unsupportedLocale("Apple Intelligence does not support the current locale (\(identifier)).")
             }
 
             let session = LanguageModelSession(model: model)
@@ -53,7 +55,9 @@ enum FoundationModelsNativeRuntime {
                 throw LLMError.unavailable
             }
             guard model.supportsLocale(.autoupdatingCurrent) else {
-                throw LLMError.unavailable
+                let locale = Locale.autoupdatingCurrent
+                let identifier = locale.identifier.isEmpty ? "current locale" : locale.identifier
+                throw LLMError.unsupportedLocale("Apple Intelligence does not support the current locale (\(identifier)).")
             }
 
             let mappedPrompt = FoundationModelsPromptMapper.prompt(for: request.request)

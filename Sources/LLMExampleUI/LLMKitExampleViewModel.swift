@@ -9,6 +9,7 @@ public final class LLMKitExampleViewModel {
     public private(set) var models: [ModelDescriptor]
     public private(set) var availability: [ModelID: BackendAvailability]
     public private(set) var installStates: [ModelID: InstallState]
+    public private(set) var sessions: [SessionOverview]
     public private(set) var catalogStatus: ModelCatalogStatus
     public private(set) var isRefreshing: Bool
     public private(set) var lastErrorMessage: String?
@@ -54,6 +55,7 @@ public final class LLMKitExampleViewModel {
         self.models = []
         self.availability = [:]
         self.installStates = [:]
+        self.sessions = []
         self.catalogStatus = .local
         self.isRefreshing = false
         self.lastErrorMessage = nil
@@ -87,16 +89,7 @@ public final class LLMKitExampleViewModel {
     }
 
     public var chatRequirements: ExecutionRequirements {
-        ExecutionRequirements(
-            requiredCapabilities: [.chat],
-            executionMode: executionMode,
-            preferredLatency: .interactive,
-            qualityTier: qualityTier,
-            preferredModel: selectedModel?.id,
-            privacyMode: privacyMode,
-            budget: ExecutionBudget(maxOutputTokens: maxOutputTokens),
-            allowsFallback: false
-        )
+        requirements(for: selectedModel, preferredLatency: .interactive)
     }
 
     public var chatIdentity: String {
@@ -122,10 +115,94 @@ public final class LLMKitExampleViewModel {
             normalizeSelectedModel()
             try await refreshInstallStates()
             await refreshAvailability()
+            try await refreshSessions()
         } catch {
             lastErrorMessage = String(describing: error)
         }
         isRefreshing = false
+    }
+
+    public func refreshSessions() async throws {
+        sessions = try await configuration.container.sessions.listSessions()
+    }
+
+    public func model(for id: ModelID?) -> ModelDescriptor? {
+        guard let id else {
+            return nil
+        }
+        return models.first { $0.id == id }
+    }
+
+    public func requirements(
+        for descriptor: ModelDescriptor?,
+        preferredLatency: PreferredLatency,
+        selectionPolicy: ModelSelectionPolicy? = nil
+    ) -> ExecutionRequirements {
+        let resolvedPolicy = selectionPolicy ?? descriptor.map { .require($0.id) } ?? .automatic
+        return ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            selectionPolicy: resolvedPolicy,
+            executionMode: executionMode,
+            preferredLatency: preferredLatency,
+            qualityTier: qualityTier,
+            privacyMode: privacyMode,
+            budget: ExecutionBudget(
+                maxInputTokens: descriptor?.contextWindowTokens,
+                maxOutputTokens: maxOutputTokens
+            )
+        )
+    }
+
+    @discardableResult
+    public func createManualSession() async throws -> SessionSnapshot {
+        let snapshot = try await configuration.container.sessions.createSession(
+            title: nil,
+            kind: .manualChat,
+            executionRequirements: requirements(for: selectedModel, preferredLatency: .interactive),
+            automationDefinition: nil,
+            automationState: nil
+        )
+        try await refreshSessions()
+        return snapshot
+    }
+
+    @discardableResult
+    public func createAutomatedSession(
+        title: String?,
+        definition: AutomatedConversationDefinition,
+        executionRequirements: ExecutionRequirements
+    ) async throws -> SessionSnapshot {
+        let snapshot = try await configuration.container.sessions.createSession(
+            title: title,
+            kind: .automatedConversation,
+            executionRequirements: executionRequirements,
+            automationDefinition: definition,
+            automationState: AutomatedConversationRunState()
+        )
+        try await refreshSessions()
+        return snapshot
+    }
+
+    public func loadSession(id: SessionID) async throws -> SessionSnapshot? {
+        try await configuration.container.sessions.loadSession(id: id)
+    }
+
+    public func saveSession(_ snapshot: SessionSnapshot) async throws {
+        try await configuration.container.sessions.saveSession(snapshot)
+        try await refreshSessions()
+    }
+
+    public func deleteSession(id: SessionID) async throws {
+        try await configuration.container.sessions.deleteSession(id: id)
+        try await refreshSessions()
+    }
+
+    public func setLastErrorMessage(_ message: String?) {
+        lastErrorMessage = message
+    }
+
+    public func backendDescriptor(for overview: SessionOverview) -> ModelDescriptor? {
+        model(for: overview.executionRequirements?.preferredModel)
     }
 
     public func statusText(for descriptor: ModelDescriptor) -> String {

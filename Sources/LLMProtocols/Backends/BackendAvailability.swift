@@ -3,10 +3,12 @@ import LLMCore
 public struct BackendAvailability: Hashable, Sendable {
     public let status: AvailabilityStatus
     public let reason: String?
+    public let failure: LLMError?
 
-    public init(status: AvailabilityStatus, reason: String? = nil) {
+    public init(status: AvailabilityStatus, reason: String? = nil, failure: LLMError? = nil) {
         self.status = status
         self.reason = reason
+        self.failure = failure
     }
 
     public static let available = BackendAvailability(status: .available)

@@ -3,6 +3,8 @@ import Foundation
 import LLMCore
 import LLMExampleUI
 import LLMModelLifecycle
+import LLMOrchestrator
+import LLMProtocols
 import LLMStorage
 import Testing
 
@@ -206,21 +208,84 @@ import Testing
 }
 
 @MainActor
-@Test func exampleViewModelFallsBackToFirstModelWhenPersistedSelectionIsMissing() async {
+@Test func exampleViewModelNormalizesPersistedSelectionToFirstReadyModel() async {
     let suiteName = "LLMKitExampleUITests.\(#function)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defaults.removePersistentDomain(forName: suiteName)
-    defaults.set("missing.model", forKey: "llmkit.example.selectedModelID")
+    let ready = testModel(id: "ready.model", displayName: "Ready Model")
+    let notInstalled = testModel(id: "install.model", displayName: "Install Model")
+    defaults.set(notInstalled.id.rawValue, forKey: "llmkit.example.selectedModelID")
 
     let viewModel = LLMKitExampleViewModel(
-        configuration: .appleIntelligenceOnly(),
+        configuration: testConfiguration(
+            models: [notInstalled, ready],
+            readyModelIDs: [ready.id]
+        ),
         defaults: defaults
     )
 
     await viewModel.refresh()
 
-    #expect(viewModel.selectedModelID == LLMKitExampleModels.appleIntelligence.id)
-    #expect(defaults.string(forKey: "llmkit.example.selectedModelID") == LLMKitExampleModels.appleIntelligence.id.rawValue)
+    #expect(viewModel.selectedModelID == ready.id)
+    #expect(defaults.string(forKey: "llmkit.example.selectedModelID") == ready.id.rawValue)
+}
+
+@MainActor
+@Test func exampleViewModelClearsSelectedModelWhenNoReadyModelsExist() async {
+    let suiteName = "LLMKitExampleUITests.\(#function)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    let notInstalled = testModel(id: "install.model", displayName: "Install Model")
+    defaults.set(notInstalled.id.rawValue, forKey: "llmkit.example.selectedModelID")
+
+    let viewModel = LLMKitExampleViewModel(
+        configuration: testConfiguration(
+            models: [notInstalled],
+            readyModelIDs: []
+        ),
+        defaults: defaults
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.selectedModelID == nil)
+    #expect(viewModel.selectedModel == nil)
+    #expect(!viewModel.canChatWithSelectedModel)
+    #expect(defaults.string(forKey: "llmkit.example.selectedModelID") == nil)
+}
+
+@MainActor
+@Test func chatSelectableModelsExcludeNotInstalledDownloadableModels() async {
+    let ready = testModel(id: "ready.model", displayName: "Ready Model")
+    let notInstalled = testModel(id: "install.model", displayName: "Install Model")
+    let viewModel = LLMKitExampleViewModel(
+        configuration: testConfiguration(
+            models: [ready, notInstalled],
+            readyModelIDs: [ready.id]
+        )
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.chatSelectableModels.map(\.id) == [ready.id])
+    #expect(!viewModel.chatSelectableModels.contains { $0.id == notInstalled.id })
+}
+
+@MainActor
+@Test func fullModelsCatalogKeepsNotInstalledDownloadableModels() async {
+    let ready = testModel(id: "ready.model", displayName: "Ready Model")
+    let notInstalled = testModel(id: "install.model", displayName: "Install Model")
+    let viewModel = LLMKitExampleViewModel(
+        configuration: testConfiguration(
+            models: [ready, notInstalled],
+            readyModelIDs: [ready.id]
+        )
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.models.map(\.id).contains(notInstalled.id))
+    #expect(viewModel.downloadableModels.map(\.id).contains(notInstalled.id))
 }
 
 private func hexString(for data: Data) -> String {
@@ -234,21 +299,27 @@ private func hexString(for data: Data) -> String {
         .appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let sessionStore = SessionFileStore(paths: StoragePaths(rootDirectory: directory))
-    let configuration = LLMKitExampleConfiguration.localIPhoneCatalog(sessionStore: sessionStore)
+    let firstModel = testModel(id: "first.ready", displayName: "First Ready")
+    let secondModel = testModel(id: "second.ready", displayName: "Second Ready")
+    let configuration = testConfiguration(
+        models: [firstModel, secondModel],
+        readyModelIDs: [firstModel.id, secondModel.id],
+        sessionStore: sessionStore
+    )
     let viewModel = LLMKitExampleViewModel(configuration: configuration)
 
     await viewModel.refresh()
-    viewModel.selectedModelID = LLMKitExampleModels.qwen25HalfBInstructMLX4Bit.id
+    viewModel.selectedModelID = firstModel.id
     let first = try await viewModel.createManualSession()
 
-    viewModel.selectedModelID = LLMKitExampleModels.qwen31Point7BMLX4Bit.id
+    viewModel.selectedModelID = secondModel.id
     let second = try await viewModel.createManualSession()
 
     let reloadedFirst = try await viewModel.loadSession(id: first.id)
     let reloadedSecond = try await viewModel.loadSession(id: second.id)
 
-    #expect(reloadedFirst?.executionRequirements?.selectionPolicy == .require(LLMKitExampleModels.qwen25HalfBInstructMLX4Bit.id))
-    #expect(reloadedSecond?.executionRequirements?.selectionPolicy == .require(LLMKitExampleModels.qwen31Point7BMLX4Bit.id))
+    #expect(reloadedFirst?.executionRequirements?.selectionPolicy == .require(firstModel.id))
+    #expect(reloadedSecond?.executionRequirements?.selectionPolicy == .require(secondModel.id))
 }
 
 @MainActor
@@ -258,13 +329,18 @@ private func hexString(for data: Data) -> String {
         .appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let sessionStore = SessionFileStore(paths: StoragePaths(rootDirectory: directory))
-    let configuration = LLMKitExampleConfiguration.localIPhoneCatalog(sessionStore: sessionStore)
+    let readyModel = testModel(id: "ready.model", displayName: "Ready Model")
+    let configuration = testConfiguration(
+        models: [readyModel],
+        readyModelIDs: [readyModel.id],
+        sessionStore: sessionStore
+    )
     let firstViewModel = LLMKitExampleViewModel(configuration: configuration)
 
     await firstViewModel.refresh()
     _ = try await firstViewModel.createManualSession()
     let automationRequirements = firstViewModel.requirements(
-        for: LLMKitExampleModels.qwen25HalfBInstructMLX4Bit,
+        for: readyModel,
         preferredLatency: .background
     )
     let definition = AutomatedConversationDefinition(
@@ -291,4 +367,100 @@ private func hexString(for data: Data) -> String {
     #expect(secondViewModel.sessions.count == 2)
     #expect(secondViewModel.sessions.contains { $0.kind == .manualChat })
     #expect(secondViewModel.sessions.contains { $0.kind == .automatedConversation })
+}
+
+private let testBackendKind = BackendKind.custom("test")
+
+private func testModel(id: ModelID, displayName: String) -> ModelDescriptor {
+    ModelDescriptor(
+        id: id,
+        displayName: displayName,
+        family: .custom("test"),
+        backend: testBackendKind,
+        capabilities: [.chat, .completion, .streaming, .offline],
+        tags: ["downloadable", "test"]
+    )
+}
+
+private func testConfiguration(
+    models: [ModelDescriptor],
+    readyModelIDs: Set<ModelID>,
+    sessionStore: (any SessionStore)? = nil
+) -> LLMKitExampleConfiguration {
+    let catalog = DefaultModelCatalog(manifest: ModelManifest(id: "test.catalog", models: models))
+    let backend = StaticAvailabilityBackend(readyModelIDs: readyModelIDs)
+    let lifecycle = StaticLifecycleService(models: models, readyModelIDs: readyModelIDs)
+    let container = LLMKitFactory.makeContainer(
+        catalog: catalog,
+        backends: [backend],
+        lifecycle: lifecycle,
+        sessionStore: sessionStore
+    )
+    return LLMKitExampleConfiguration(
+        container: container,
+        catalog: catalog,
+        backends: [backend],
+        downloadableModels: models.filter { $0.tags.contains("downloadable") },
+        sessionStore: sessionStore
+    )
+}
+
+private struct StaticAvailabilityBackend: ModelBackend {
+    let backendKind = testBackendKind
+    let readyModelIDs: Set<ModelID>
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        guard descriptor.backend == backendKind else {
+            return .unsupported
+        }
+        return readyModelIDs.contains(descriptor.id)
+            ? .available
+            : BackendAvailability(status: .requiresInstall)
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.backend == backendKind && model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(GenerationResult(text: "ok", model: request.model)))
+            continuation.finish()
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let message = ChatMessage(role: .assistant, content: MessageContent(text: "ok"))
+            continuation.yield(.completed(ChatResult(message: message, model: request.model)))
+            continuation.finish()
+        }
+    }
+}
+
+private struct StaticLifecycleService: ModelLifecycleService {
+    let models: [ModelDescriptor]
+    let readyModelIDs: Set<ModelID>
+
+    func installedModels() async throws -> [InstalledModelRecord] {
+        models
+            .filter { readyModelIDs.contains($0.id) }
+            .map { InstalledModelRecord(descriptor: $0, installState: .ready) }
+    }
+
+    func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func state(for modelID: ModelID) async throws -> InstallState {
+        readyModelIDs.contains(modelID) ? .ready : .notInstalled
+    }
 }

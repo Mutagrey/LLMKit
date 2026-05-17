@@ -12,9 +12,9 @@ struct CatalogOverviewCard: View {
     let catalogStatus: ModelCatalogStatus
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text(catalogTitle)
-                .font(.headline)
+                .font(.title2.weight(.bold))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(catalogSubtitle)
@@ -44,7 +44,13 @@ struct CatalogOverviewCard: View {
                 }
             }
         }
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
     }
 
     private func summaryMetric(title: String, value: String, tint: Color = .secondary) -> some View {
@@ -93,11 +99,15 @@ struct ExampleModelCard: View {
     let descriptor: ModelDescriptor
     let status: String
     let isAvailable: Bool
+    let isSelected: Bool
     let installState: InstallState?
+    let progressDetail: ModelInstallProgress?
     let installedSizeBytes: Int64?
     let isInstallButtonDisabled: Bool
+    let selectAction: (() -> Void)?
     let installAction: (() async -> Void)?
     let cancelAction: (() async -> Void)?
+    let deleteAction: (() async -> Void)?
     let infoAction: () -> Void
 
     var body: some View {
@@ -107,29 +117,50 @@ struct ExampleModelCard: View {
             factsRow
             summarySection
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.blue)
+                    .frame(width: 4)
+                    .padding(.vertical, 16)
+            }
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
+                HStack(alignment: .top, spacing: 8) {
                     Text(descriptor.displayName)
-                        .font(.headline)
+                        .font(.title3.weight(.bold))
                         .lineLimit(2)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.blue)
+                            .accessibilityLabel("Selected")
+                    }
                     Button(action: infoAction) {
                         Image(systemName: "info.circle")
-                            .font(.title3)
+                            .font(.headline)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Model details")
 
                 }
-                Text("\(exampleBackendTitle(descriptor.backend)) · \(exampleModelScore(for: descriptor))")
+                HStack(spacing: 6) {
+                    Image(systemName: traitSymbolName)
+                        .font(.caption.weight(.semibold))
+                    Text(exampleModelTraitSummary(for: descriptor))
+                        .lineLimit(1)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                Text("Quality: \(starRating)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -142,14 +173,14 @@ struct ExampleModelCard: View {
     }
 
     private var factsRow: some View {
-            HStack(spacing: 8) {
-                compactFact(title: exampleModelFamilyTitle(descriptor.family))
-                compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
-                if let minimumRAMGB = descriptor.minimumRAMGB {
-                    compactFact(title: "\(minimumRAMGB) GB RAM")
-                }
+        HStack(spacing: 8) {
+            compactFact(title: exampleModelFamilyTitle(descriptor.family))
+            compactFact(title: exampleByteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes))
+            if let minimumRAMGB = descriptor.minimumRAMGB {
+                compactFact(title: "\(minimumRAMGB) GB RAM")
             }
-            .padding(.vertical, 1)
+        }
+        .padding(.vertical, 1)
     }
 
     @ViewBuilder
@@ -157,6 +188,7 @@ struct ExampleModelCard: View {
         if let installState, isInstalling(state: installState) {
             ModelInstallProgressView(
                 state: installState,
+                progressDetail: progressDetail,
                 estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
             )
             .frame(maxWidth: 320, alignment: .leading)
@@ -183,7 +215,7 @@ struct ExampleModelCard: View {
                     Button {
                         Task { await cancelAction() }
                     } label: {
-                        Image(systemName: "xmark.circle")
+                        Text("Cancel")
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
@@ -196,15 +228,47 @@ struct ExampleModelCard: View {
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
                     .disabled(isInstallButtonDisabled)
+                } else if isAvailable, let selectAction {
+                    Button {
+                        selectAction()
+                    } label: {
+                        Text(isSelected ? "Selected" : "Select")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .disabled(isSelected)
                 }
 
-                statusBadge
+                HStack(spacing: 8) {
+                    if isInstalled(state: installState), let deleteAction {
+                        Button(role: .destructive) {
+                            Task { await deleteAction() }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Delete model")
+                    }
+                    statusBadge
+                }
             }
             .font(.caption)
 
         } else {
-            statusBadge
-                .font(.caption)
+            VStack(alignment: .trailing, spacing: 8) {
+                if isAvailable, let selectAction {
+                    Button {
+                        selectAction()
+                    } label: {
+                        Text(isSelected ? "Selected" : "Select")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .disabled(isSelected)
+                }
+                statusBadge
+            }
+            .font(.caption)
 
         }
     }
@@ -236,6 +300,31 @@ struct ExampleModelCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
+    }
+
+    private var traitSymbolName: String {
+        if descriptor.tags.contains("quality") || descriptor.tags.contains("iphone-pro") {
+            return "crown"
+        }
+        if descriptor.tags.contains("starter") || descriptor.tags.contains("iphone-entry") {
+            return "bolt"
+        }
+        if descriptor.family == .appleFoundation {
+            return "sparkles"
+        }
+        return "cpu"
+    }
+
+    private var starRating: String {
+        let filledCount: Int
+        if descriptor.tags.contains("quality") || descriptor.tags.contains("iphone-pro") || descriptor.family == .appleFoundation {
+            filledCount = 5
+        } else if descriptor.tags.contains("balanced") || descriptor.tags.contains("iphone-recommended") {
+            filledCount = 4
+        } else {
+            filledCount = 3
+        }
+        return String(repeating: "★", count: filledCount) + String(repeating: "☆", count: 5 - filledCount)
     }
 
     private func isInstalled(state: InstallState) -> Bool {
@@ -484,10 +573,14 @@ func exampleModelScore(for descriptor: ModelDescriptor) -> String {
         ),
         status: "Not installed",
         isAvailable: false,
+        isSelected: false,
         installState: .notInstalled,
+        progressDetail: nil,
         installedSizeBytes: nil,
         isInstallButtonDisabled: false,
+        selectAction: nil,
         installAction: {},
-        cancelAction: nil
+        cancelAction: nil,
+        deleteAction: nil
     ) {}
 }

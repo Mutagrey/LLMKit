@@ -8,49 +8,75 @@ struct ChatModelToolbarMenu: View {
     let isRefreshing: Bool
     let selectModel: (ModelDescriptor) -> Void
     let statusText: (ModelDescriptor) -> String
+    @State private var isPresentingPicker = false
 
     var body: some View {
-        Menu {
-            if models.isEmpty {
-                Text("No models available")
-            } else {
-                Section("Models") {
-                    ForEach(models, id: \.id) { descriptor in
-                        Button {
-                            selectModel(descriptor)
-                        } label: {
-                            modelMenuLabel(for: descriptor)
+        Button {
+            isPresentingPicker = true
+        } label: {
+            label
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Select model")
+        .sheet(isPresented: $isPresentingPicker) {
+            NavigationStack {
+                List {
+                    if models.isEmpty {
+                        ContentUnavailableView(
+                            "No Ready Models",
+                            systemImage: "arrow.down.circle",
+                            description: Text("Install a model from Models before starting a chat.")
+                        )
+                    } else {
+                        Section("Ready Models") {
+                            ForEach(models, id: \.id) { descriptor in
+                                Button {
+                                    selectModel(descriptor)
+                                    isPresentingPicker = false
+                                } label: {
+                                    modelMenuLabel(for: descriptor)
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Chat Model")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            isPresentingPicker = false
                         }
                     }
                 }
             }
-        } label: {
-            VStack(alignment: .center, spacing: 1) {
-                HStack(spacing: 6) {
-                    Image(systemName: selectedModelIconName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(selectedModelTint)
-                    Text(selectedModel?.displayName ?? "Select Model")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(isRefreshing ? "Refreshing…" : statusLine)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: 220)
         }
-        .accessibilityLabel("Select model")
+    }
+
+    private var label: some View {
+        VStack(alignment: .center, spacing: 1) {
+            HStack(spacing: 6) {
+                Image(systemName: selectedModelIconName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(selectedModelTint)
+                Text(selectedModel?.displayName ?? "Select Model")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(isRefreshing ? "Refreshing..." : statusLine)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: 220)
     }
 
     private var statusLine: String {
         guard let selectedModel else {
-            return "No model selected"
+            return models.isEmpty ? "No ready models" : "No model selected"
         }
         return "\(exampleBackendTitle(selectedModel.backend)) · \(selectedStatusText)"
     }

@@ -76,9 +76,9 @@ public final class LLMKitExampleViewModel {
 
     public var selectedModel: ModelDescriptor? {
         guard let selectedModelID else {
-            return models.first
+            return nil
         }
-        return models.first { $0.id == selectedModelID } ?? models.first
+        return models.first { $0.id == selectedModelID }
     }
 
     public var selectedModelAvailability: BackendAvailability? {
@@ -92,8 +92,15 @@ public final class LLMKitExampleViewModel {
         models.filter { $0.tags.contains("downloadable") }
     }
 
+    public var chatSelectableModels: [ModelDescriptor] {
+        models.filter(isReadyForChat)
+    }
+
     public var canChatWithSelectedModel: Bool {
-        selectedModelAvailability?.status == .available
+        guard let selectedModel else {
+            return false
+        }
+        return isReadyForChat(selectedModel)
     }
 
     public var chatRequirements: ExecutionRequirements {
@@ -120,9 +127,9 @@ public final class LLMKitExampleViewModel {
             } else {
                 catalogStatus = .local
             }
-            normalizeSelectedModel()
             try await refreshInstallStates()
             await refreshAvailability()
+            normalizeSelectedModel()
             try await refreshSessions()
         } catch {
             lastErrorMessage = String(describing: error)
@@ -216,8 +223,11 @@ public final class LLMKitExampleViewModel {
 
     @discardableResult
     public func validateSelectedModelForChat() async throws -> ModelDescriptor {
-        try await preflight.validate(
-            chatRequirements,
+        guard let selectedModel else {
+            throw LLMError.modelSelectionFailed("Manual chat: no ready model is selected. Install or select a ready model from Models.")
+        }
+        return try await preflight.validate(
+            requirements(for: selectedModel, preferredLatency: .interactive),
             context: "Manual chat"
         )
     }
@@ -277,6 +287,10 @@ public final class LLMKitExampleViewModel {
         availability[descriptor.id]?.status == .available
     }
 
+    public func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
+        isAvailable(descriptor)
+    }
+
     private func refreshInstallStates() async throws {
         let records = try await configuration.container.lifecycle.installedModels()
         installStates = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0.installState) })
@@ -312,13 +326,14 @@ public final class LLMKitExampleViewModel {
     }
 
     private func normalizeSelectedModel() {
+        let selectableModels = chatSelectableModels
         guard let selectedModelID else {
-            selectedModelID = models.first?.id
+            selectedModelID = selectableModels.first?.id
             return
         }
 
-        if !models.contains(where: { $0.id == selectedModelID }) {
-            self.selectedModelID = models.first?.id
+        if !selectableModels.contains(where: { $0.id == selectedModelID }) {
+            self.selectedModelID = selectableModels.first?.id
         }
     }
 

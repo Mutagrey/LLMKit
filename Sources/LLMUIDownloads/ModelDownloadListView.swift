@@ -24,32 +24,25 @@ public struct ModelDownloadListView: View {
     }
 
     public var body: some View {
-        List {
-            Section {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 DownloadsOverviewCard(
                     totalModels: visibleDescriptors.count,
                     installedModels: installedDescriptors.count,
                     inProgressModels: inProgressDescriptors.count,
                     installedSize: viewModel.installedStorageTitle
                 )
-                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-            }
 
-            if !installedDescriptors.isEmpty {
-                Section("Installed") {
-                    ForEach(installedDescriptors, id: \.id) { descriptor in
-                        card(for: descriptor)
-                    }
+                if !installedDescriptors.isEmpty {
+                    section(title: "Installed", descriptors: installedDescriptors)
+                }
+
+                if !availableDescriptors.isEmpty {
+                    section(title: "Available to Download", descriptors: availableDescriptors)
                 }
             }
-
-            if !availableDescriptors.isEmpty {
-                Section("Available to Download") {
-                    ForEach(availableDescriptors, id: \.id) { descriptor in
-                        card(for: descriptor)
-                    }
-                }
-            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
         }
         .overlay {
             if let lastErrorMessage = viewModel.lastErrorMessage {
@@ -67,6 +60,30 @@ public struct ModelDownloadListView: View {
         .task {
             viewModel.updateDescriptors(configuredDescriptors)
             await viewModel.refresh()
+        }
+    }
+
+    private func section(title: String, descriptors: [ModelDescriptor]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
+
+            VStack(spacing: 0) {
+                ForEach(Array(descriptors.enumerated()), id: \.element.id) { index, descriptor in
+                    card(for: descriptor)
+                    if index < descriptors.count - 1 {
+                        Divider()
+                            .padding(.horizontal, 18)
+                    }
+                }
+            }
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
+            }
         }
     }
 
@@ -422,6 +439,11 @@ private struct DownloadsOverviewCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
     }
 
     private func stat(title: String, value: String, tint: Color) -> some View {
@@ -435,7 +457,7 @@ private struct DownloadsOverviewCard: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

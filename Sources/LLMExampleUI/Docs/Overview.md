@@ -6,8 +6,8 @@ It wires the backend-agnostic chat and downloads UI to a lifecycle-owned catalog
 `LLMBackendFoundationModels`, curated local MLX text models through `LLMBackendMLX`, or a signed dynamic internet catalog
 through `LLMModelLifecycle.DynamicModelCatalog`.
 
-The root example screen uses a `TabView` with chat, model lifecycle, and settings tabs.
-The chat tab keeps model selection in the top toolbar so the reusable `LLMUIChat` surface can stay focused on transcript and composer behavior, while sharing the same lifecycle-backed status text used by the Models tab.
-When configured with a curated or dynamic catalog, the Models tab shows one universal card per model, surfaces install progress inline,
-opens requirements and source metadata from an `info.circle` details affordance, and keeps delete actions for installed downloadable
-models behind list swipe actions.
+The root example screen uses a tabbed SwiftUI shell with chat, model lifecycle, and settings tabs.
+The chat tab exposes only ready chat models through a picker sheet so the reusable `LLMUIChat` surface can stay focused on transcript and composer behavior.
+The Models tab remains the full catalog surface: it groups ready, recommended, downloading, and available models, surfaces install
+progress inline, opens requirements and source metadata from an `info.circle` details affordance, and keeps download/delete/select
+actions in lifecycle-oriented cards.

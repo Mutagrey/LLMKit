@@ -26,15 +26,16 @@ network cases.
 
 `LLMKitExampleScreen` presents:
 
-- Chat tab for sending prompts through the selected model, with a toolbar-based model picker that reflects shared lifecycle status and compact reusable chat UI.
-- Models tab for catalog source status, storage totals, and a single lifecycle-oriented card style that handles installed, installing, and downloadable models inline.
+- Chat tab for sending prompts through the selected ready model, with a toolbar picker sheet limited to models whose backend availability is currently `.available`.
+- Models tab for the full catalog, catalog source status, storage totals, and lifecycle-oriented card groups for ready, recommended, downloading, and available models.
 - Settings tab for generation quality, routing mode, privacy mode, response token budget, and catalog source diagnostics.
 
 The chat tab sets `ExecutionRequirements.allowsFallback` to `false` so demo-only backends do not silently answer when the
 explicitly selected model is unavailable or fails.
 
-`LLMKitExampleViewModel` persists the selected model plus routing preferences and output-token budget in `UserDefaults`,
-so the demo restores the previous selection and settings after app restart while keeping that state inside the UI layer.
+`LLMKitExampleViewModel` persists the selected model plus routing preferences and output-token budget in `UserDefaults`.
+After refresh it normalizes the selection to the first ready model, or clears it when no ready model exists, while keeping that state
+inside the UI layer and the full catalog visible in Models.
 
 Before manual chat sends and automated conversation runs, the example layer now performs a catalog and availability preflight
 for the selected or participant-pinned models so strict demo selections fail early with model-specific diagnostics instead of a

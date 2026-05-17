@@ -6,6 +6,7 @@ import SwiftUI
 public struct LLMKitExampleScreen: View {
     @State private var viewModel: LLMKitExampleViewModel
     @State private var downloadsViewModel: ModelDownloadsViewModel
+    @State private var selectedTab: ExampleDemoTab = .chat
     private let configuration: LLMKitExampleConfiguration
 
     public init(configuration: LLMKitExampleConfiguration = .localIPhoneCatalog()) {
@@ -20,14 +21,18 @@ public struct LLMKitExampleScreen: View {
     }
 
     public var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ExampleSessionChatTab(
                 viewModel: viewModel,
-                configuration: configuration
+                configuration: configuration,
+                openModels: {
+                    selectedTab = .models
+                }
             )
                 .tabItem {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
                 }
+                .tag(ExampleDemoTab.chat)
 
             ExampleModelsTab(
                 viewModel: viewModel,
@@ -36,21 +41,119 @@ public struct LLMKitExampleScreen: View {
                 .tabItem {
                     Label("Models", systemImage: "cpu")
                 }
+                .tag(ExampleDemoTab.models)
 
             ExampleSettingsTab(viewModel: viewModel)
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .tag(ExampleDemoTab.settings)
+        }
+        .tint(.blue)
+        .exampleHiddenSystemTabBar()
+        .background(ExampleDemoBackground().ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let summary = activeDownloadSummary {
+                ActiveDownloadBanner(summary: summary)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ExampleDemoTabBar(selection: $selectedTab)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
         }
         .task {
             await refreshAll()
         }
     }
 
+    private var activeDownloadSummary: ActiveDownloadSummary? {
+        let activeIDs = downloadsViewModel.installingModelIDs.sorted { $0.rawValue < $1.rawValue }
+        guard let modelID = activeIDs.first,
+              downloadsViewModel.isInstalling(modelID) else {
+            return nil
+        }
+        let descriptor = viewModel.model(for: modelID)
+            ?? downloadsViewModel.models.first { $0.descriptor.id == modelID }?.descriptor
+        let state = downloadsViewModel.installState(for: modelID)
+        return ActiveDownloadSummary(
+            title: activeDownloadTitle(for: state, descriptor: descriptor),
+            detail: activeDownloadDetail(
+                state: state,
+                detail: downloadsViewModel.progressDetail(for: modelID),
+                estimatedTotalBytes: descriptor?.estimatedDownloadSizeBytes
+            ),
+            progress: activeDownloadProgress(for: state),
+            remainingCount: max(0, activeIDs.count - 1)
+        )
+    }
+
     private func refreshAll() async {
         await viewModel.refresh()
         downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
         await downloadsViewModel.refresh()
+    }
+
+    private func activeDownloadTitle(for state: InstallState, descriptor: ModelDescriptor?) -> String {
+        let modelName = descriptor?.displayName ?? "Model"
+        switch state {
+        case .downloading:
+            return "Downloading \(modelName)"
+        case .downloaded:
+            return "Downloaded \(modelName)"
+        case .verifying:
+            return "Verifying \(modelName)"
+        case .compiling:
+            return "Preparing \(modelName)"
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return modelName
+        }
+    }
+
+    private func activeDownloadDetail(
+        state: InstallState,
+        detail: ModelInstallProgress?,
+        estimatedTotalBytes: Int64?
+    ) -> String {
+        switch state {
+        case .downloading(let progress):
+            if let detail,
+               let completedBytes = detail.completedBytes,
+               let totalBytes = detail.totalBytes,
+               totalBytes > 0 {
+                let prefix = detail.isEstimated ? "Approx. " : ""
+                return "\(prefix)\(exampleByteCountTitle(completedBytes)) of \(exampleByteCountTitle(totalBytes))"
+            }
+            if let estimatedTotalBytes, estimatedTotalBytes > 0 {
+                let completedBytes = Int64((progress * Double(estimatedTotalBytes)).rounded())
+                return "Approx. \(exampleByteCountTitle(completedBytes)) of \(exampleByteCountTitle(estimatedTotalBytes))"
+            }
+            let prefix = detail?.isEstimated == true ? "~" : ""
+            return "\(prefix)\(Int((progress * 100).rounded()))%"
+        case .downloaded:
+            return "Download complete"
+        case .verifying:
+            return "Checking files"
+        case .compiling:
+            return "Preparing runtime"
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return ""
+        }
+    }
+
+    private func activeDownloadProgress(for state: InstallState) -> Double {
+        switch state {
+        case .downloading(let progress):
+            return max(0, min(progress, 1))
+        case .downloaded, .verifying, .compiling:
+            return 1
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return 0
+        }
     }
 }
 
@@ -98,7 +201,7 @@ private struct ExampleChatTab: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ChatModelToolbarMenu(
-                        models: viewModel.models,
+                        models: viewModel.chatSelectableModels,
                         selectedModel: viewModel.selectedModel,
                         selectedStatusText: viewModel.selectedModel.map(presentation.statusText(for:)) ?? "No model selected",
                         isRefreshing: viewModel.isRefreshing
@@ -136,8 +239,8 @@ private struct ExampleModelsTab: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     CatalogOverviewCard(
                         totalModels: viewModel.models.count,
                         readyModels: readyModelCount,
@@ -146,14 +249,40 @@ private struct ExampleModelsTab: View {
                         installedSize: downloadsViewModel.installedStorageTitle,
                         catalogStatus: viewModel.catalogStatus
                     )
-                }
 
-                Section("Model Catalog") {
-                    ForEach(catalogModels, id: \.id) { descriptor in
-                        modelCard(for: descriptor)
+                    ForEach(modelSections) { section in
+                        if !section.models.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(section.title)
+                                    .font(.title3.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 2)
+
+                                VStack(spacing: 0) {
+                                    ForEach(Array(section.models.enumerated()), id: \.element.id) { index, descriptor in
+                                        modelCard(for: descriptor)
+
+                                        if index < section.models.count - 1 {
+                                            Divider()
+                                                .padding(.leading, 18)
+                                                .padding(.trailing, 18)
+                                        }
+                                    }
+                                }
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                        .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
+                                }
+                            }
+                        }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 36)
             }
+            .background(ExampleDemoBackground().ignoresSafeArea())
             .navigationTitle("Models")
             .overlay {
                 if viewModel.isRefreshing {
@@ -203,38 +332,47 @@ private struct ExampleModelsTab: View {
             descriptor: descriptor,
             status: presentation.statusText(for: descriptor),
             isAvailable: presentation.isReadyForChat(descriptor),
+            isSelected: descriptor.id == viewModel.selectedModel?.id,
             installState: presentation.installState(for: descriptor),
+            progressDetail: downloadsViewModel.progressDetail(for: descriptor.id),
             installedSizeBytes: downloadsViewModel.storageBytes(for: descriptor.id),
             isInstallButtonDisabled: downloadsViewModel.isInstallButtonDisabled(for: descriptor.id),
+            selectAction: presentation.isReadyForChat(descriptor) ? {
+                viewModel.selectedModelID = descriptor.id
+            } : nil,
             installAction: installAction(for: descriptor),
-            cancelAction: cancelAction(for: descriptor)
+            cancelAction: cancelAction(for: descriptor),
+            deleteAction: deleteAction(for: descriptor)
         ) {
             presentedDetail = PresentedModelDetail(descriptor: descriptor)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if downloadsViewModel.isInstalled(descriptor.id) {
-                Button(role: .destructive) {
-                    Task {
-                        await downloadsViewModel.delete(descriptor.id)
-                        await viewModel.refresh()
-                    }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
-        }
-        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
     }
 
     private var catalogModels: [ModelDescriptor] {
-        viewModel.models.sorted { lhs, rhs in
-            let lhsPriority = presentation.modelPriority(for: lhs)
-            let rhsPriority = presentation.modelPriority(for: rhs)
-            if lhsPriority != rhsPriority {
-                return lhsPriority < rhsPriority
-            }
-            return lhs.displayName < rhs.displayName
+        viewModel.models.sorted { $0.displayName < $1.displayName }
+    }
+
+    private var modelSections: [ExampleModelSection] {
+        let ready = catalogModels.filter(presentation.isReadyForChat)
+        let downloading = catalogModels.filter { descriptor in
+            !presentation.isReadyForChat(descriptor) && downloadsViewModel.isInstalling(descriptor.id)
         }
+        let recommended = catalogModels.filter { descriptor in
+            !presentation.isReadyForChat(descriptor)
+                && !downloadsViewModel.isInstalling(descriptor.id)
+                && isRecommended(descriptor)
+        }
+        let available = catalogModels.filter { descriptor in
+            !presentation.isReadyForChat(descriptor)
+                && !downloadsViewModel.isInstalling(descriptor.id)
+                && !isRecommended(descriptor)
+        }
+        return [
+            ExampleModelSection(id: .ready, models: ready),
+            ExampleModelSection(id: .recommended, models: recommended),
+            ExampleModelSection(id: .downloading, models: downloading),
+            ExampleModelSection(id: .available, models: available)
+        ]
     }
 
     private var readyModelCount: Int {
@@ -276,6 +414,29 @@ private struct ExampleModelsTab: View {
         }
     }
 
+    private func deleteAction(for descriptor: ModelDescriptor) -> (() async -> Void)? {
+        guard downloadsViewModel.isInstalled(descriptor.id) else {
+            return nil
+        }
+        return {
+            await downloadsViewModel.delete(descriptor.id)
+            await viewModel.refresh()
+        }
+    }
+
+    private func isRecommended(_ descriptor: ModelDescriptor) -> Bool {
+        let recommendedTags = [
+            "recommended",
+            "iphone-recommended",
+            "balanced",
+            "quality",
+            "iphone-pro",
+            "starter",
+            "iphone-entry"
+        ]
+        return descriptor.tags.contains { recommendedTags.contains($0) }
+    }
+
     private func installLifecyclePhase(for modelID: ModelID) -> String {
         switch downloadsViewModel.installState(for: modelID) {
         case .notInstalled:
@@ -312,6 +473,35 @@ private struct ExampleModelsTab: View {
     }
 }
 
+private struct ExampleModelSection: Identifiable {
+    let id: ExampleModelSectionID
+    let models: [ModelDescriptor]
+
+    var title: String {
+        id.title
+    }
+}
+
+private enum ExampleModelSectionID: Hashable {
+    case ready
+    case downloading
+    case recommended
+    case available
+
+    var title: String {
+        switch self {
+        case .ready:
+            return "Ready to Chat"
+        case .downloading:
+            return "Downloading"
+        case .recommended:
+            return "Recommended"
+        case .available:
+            return "Available Models"
+        }
+    }
+}
+
 private struct PresentedModelDetail: Identifiable {
     let descriptor: ModelDescriptor
 
@@ -340,29 +530,9 @@ private struct ExampleModelPresentation {
     }
 
     func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
-        if let installState = installState(for: descriptor) {
-            switch installState {
-            case .ready, .warming, .active:
-                return true
-            case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
-                return viewModel.isAvailable(descriptor)
-            }
-        }
-        return viewModel.isAvailable(descriptor)
+        viewModel.isReadyForChat(descriptor)
     }
 
-    func modelPriority(for descriptor: ModelDescriptor) -> Int {
-        if isReadyForChat(descriptor) {
-            return 0
-        }
-        if downloadsViewModel.isInstalling(descriptor.id) {
-            return 1
-        }
-        if downloadsViewModel.isInstalled(descriptor.id) {
-            return 2
-        }
-        return 3
-    }
 }
 
 private struct ExampleSettingsTab: View {

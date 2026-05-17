@@ -5,6 +5,7 @@ import SwiftUI
 struct ExampleSessionChatTab: View {
     let viewModel: LLMKitExampleViewModel
     let configuration: LLMKitExampleConfiguration
+    let openModels: () -> Void
 
     @State private var path: [SessionID] = []
     @State private var isPresentingAutomationComposer = false
@@ -12,6 +13,13 @@ struct ExampleSessionChatTab: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if viewModel.chatSelectableModels.isEmpty {
+                    Section {
+                        NoReadyModelCard(openModels: openModels)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+
                 Section("Manual Chats") {
                     if manualSessions.isEmpty {
                         Text("No chats yet")
@@ -61,7 +69,7 @@ struct ExampleSessionChatTab: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ChatModelToolbarMenu(
-                        models: viewModel.models,
+                        models: viewModel.chatSelectableModels,
                         selectedModel: viewModel.selectedModel,
                         selectedStatusText: viewModel.selectedModel.map(viewModel.statusText(for:)) ?? "No model selected",
                         isRefreshing: viewModel.isRefreshing
@@ -78,7 +86,7 @@ struct ExampleSessionChatTab: View {
                     } label: {
                         Image(systemName: "person.3.sequence")
                     }
-                    .disabled(availableModels.isEmpty)
+                    .disabled(viewModel.chatSelectableModels.isEmpty)
 
                     Button {
                         Task {
@@ -121,10 +129,6 @@ struct ExampleSessionChatTab: View {
         viewModel.sessions.filter { $0.kind == .automatedConversation }
     }
 
-    private var availableModels: [ModelDescriptor] {
-        viewModel.models.filter(viewModel.isAvailable)
-    }
-
     private func deleteSessions(from sessions: [SessionOverview], at offsets: IndexSet) {
         for offset in offsets {
             guard sessions.indices.contains(offset) else {
@@ -135,6 +139,37 @@ struct ExampleSessionChatTab: View {
                 try? await viewModel.deleteSession(id: sessionID)
             }
         }
+    }
+}
+
+private struct NoReadyModelCard: View {
+    let openModels: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "cpu")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 48, height: 48)
+                .background(Color.blue.opacity(0.14), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No ready chat model")
+                    .font(.headline)
+                Text("Install or select a ready model in Models before starting a chat.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Models", action: openModels)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -545,8 +580,7 @@ private struct ExampleAutomationComposerSheet: View {
     }
 
     private var availableModels: [ModelDescriptor] {
-        let ready = viewModel.models.filter(viewModel.isAvailable)
-        return ready.isEmpty ? viewModel.models : ready
+        viewModel.chatSelectableModels
     }
 
     private func createSession() {

@@ -33,7 +33,7 @@ public struct ModelDownloadCardView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             primaryFacts
             metadata
@@ -44,14 +44,15 @@ public struct ModelDownloadCardView: View {
             )
             actionRow
         }
-        .padding(14)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(descriptor.displayName)
-                    .font(.headline)
+                    .font(.title3.weight(.bold))
                     .lineLimit(2)
                 Spacer(minLength: 12)
                 DownloadPill(title: installBadgeTitle, tint: installBadgeTint)
@@ -74,13 +75,16 @@ public struct ModelDownloadCardView: View {
                 fact(byteCountTitle(for: estimatedDownloadSizeBytes))
             }
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 
     private func fact(_ title: String) -> some View {
         Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
             .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
     }
 
     private var metadata: some View {
@@ -123,6 +127,7 @@ public struct ModelDownloadCardView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             } else if isInstalling, let cancelAction {
                 Button(role: .cancel) {
                     Task { await cancelAction() }
@@ -131,6 +136,7 @@ public struct ModelDownloadCardView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             } else {
                 Button {
                     Task { await installAction() }
@@ -139,6 +145,7 @@ public struct ModelDownloadCardView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .disabled(isInstallButtonDisabled)
             }
 
@@ -221,7 +228,7 @@ public struct ModelDownloadCardView: View {
         if isInstalling {
             return "Downloading"
         }
-        return "Install"
+        return "Download"
     }
 
     private var actionSymbol: String {

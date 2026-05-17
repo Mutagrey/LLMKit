@@ -2,7 +2,7 @@
 
 Public API includes download list, install progress presentation, and a lifecycle-backed downloads view model.
 
-`ModelDownloadListView` renders model descriptors with install actions, grouped installed/downloadable sections, and status text
+`ModelDownloadListView` renders model descriptors with install actions, rounded installed/downloadable sections, and status text
 backed by `ModelDownloadsViewModel`.
 `ModelDownloadCardView` renders a single downloadable model with richer metadata, install action, and a linear progress treatment that
 can be embedded by host apps alongside their own model selection UI. When lifecycle progress includes byte totals, the card renders

@@ -663,6 +663,31 @@ private actor FailingToolService: ToolService {
     #expect(completed?.model?.id == "remote")
 }
 
+@Test func chatServicePassesSessionIDToBackendRequest() async throws {
+    let descriptor = ModelDescriptor(
+        id: "local-chat",
+        displayName: "Local Chat",
+        family: .custom("test"),
+        backend: .mlx,
+        capabilities: [.chat]
+    )
+    let backend = ToolLoopBackend(backendKind: .mlx)
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: DefaultModelCatalog(models: [descriptor])),
+        registry: BackendRegistry(backends: [backend])
+    )
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "analyze app-provided context"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat]),
+        sessionID: "domain-agent-session"
+    )
+
+    for try await _ in service.send(request) {}
+
+    let capturedRequests = await backend.capturedRequests()
+    #expect(capturedRequests.first?.request.sessionID == "domain-agent-session")
+}
+
 @Test func chatServiceCanDisableFallbackForPreferredModel() async throws {
     let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
     let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)

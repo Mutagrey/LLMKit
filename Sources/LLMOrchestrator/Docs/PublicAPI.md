@@ -17,6 +17,6 @@ Input decisions run before routing and output decisions run before final complet
 
 When `DefaultChatService` is given a `ToolService`, it can auto-expose available tools to the backend, execute requested tool invocations, append tool result turns, and continue the same chat round-trip on the selected model without leaking provider-specific tool DTOs into orchestration.
 
-`UserInfoExtractorAgent` and `CGMAnalysisAgent` are thin app-facing helpers over existing structured/chat services. They
-provide separate `SessionID` defaults for memory extraction and CGM interpretation while leaving domain memory storage and
-metric calculation to the consuming app.
+Domain agents are intentionally composed in the consuming app. The package prepares that path through backend-neutral
+`SessionID` propagation, structured JSON requests, chat routing, and safety hooks without owning domain DTOs, memory
+schemas, or app-specific prompts.

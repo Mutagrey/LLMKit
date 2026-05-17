@@ -9,6 +9,8 @@ without making core depend on any downloader, model hub SDK, or backend runtime.
 Structured generation uses `StructuredOutputSchema` as the backend-neutral schema contract. It stores a canonical
 JSON-schema-like object tree using existing `ToolValue` primitives so schema payloads do not require a second generic
 JSON value model inside `LLMCore`.
+`StructuredRequest` defaults to `.completion` capability so prompt-validated JSON can route to local models; callers should
+request `.structuredOutput` only when they require a backend with native schema enforcement.
 
 `GenerationRequest` can carry an optional `structuredOutputSchema` and exposes `renderedPrompt` for backends that still
 need prompt-level JSON guidance while native structured generation adapters are adopted incrementally.

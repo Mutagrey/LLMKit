@@ -1088,6 +1088,54 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     #expect(status.message?.contains("Manifest signature mismatch") == true)
 }
 
+@Test func curatedCatalogIncludesGemma4E2BInstructionModel() {
+    let descriptor = CuratedModelManifests.gemma4E2BInstructionMLX4Bit
+    let artifactPaths = descriptor.source?.artifacts.map(\.relativePath) ?? []
+
+    #expect(CuratedModelManifests.localIPhoneTextModels.models.contains { $0.id == descriptor.id })
+    #expect(descriptor.id == "mlx-community.gemma-4-e2b-it-4bit")
+    #expect(descriptor.backend == .mlx)
+    #expect(descriptor.family == .gemma)
+    #expect(descriptor.contextWindowTokens == 131_072)
+    #expect(descriptor.capabilities.contains(.longContext))
+    #expect(!descriptor.capabilities.contains(.structuredOutput))
+    #expect(artifactPaths.contains("chat_template.jinja"))
+    #expect(artifactPaths.contains("processor_config.json"))
+}
+
+@Test func huggingFaceFeaturedCatalogBuildsGemma4E2BDescriptorWithProcessorArtifacts() async throws {
+    let catalog = HuggingFaceFeaturedModelCatalog(
+        fallbackCatalog: DefaultModelCatalog(models: []),
+        repositories: ["mlx-community/gemma-4-e2b-it-4bit"],
+        fetchData: { _ in
+            Data("""
+            {
+              "sha": "99d9a53ff828d365a8ecae538e45f80a08d612cd",
+              "siblings": [
+                { "rfilename": "config.json", "size": 1024 },
+                { "rfilename": "generation_config.json", "size": 128 },
+                { "rfilename": "model.safetensors", "size": 3843248947 },
+                { "rfilename": "model.safetensors.index.json", "size": 256 },
+                { "rfilename": "processor_config.json", "size": 128 },
+                { "rfilename": "tokenizer.json", "size": 2048 },
+                { "rfilename": "tokenizer_config.json", "size": 512 },
+                { "rfilename": "chat_template.jinja", "size": 512 }
+              ]
+            }
+            """.utf8)
+        }
+    )
+
+    let descriptor = try #require(try await catalog.descriptor(for: "mlx-community.gemma-4-e2b-it-4bit"))
+    let artifactPaths = descriptor.source?.artifacts.map(\.relativePath) ?? []
+
+    #expect(descriptor.displayName == "Gemma 4 E2B Instruct 4-bit")
+    #expect(descriptor.contextWindowTokens == 131_072)
+    #expect(descriptor.capabilities.contains(.longContext))
+    #expect(artifactPaths.contains("processor_config.json"))
+    #expect(artifactPaths.contains("chat_template.jinja"))
+}
+
 private func downloadableDescriptor(id: ModelID, checksum: String?) -> ModelDescriptor {
     ModelDescriptor(
         id: id,

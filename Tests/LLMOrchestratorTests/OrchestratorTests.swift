@@ -173,6 +173,24 @@ private struct CancellingBackend: ModelBackend {
     }
 }
 
+private struct StaticSafetyPolicy: SafetyPolicyEvaluating {
+    let inputDecision: SafetyDecision
+    let outputDecision: SafetyDecision
+
+    init(inputDecision: SafetyDecision = .allow, outputDecision: SafetyDecision = .allow) {
+        self.inputDecision = inputDecision
+        self.outputDecision = outputDecision
+    }
+
+    func evaluateInput(_ request: SafetyInputRequest) async -> SafetyDecision {
+        inputDecision
+    }
+
+    func evaluateOutput(_ request: SafetyOutputRequest) async -> SafetyDecision {
+        outputDecision
+    }
+}
+
 private final class ToolLoopBackend: ModelBackend, @unchecked Sendable {
     let backendKind: BackendKind
     private let state = State()
@@ -711,6 +729,55 @@ private actor FailingToolService: ToolService {
     } catch {
         #expect(error as? LLMError == .cancelled)
     }
+}
+
+@Test func generationServiceAppliesInputSafetyBeforeExecution() async throws {
+    let descriptor = ModelDescriptor(
+        id: "local",
+        displayName: "Local",
+        family: .custom("test"),
+        backend: .mlx,
+        capabilities: [.completion]
+    )
+    let service = DefaultLanguageGenerationService(
+        router: ModelRouter(catalog: DefaultModelCatalog(models: [descriptor])),
+        registry: BackendRegistry(backends: [StreamingBackend(backendKind: .mlx)]),
+        safetyPolicy: StaticSafetyPolicy(inputDecision: SafetyDecision(action: .deny(reason: "blocked")))
+    )
+
+    do {
+        _ = try await service.generate(GenerationRequest(prompt: "blocked"))
+        Issue.record("Expected safety denial to stop generation.")
+    } catch {
+        #expect(error as? LLMError == .executionFailed("Safety policy denied the request: blocked"))
+    }
+}
+
+@Test func chatServiceAppliesOutputSafetyModification() async throws {
+    let descriptor = ModelDescriptor(
+        id: "local",
+        displayName: "Local",
+        family: .custom("test"),
+        backend: .mlx,
+        capabilities: [.chat]
+    )
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: DefaultModelCatalog(models: [descriptor])),
+        registry: BackendRegistry(backends: [StreamingBackend(backendKind: .mlx, responseText: "raw")]),
+        safetyPolicy: StaticSafetyPolicy(outputDecision: SafetyDecision(action: .modify(reason: "redacted"), redactedText: "safe"))
+    )
+
+    var completed: ChatResult?
+    for try await event in service.send(ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "hi"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat])
+    )) {
+        if case .completed(let result) = event {
+            completed = result
+        }
+    }
+
+    #expect(completed?.message.content.text == "safe")
 }
 
 @Test func chatServiceExecutesToolRoundTripOnSameModel() async throws {

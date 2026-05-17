@@ -90,15 +90,18 @@ public struct MLXBackend: ModelBackend {
                     guard runtime != nil else {
                         throw LLMError.unavailable
                     }
-                    let prompt = request.request.messages.map { message in
-                        "\(message.role.rawValue): \(message.content.text)"
-                    }.joined(separator: "\n")
                     continuation.yield(.started(request.model))
-                    let output = try await streamSanitizedText(
-                        prompt: prompt,
+                    let output = try await streamSanitizedChat(
+                        messages: request.request.messages,
+                        sessionID: request.request.sessionID,
                         model: request.model,
                         maxTokens: request.request.requirements.budget?.maxOutputTokens,
                         onDelta: { continuation.yield(.delta($0)) }
+                    )
+                    await runtime?.recordChatCompletion(
+                        modelID: request.model.id,
+                        sessionID: request.request.sessionID,
+                        requestMessageCount: request.request.messages.count
                     )
                     let message = ChatMessage(role: .assistant, content: MessageContent(text: output))
                     continuation.yield(.completed(ChatResult(message: message, model: request.model)))
@@ -126,6 +129,34 @@ public struct MLXBackend: ModelBackend {
             maxTokens: maxTokens
         )
 
+        return try await collectSanitizedText(from: stream, onDelta: onDelta)
+    }
+
+    private func streamSanitizedChat(
+        messages: [ChatMessage],
+        sessionID: SessionID?,
+        model: ModelDescriptor,
+        maxTokens: Int?,
+        onDelta: (String) -> Void
+    ) async throws -> String {
+        guard let runtime else {
+            throw LLMError.unavailable
+        }
+
+        let stream = try await runtime.stream(
+            messages: messages,
+            sessionID: sessionID,
+            model: model,
+            maxTokens: maxTokens
+        )
+
+        return try await collectSanitizedText(from: stream, onDelta: onDelta)
+    }
+
+    private func collectSanitizedText(
+        from stream: AsyncThrowingStream<String, Error>,
+        onDelta: (String) -> Void
+    ) async throws -> String {
         var sanitizer = MLXStreamOutputSanitizer()
         var output = ""
         for try await delta in stream {

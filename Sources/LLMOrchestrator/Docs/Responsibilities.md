@@ -5,3 +5,7 @@ Owns capability matching, backend selection, request normalization, fallback, an
 Fallback is limited to selecting another already eligible `ModelDescriptor`; backend-specific retry, provider mapping, and transport recovery remain outside this module. Cancellation and unsupported capability failures stop fallback.
 
 When a backend emits backend-neutral tool requests, orchestration may execute them through `ToolService`, append tool result turns, and continue the conversation on the same selected model. Tool execution failures stop the round-trip instead of triggering backend fallback.
+
+Safety policy evaluation is an orchestration concern: services may modify or deny input before backend selection and may
+modify or deny final output before completion is emitted. Domain-specific CGM persistence, metrics, and medical decision
+logic remain outside this module.

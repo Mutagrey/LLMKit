@@ -7,28 +7,35 @@ public struct DefaultChatService: ChatService {
     private let fallback: FallbackCoordinator
     private let tools: (any ToolService)?
     private let maximumToolRoundTrips: Int
+    private let safetyPolicy: (any SafetyPolicyEvaluating)?
 
     public init(
         router: ModelRouter,
         registry: BackendRegistry,
         fallback: FallbackCoordinator = FallbackCoordinator(),
         tools: (any ToolService)? = nil,
-        maximumToolRoundTrips: Int = 8
+        maximumToolRoundTrips: Int = 8,
+        safetyPolicy: (any SafetyPolicyEvaluating)? = nil
     ) {
         self.router = router
         self.registry = registry
         self.fallback = fallback
         self.tools = tools
         self.maximumToolRoundTrips = maximumToolRoundTrips
+        self.safetyPolicy = safetyPolicy
     }
 
     public func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let effectiveRequest = await requestWithResolvedTools(request)
+                    let effectiveRequest = try await requestAfterInputSafety(
+                        await requestWithResolvedTools(request)
+                    )
                     let plan = try await router.plan(requirements: effectiveRequest.requirements)
                     try await stream(effectiveRequest, using: plan, continuation: continuation)
+                } catch let error as SafetyPolicyDenied {
+                    continuation.finish(throwing: LLMError.executionFailed(SafetyPolicyBridge.rejectionMessage(for: error)))
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -104,7 +111,8 @@ public struct DefaultChatService: ChatService {
                     }
 
                     guard shouldContinueToolRoundTrip(for: completedResult, toolCalls: pendingToolCalls) else {
-                        continuation.yield(.completed(completedResult))
+                        let safeResult = try await resultAfterOutputSafety(completedResult, model: model)
+                        continuation.yield(.completed(safeResult))
                         continuation.finish()
                         return
                     }
@@ -148,6 +156,82 @@ public struct DefaultChatService: ChatService {
             sessionID: request.sessionID,
             tools: availableTools
         )
+    }
+
+    private func requestAfterInputSafety(_ request: ChatRequest) async throws -> ChatRequest {
+        guard let safetyPolicy else {
+            return request
+        }
+        let inputText = request.messages.map(\.content.text).joined(separator: "\n")
+        let decision = await safetyPolicy.evaluateInput(SafetyInputRequest(
+            text: inputText,
+            requirements: request.requirements
+        ))
+        switch decision.action {
+        case .allow:
+            return request
+        case .modify:
+            guard let redactedText = decision.redactedText else {
+                return request
+            }
+            return requestReplacingLastText(request, with: redactedText)
+        case .deny(let reason):
+            throw SafetyPolicyDenied(reason: reason)
+        }
+    }
+
+    private func requestReplacingLastText(_ request: ChatRequest, with text: String) -> ChatRequest {
+        guard let index = request.messages.lastIndex(where: { $0.role == .user }) ?? request.messages.indices.last else {
+            return request
+        }
+        var messages = request.messages
+        let original = messages[index]
+        messages[index] = ChatMessage(
+            id: original.id,
+            role: original.role,
+            content: MessageContent(text: text, attachments: original.content.attachments),
+            createdAt: original.createdAt,
+            toolCallReference: original.toolCallReference
+        )
+        return ChatRequest(
+            messages: messages,
+            requirements: request.requirements,
+            sessionID: request.sessionID,
+            tools: request.tools
+        )
+    }
+
+    private func resultAfterOutputSafety(_ result: ChatResult, model: ModelDescriptor) async throws -> ChatResult {
+        guard let safetyPolicy else {
+            return result
+        }
+        let decision = await safetyPolicy.evaluateOutput(SafetyOutputRequest(
+            text: result.message.content.text,
+            modelID: model.id
+        ))
+        switch decision.action {
+        case .allow:
+            return result
+        case .modify:
+            guard let redactedText = decision.redactedText else {
+                return result
+            }
+            let message = ChatMessage(
+                id: result.message.id,
+                role: result.message.role,
+                content: MessageContent(text: redactedText, attachments: result.message.content.attachments),
+                createdAt: result.message.createdAt,
+                toolCallReference: result.message.toolCallReference
+            )
+            return ChatResult(
+                message: message,
+                model: result.model,
+                usage: result.usage,
+                finishReason: result.finishReason
+            )
+        case .deny(let reason):
+            throw SafetyPolicyDenied(reason: reason)
+        }
     }
 
     private func shouldContinueToolRoundTrip(for result: ChatResult, toolCalls: [ToolInvocation]) -> Bool {
@@ -235,6 +319,9 @@ public struct DefaultChatService: ChatService {
     }
 
     private func shouldAttemptFallback(after error: Error, requirements: ExecutionRequirements) -> Bool {
+        if error is SafetyPolicyDenied {
+            return false
+        }
         guard requirements.allowsFallback else {
             return false
         }

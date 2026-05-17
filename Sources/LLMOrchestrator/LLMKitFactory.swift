@@ -9,12 +9,22 @@ public enum LLMKitFactory {
         backends: [any ModelBackend],
         lifecycle: (any ModelLifecycleService)? = nil,
         tools: (any ToolService)? = nil,
+        safetyPolicy: (any SafetyPolicyEvaluating)? = nil,
         sessionStore: (any SessionStore)? = nil
     ) -> LLMKitContainer {
         let registry = BackendRegistry(backends: backends)
         let router = ModelRouter(catalog: catalog)
-        let generation = DefaultLanguageGenerationService(router: router, registry: registry)
-        let chat = DefaultChatService(router: router, registry: registry, tools: tools)
+        let generation = DefaultLanguageGenerationService(
+            router: router,
+            registry: registry,
+            safetyPolicy: safetyPolicy
+        )
+        let chat = DefaultChatService(
+            router: router,
+            registry: registry,
+            tools: tools,
+            safetyPolicy: safetyPolicy
+        )
         let structured = DefaultStructuredGenerationService(generation: generation)
         let lifecycle = lifecycle ?? ModelInstallCoordinator(
             artifactRootDirectory: ModelArtifactLocationResolver.defaultRootDirectory()

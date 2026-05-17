@@ -9,7 +9,14 @@ declared minimum RAM or free-disk requirements exceed the current device budget.
 prefers lower-footprint models, while `.best` still prefers higher-capacity candidates that remain eligible.
 
 `DefaultStructuredGenerationService` forwards stable execution requirements together with the backend-neutral
-`StructuredOutputSchema`. Schema-aware prompt rendering now lives on the core request model so orchestration
-does not need provider-specific structured DTOs and backends can still recover native schema metadata later.
+`StructuredOutputSchema`. It decodes only strict JSON and performs one prompt-level repair attempt by default, which lets
+local completion/chat models participate before a backend adds native schema or tool-protocol support.
+
+`DefaultLanguageGenerationService` and `DefaultChatService` can be constructed with a `SafetyPolicyEvaluating` hook.
+Input decisions run before routing and output decisions run before final completion events are emitted.
 
 When `DefaultChatService` is given a `ToolService`, it can auto-expose available tools to the backend, execute requested tool invocations, append tool result turns, and continue the same chat round-trip on the selected model without leaking provider-specific tool DTOs into orchestration.
+
+`UserInfoExtractorAgent` and `CGMAnalysisAgent` are thin app-facing helpers over existing structured/chat services. They
+provide separate `SessionID` defaults for memory extraction and CGM interpretation while leaving domain memory storage and
+metric calculation to the consuming app.

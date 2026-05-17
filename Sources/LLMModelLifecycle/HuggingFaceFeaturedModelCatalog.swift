@@ -69,6 +69,7 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
     }
 
     public static let defaultRepositoryIDs = [
+        "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/Qwen3.5-2B-OptiQ-4bit",
         "mlx-community/Qwen3.5-4B-OptiQ-4bit",
         "mlx-community/Qwen3.6-27B-OptiQ-4bit",
@@ -131,12 +132,20 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
             throw LLMError.downloadFailed("config.json is missing for \(repository.repositoryID).")
         }
 
+        let capabilities: Set<ModelCapability> = {
+            var capabilities: Set<ModelCapability> = [.chat, .completion, .streaming, .offline]
+            if let contextWindowTokens = repository.contextWindowTokens, contextWindowTokens > 32_768 {
+                capabilities.insert(.longContext)
+            }
+            return capabilities
+        }()
+
         return ModelDescriptor(
             id: repository.modelID,
             displayName: repository.displayName,
             family: repository.family,
             backend: .mlx,
-            capabilities: [.chat, .completion, .streaming, .offline],
+            capabilities: capabilities,
             minimumRAMGB: repository.minimumRAMGB,
             minimumFreeDiskGB: repository.minimumFreeDiskGB,
             contextWindowTokens: repository.contextWindowTokens,
@@ -188,7 +197,9 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
              "added_tokens.json",
              "merges.txt",
              "vocab.json",
-             "preprocessor_config.json":
+             "preprocessor_config.json",
+             "processor_config.json",
+             "chat_template.jinja":
             return true
         default:
             return false
@@ -249,6 +260,15 @@ private struct FeaturedRepository: Sendable {
             minimumFreeDiskGB = 20
             contextWindowTokens = 131072
             tags = ["downloadable", "mlx", "remote", "pro", "qwen", "quality"]
+            license = Self.apacheTwoLicense(for: repositoryID)
+        case "mlx-community/gemma-4-e2b-it-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Gemma 4 E2B Instruct 4-bit"
+            family = .gemma
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 5
+            contextWindowTokens = 131072
+            tags = ["downloadable", "mlx", "remote", "gemma", "gemma4", "iphone-pro", "agentic"]
             license = Self.apacheTwoLicense(for: repositoryID)
         case "mlx-community/gemma-3-text-4b-it-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))

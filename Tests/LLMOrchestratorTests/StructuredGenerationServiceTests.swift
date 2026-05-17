@@ -51,6 +51,60 @@ private final class RecordingGenerationService: LanguageGenerationService, @unch
     }
 }
 
+private final class SequencedGenerationService: LanguageGenerationService, @unchecked Sendable {
+    private let state: State
+
+    init(responses: [String]) {
+        self.state = State(responses: responses)
+    }
+
+    func generate(_ request: GenerationRequest) async throws -> GenerationResult {
+        await state.record(request)
+        return GenerationResult(text: await state.nextResponse())
+    }
+
+    func stream(_ request: GenerationRequest) -> AsyncThrowingStream<GenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                let text = await state.nextResponse()
+                continuation.yield(.delta(text))
+                continuation.yield(.completed(GenerationResult(text: text)))
+                continuation.finish()
+            }
+        }
+    }
+
+    func recordedRequests() async -> [GenerationRequest] {
+        await state.snapshot()
+    }
+
+    private actor State {
+        private let responses: [String]
+        private var index = 0
+        private var requests: [GenerationRequest] = []
+
+        init(responses: [String]) {
+            self.responses = responses
+        }
+
+        func record(_ request: GenerationRequest) {
+            requests.append(request)
+        }
+
+        func nextResponse() -> String {
+            defer { index += 1 }
+            guard responses.indices.contains(index) else {
+                return responses.last ?? "{}"
+            }
+            return responses[index]
+        }
+
+        func snapshot() -> [GenerationRequest] {
+            requests
+        }
+    }
+}
+
 private struct WeatherSummary: Codable, Equatable, Sendable {
     let city: String
     let forecast: String
@@ -99,4 +153,36 @@ private struct WeatherSummary: Codable, Equatable, Sendable {
     #expect(recorded[0].prompt == "Summarize Paris weather.")
     #expect(recorded[0].structuredOutputSchema == nil)
     #expect(recorded[0].renderedPrompt == "Summarize Paris weather.")
+}
+
+@Test func structuredGenerationServiceRepairsInvalidJSONOnce() async throws {
+    let generation = SequencedGenerationService(responses: [
+        #"```json\n{"city":"Paris","forecast":"Sunny"}\n```"#,
+        #"{"city":"Paris","forecast":"Sunny"}"#
+    ])
+    let service = DefaultStructuredGenerationService(generation: generation)
+    let schema = StructuredOutputSchema(name: "WeatherSummary", definition: [
+        "type": .string("object"),
+        "properties": .object([
+            "city": .object(["type": .string("string")]),
+            "forecast": .object(["type": .string("string")])
+        ])
+    ])
+
+    let result = try await service.generate(
+        WeatherSummary.self,
+        request: StructuredRequest(prompt: "Summarize Paris weather.", schema: schema)
+    )
+
+    let recorded = await generation.recordedRequests()
+    #expect(result == WeatherSummary(city: "Paris", forecast: "Sunny"))
+    #expect(recorded.count == 2)
+    #expect(recorded[1].prompt.contains("previous response was not valid JSON"))
+    #expect(recorded[1].structuredOutputSchema == schema)
+}
+
+@Test func structuredRequestDefaultsToPromptValidatedCompletion() {
+    let request = StructuredRequest(prompt: "Extract JSON.")
+
+    #expect(request.requirements.requiredCapabilities == [.completion])
 }

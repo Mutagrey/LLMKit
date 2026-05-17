@@ -10,6 +10,7 @@ public enum CuratedModelManifests {
     public static let localIPhoneTextModels = ModelManifest(
         id: "llmkit.local.iphone-text-models",
         models: [
+            gemma4E2BInstructionMLX4Bit,
             qwen25HalfBInstructMLX4Bit,
             qwen30Point6BMLX4Bit,
             qwen31Point7BMLX4Bit,
@@ -110,6 +111,18 @@ public enum CuratedModelManifests {
         tags: ["balanced", "iphone-recommended"]
     )
 
+    public static let gemma4E2BInstructionMLX4Bit = gemma4TextModel(
+        id: "mlx-community.gemma-4-e2b-it-4bit",
+        displayName: "Gemma 4 E2B Instruct 4-bit",
+        repository: "mlx-community/gemma-4-e2b-it-4bit",
+        revision: "99d9a53ff828d365a8ecae538e45f80a08d612cd",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 3_843_248_947,
+        tags: ["quality", "iphone-pro", "gemma4", "agentic"]
+    )
+
     public static func merged(id: String, manifests: [ModelManifest]) -> ModelManifest {
         let models = manifests
             .flatMap(\.models)
@@ -198,6 +211,46 @@ public enum CuratedModelManifests {
         )
     }
 
+    private static func gemma4TextModel(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        estimatedDownloadSizeBytes: Int64,
+        tags: [String]
+    ) -> ModelDescriptor {
+        ModelDescriptor(
+            id: id,
+            displayName: displayName,
+            family: .gemma,
+            backend: .mlx,
+            capabilities: [
+                .chat,
+                .completion,
+                .streaming,
+                .offline,
+                .lowLatency,
+                .longContext
+            ],
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            supportsStreaming: true,
+            source: pinnedSource(
+                repository: repository,
+                revision: revision,
+                artifacts: gemma4TextArtifacts
+            ),
+            license: apacheTwoLicense(repositoryOwner: repository),
+            quantization: Quantization(format: "MLX 4-bit", bits: 4),
+            estimatedDownloadSizeBytes: estimatedDownloadSizeBytes,
+            tags: baseLocalTags + ["gemma"] + tags
+        )
+    }
+
     private static func pinnedSource(
         repository: String,
         revision: String,
@@ -259,6 +312,17 @@ public enum CuratedModelManifests {
         "special_tokens_map.json",
         "tokenizer.json",
         "tokenizer.model",
+        "tokenizer_config.json"
+    ]
+
+    private static let gemma4TextArtifacts = [
+        "chat_template.jinja",
+        "config.json",
+        "generation_config.json",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "processor_config.json",
+        "tokenizer.json",
         "tokenizer_config.json"
     ]
 }

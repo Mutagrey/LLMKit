@@ -5,11 +5,18 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
     private let router: ModelRouter
     private let registry: BackendRegistry
     private let fallback: FallbackCoordinator
+    private let safetyPolicy: (any SafetyPolicyEvaluating)?
 
-    public init(router: ModelRouter, registry: BackendRegistry, fallback: FallbackCoordinator = FallbackCoordinator()) {
+    public init(
+        router: ModelRouter,
+        registry: BackendRegistry,
+        fallback: FallbackCoordinator = FallbackCoordinator(),
+        safetyPolicy: (any SafetyPolicyEvaluating)? = nil
+    ) {
         self.router = router
         self.registry = registry
         self.fallback = fallback
+        self.safetyPolicy = safetyPolicy
     }
 
     public func generate(_ request: GenerationRequest) async throws -> GenerationResult {
@@ -33,8 +40,11 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let plan = try await router.plan(requirements: request.requirements)
-                    try await stream(request, using: plan, continuation: continuation)
+                    let safeRequest = try await requestAfterInputSafety(request)
+                    let plan = try await router.plan(requirements: safeRequest.requirements)
+                    try await stream(safeRequest, using: plan, continuation: continuation)
+                } catch let error as SafetyPolicyDenied {
+                    continuation.finish(throwing: LLMError.executionFailed(SafetyPolicyBridge.rejectionMessage(for: error)))
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -80,8 +90,9 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                             throw error
                         }
                         shouldTryNextCandidate = true
-                    case .completed:
-                        continuation.yield(event)
+                    case .completed(let result):
+                        let safeResult = try await resultAfterOutputSafety(result, model: model)
+                        continuation.yield(.completed(safeResult))
                         continuation.finish()
                         return
                     case .started, .delta:
@@ -93,7 +104,9 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                 }
             } catch {
                 lastError = error
-                guard request.requirements.allowsFallback, fallback.shouldFallback(after: error) else {
+                guard !(error is SafetyPolicyDenied),
+                      request.requirements.allowsFallback,
+                      fallback.shouldFallback(after: error) else {
                     throw error
                 }
             }
@@ -102,6 +115,58 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
         }
 
         throw lastError ?? LLMError.unavailable
+    }
+
+    private func requestAfterInputSafety(_ request: GenerationRequest) async throws -> GenerationRequest {
+        guard let safetyPolicy else {
+            return request
+        }
+        let decision = await safetyPolicy.evaluateInput(SafetyInputRequest(
+            text: request.prompt,
+            requirements: request.requirements
+        ))
+        switch decision.action {
+        case .allow:
+            return request
+        case .modify:
+            guard let redactedText = decision.redactedText else {
+                return request
+            }
+            return GenerationRequest(
+                prompt: redactedText,
+                structuredOutputSchema: request.structuredOutputSchema,
+                requirements: request.requirements,
+                sessionID: request.sessionID
+            )
+        case .deny(let reason):
+            throw SafetyPolicyDenied(reason: reason)
+        }
+    }
+
+    private func resultAfterOutputSafety(_ result: GenerationResult, model: ModelDescriptor) async throws -> GenerationResult {
+        guard let safetyPolicy else {
+            return result
+        }
+        let decision = await safetyPolicy.evaluateOutput(SafetyOutputRequest(
+            text: result.text,
+            modelID: model.id
+        ))
+        switch decision.action {
+        case .allow:
+            return result
+        case .modify:
+            guard let redactedText = decision.redactedText else {
+                return result
+            }
+            return GenerationResult(
+                text: redactedText,
+                model: result.model,
+                usage: result.usage,
+                finishReason: result.finishReason
+            )
+        case .deny(let reason):
+            throw SafetyPolicyDenied(reason: reason)
+        }
     }
 
     private func error(for availability: BackendAvailability, model: ModelDescriptor) -> LLMError {

@@ -17,7 +17,7 @@ public struct StructuredRequest: Hashable, Codable, Sendable {
     public init(
         prompt: String,
         schema: StructuredOutputSchema? = nil,
-        requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.structuredOutput]),
+        requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.completion]),
         sessionID: SessionID? = nil
     ) {
         self.prompt = prompt

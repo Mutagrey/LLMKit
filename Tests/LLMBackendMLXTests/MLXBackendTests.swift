@@ -1,5 +1,5 @@
 import Foundation
-import LLMBackendMLX
+@testable import LLMBackendMLX
 import LLMCore
 import LLMModelLifecycle
 import LLMProtocols
@@ -80,4 +80,31 @@ import Testing
     ).availability(for: descriptor)
 
     #expect(availability.status == .available)
+}
+
+@Test func mlxChatMessageMapperPreservesBackendNeutralRoles() throws {
+    let messages = [
+        ChatMessage(role: .system, content: MessageContent(text: "system")),
+        ChatMessage(role: .developer, content: MessageContent(text: "developer")),
+        ChatMessage(role: .user, content: MessageContent(text: "user")),
+        ChatMessage(role: .assistant, content: MessageContent(text: "assistant")),
+        ChatMessage(role: .tool, content: MessageContent(text: "tool"))
+    ]
+
+    let mapped = MLXChatMessageMapper().map(messages)
+
+    #expect(mapped.map(\.role.rawValue) == ["system", "system", "user", "assistant", "tool"])
+    #expect(mapped.map(\.content) == ["system", "Developer: developer", "user", "assistant", "tool"])
+}
+
+@Test func mlxChatMessageMapperSplitsHistoryFromPrompt() throws {
+    let prompt = try MLXChatMessageMapper().prompt(from: [
+        ChatMessage(role: .system, content: MessageContent(text: "system")),
+        ChatMessage(role: .user, content: MessageContent(text: "latest"))
+    ])
+
+    #expect(prompt.history.count == 1)
+    #expect(prompt.history.first?.role.rawValue == "system")
+    #expect(prompt.prompt.role.rawValue == "user")
+    #expect(prompt.prompt.content == "latest")
 }

@@ -8,6 +8,7 @@ import Tokenizers
 actor MLXLocalRuntime {
     private let resolver: ModelArtifactLocationResolver
     private var containers: [ModelID: ModelContainer] = [:]
+    private var chatSessions: [MLXChatSessionKey: MLXChatSessionState] = [:]
 
     init(modelRootDirectory: URL) {
         self.resolver = ModelArtifactLocationResolver(rootDirectory: modelRootDirectory)
@@ -48,6 +49,7 @@ actor MLXLocalRuntime {
 
     func unload(modelID: ModelID) {
         containers[modelID] = nil
+        chatSessions = chatSessions.filter { $0.key.modelID != modelID }
     }
 
     func stream(
@@ -62,6 +64,73 @@ actor MLXLocalRuntime {
         )
         return session.streamResponse(to: prompt)
     }
+
+    func stream(
+        messages: [ChatMessage],
+        sessionID: SessionID?,
+        model descriptor: ModelDescriptor,
+        maxTokens: Int?
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        let container = try await loadContainer(for: descriptor)
+        let mapped = try MLXChatMessageMapper().prompt(from: messages)
+        let generateParameters = GenerateParameters(maxTokens: maxTokens ?? 256)
+
+        guard let sessionID else {
+            let session = ChatSession(
+                container,
+                history: mapped.history,
+                generateParameters: generateParameters
+            )
+            return session.streamResponse(
+                to: mapped.prompt.content,
+                role: mapped.prompt.role,
+                images: [],
+                videos: []
+            )
+        }
+
+        let key = MLXChatSessionKey(modelID: descriptor.id, sessionID: sessionID)
+        let expectedCachedMessageCount = mapped.history.count
+        let session: ChatSession
+        if let state = chatSessions[key], state.cachedMessageCount == expectedCachedMessageCount {
+            session = state.session
+        } else {
+            session = ChatSession(
+                container,
+                history: mapped.history,
+                generateParameters: generateParameters
+            )
+            chatSessions[key] = MLXChatSessionState(
+                session: session,
+                cachedMessageCount: expectedCachedMessageCount
+            )
+        }
+
+        return session.streamResponse(
+            to: mapped.prompt.content,
+            role: mapped.prompt.role,
+            images: [],
+            videos: []
+        )
+    }
+
+    func recordChatCompletion(modelID: ModelID, sessionID: SessionID?, requestMessageCount: Int) {
+        guard let sessionID else {
+            return
+        }
+        let key = MLXChatSessionKey(modelID: modelID, sessionID: sessionID)
+        chatSessions[key]?.cachedMessageCount = requestMessageCount + 1
+    }
+}
+
+private struct MLXChatSessionKey: Hashable {
+    let modelID: ModelID
+    let sessionID: SessionID
+}
+
+private struct MLXChatSessionState {
+    let session: ChatSession
+    var cachedMessageCount: Int
 }
 
 private struct TransformersTokenizerLoader: MLXLMCommon.TokenizerLoader {

@@ -70,6 +70,17 @@ public struct ModelCatalogCardView: View {
                 .accessibilityLabel("Delete model")
             }
         }
+        .swipeActions(edge: .leading) {
+            if let detailsAction {
+                Button {
+                    detailsAction()
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .tint(.blue)
+                .accessibilityLabel("Model details")
+            }
+        }
     }
 
     private var header: some View {
@@ -89,25 +100,13 @@ public struct ModelCatalogCardView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 8) {
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("Selected")
-                } else {
-                    controls
-                }
-
-                if let detailsAction {
-                    Button(action: detailsAction) {
-                        Image(systemName: "info.circle")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Model details")
-                }
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.blue)
+                    .accessibilityLabel("Selected")
+            } else {
+                controls
             }
         }
     }
@@ -134,6 +133,7 @@ public struct ModelCatalogCardView: View {
             }
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
+            .font(.caption2.weight(.semibold))
         } else if shouldShowInstallButton, let installAction {
             Button {
                 Task { await installAction() }
@@ -142,6 +142,7 @@ public struct ModelCatalogCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
+            .font(.caption2.weight(.semibold))
             .disabled(isInstallButtonDisabled)
         } else if isAvailable, let selectionAction {
             Button {
@@ -151,6 +152,7 @@ public struct ModelCatalogCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
+            .font(.caption2.weight(.semibold))
         } else {
             statusBadge
         }

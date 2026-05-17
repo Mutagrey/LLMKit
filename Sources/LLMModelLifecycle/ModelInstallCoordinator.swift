@@ -10,6 +10,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private let artifactDownloader: any ModelArtifactDownloading
     private let integrityVerifier: ModelIntegrityVerifier
     private let interruptionPolicy: ModelInstallInterruptionPolicy
+    private let diskSpaceProvider: any ModelInstallDiskSpaceProviding
     private var hasLoadedPersistedRecords: Bool
 
     public init(
@@ -20,6 +21,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         artifactDownloader: any ModelArtifactDownloading = URLSessionModelArtifactDownloader(),
         integrityVerifier: ModelIntegrityVerifier = ModelIntegrityVerifier(),
         interruptionPolicy: ModelInstallInterruptionPolicy = .default,
+        diskSpaceProvider: any ModelInstallDiskSpaceProviding = FileSystemModelInstallDiskSpaceProvider(),
         loadedPersistedRecords: Bool? = nil
     ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0) })
@@ -31,6 +33,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         self.artifactDownloader = artifactDownloader
         self.integrityVerifier = integrityVerifier
         self.interruptionPolicy = interruptionPolicy
+        self.diskSpaceProvider = diskSpaceProvider
         self.hasLoadedPersistedRecords = loadedPersistedRecords ?? (recordStore == nil || !records.isEmpty)
     }
 
@@ -140,11 +143,23 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             throw LLMError.downloadFailed("No artifact root directory configured for \(descriptor.id.rawValue).")
         }
 
+        let preflight = try preflightDownload(
+            for: descriptor,
+            artifacts: source.artifacts,
+            artifactRootDirectory: artifactRootDirectory
+        )
+        try ensureSufficientDiskSpace(
+            for: descriptor,
+            artifactRootDirectory: artifactRootDirectory,
+            requiredBytes: preflight.requiredDownloadBytes
+        )
+
         await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: 0))
         continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0)))
 
         let tracker = DownloadProgressTracker(
-            totalExpectedBytes: expectedTotalBytes(for: descriptor, artifacts: source.artifacts),
+            totalExpectedBytes: preflight.totalExpectedBytes?.bytes,
+            isTotalEstimated: preflight.totalExpectedBytes?.isEstimated ?? true,
             totalArtifacts: source.artifacts.count
         )
         let resolver = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
@@ -153,7 +168,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             try Task.checkCancellation()
             let destination = try resolver.artifactURL(modelID: descriptor.id, artifact: artifact)
 
-            if let restoredBytes = try resumeExistingArtifactIfPossible(
+            if let restoredBytes = try preflight.verifiedExistingBytes[artifact.id] ?? resumeExistingArtifactIfPossible(
                 artifact,
                 modelID: descriptor.id,
                 artifactRootDirectory: artifactRootDirectory
@@ -173,7 +188,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     currentArtifactBytes: 0,
                     totalExpectedBytes: tracker.totalExpectedBytes,
                     fallbackArtifactCount: tracker.totalArtifacts,
-                    usesByteProgress: tracker.totalExpectedBytes != nil
+                    usesByteProgress: tracker.totalExpectedBytes != nil,
+                    isTotalEstimated: tracker.isTotalEstimated
                 )
                 try await publishDownloadProgressIfNeeded(
                     descriptorID: descriptor.id,
@@ -213,7 +229,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                 currentArtifactBytes: 0,
                 totalExpectedBytes: tracker.totalExpectedBytes,
                 fallbackArtifactCount: tracker.totalArtifacts,
-                usesByteProgress: tracker.totalExpectedBytes != nil
+                usesByteProgress: tracker.totalExpectedBytes != nil,
+                isTotalEstimated: tracker.isTotalEstimated
             )
             try await publishDownloadProgressIfNeeded(
                 descriptorID: descriptor.id,
@@ -225,6 +242,49 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
         await stateMachine.transition(modelID: descriptor.id, to: .verifying)
         continuation.yield(.stateChanged(descriptor.id, .verifying))
+    }
+
+    private func preflightDownload(
+        for descriptor: ModelDescriptor,
+        artifacts: [ModelArtifact],
+        artifactRootDirectory: URL
+    ) throws -> DownloadPreflightResult {
+        var verifiedExistingBytes: [String: Int64] = [:]
+        for artifact in artifacts {
+            if let bytes = try resumeExistingArtifactIfPossible(
+                artifact,
+                modelID: descriptor.id,
+                artifactRootDirectory: artifactRootDirectory
+            ) {
+                verifiedExistingBytes[artifact.id] = bytes
+            }
+        }
+
+        let totalExpectedBytes = expectedTotalBytes(for: descriptor, artifacts: artifacts)
+        let verifiedBytes = verifiedExistingBytes.values.reduce(0, +)
+        return DownloadPreflightResult(
+            totalExpectedBytes: totalExpectedBytes,
+            requiredDownloadBytes: totalExpectedBytes.map { max($0.bytes - verifiedBytes, 0) },
+            verifiedExistingBytes: verifiedExistingBytes
+        )
+    }
+
+    private func ensureSufficientDiskSpace(
+        for descriptor: ModelDescriptor,
+        artifactRootDirectory: URL,
+        requiredBytes: Int64?
+    ) throws {
+        guard let requiredBytes, requiredBytes > 0 else {
+            return
+        }
+        guard let availableBytes = try diskSpaceProvider.availableBytes(at: artifactRootDirectory) else {
+            return
+        }
+        guard availableBytes >= requiredBytes else {
+            throw LLMError.downloadFailed(
+                "Not enough disk space to download \(descriptor.displayName). Need \(Self.byteCountTitle(requiredBytes)) free, \(Self.byteCountTitle(availableBytes)) available."
+            )
+        }
     }
 
     private func resumeExistingArtifactIfPossible(
@@ -290,6 +350,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         for artifact in artifacts {
             let artifactURL = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
                 .artifactURL(modelID: descriptor.id, artifact: artifact)
+            try cleanupCachedDownload(for: artifact, at: artifactURL)
+
             guard FileManager.default.fileExists(atPath: artifactURL.path) else {
                 continue
             }
@@ -309,6 +371,13 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
     }
 
+    private func cleanupCachedDownload(for artifact: ModelArtifact, at destination: URL) throws {
+        guard let cacheCleaner = artifactDownloader as? any ModelArtifactDownloadCacheCleaning else {
+            return
+        }
+        try cacheCleaner.removeCachedDownload(for: artifact, at: destination)
+    }
+
     private func cleanupAllArtifacts(for modelID: ModelID) async throws {
         guard let artifactRootDirectory else {
             return
@@ -321,15 +390,15 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
     }
 
-    private func expectedTotalBytes(for descriptor: ModelDescriptor, artifacts: [ModelArtifact]) -> Int64? {
-        if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes, estimatedDownloadSizeBytes > 0 {
-            return estimatedDownloadSizeBytes
-        }
-
+    private func expectedTotalBytes(for descriptor: ModelDescriptor, artifacts: [ModelArtifact]) -> DownloadExpectedBytes? {
         let knownBytes = artifacts.compactMap(\.byteCount)
         let total = knownBytes.reduce(Int64(0), +)
         if knownBytes.count == artifacts.count, total > 0 {
-            return total
+            return DownloadExpectedBytes(bytes: total, isEstimated: false)
+        }
+
+        if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes, estimatedDownloadSizeBytes > 0 {
+            return DownloadExpectedBytes(bytes: estimatedDownloadSizeBytes, isEstimated: true)
         }
         return nil
     }
@@ -344,10 +413,11 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             tracker.artifactExpectedBytes[artifactProgress.artifactID] = expectedTotalBytes
         }
 
+        let totalExpectedBytes = progressTotalBytes(from: tracker)
         let progress = progressValue(
             completedBytes: tracker.completedBytes,
             currentArtifactBytes: artifactProgress.bytesWritten,
-            totalExpectedBytes: tracker.totalExpectedBytes ?? summedExpectedBytes(from: tracker.artifactExpectedBytes),
+            totalExpectedBytes: totalExpectedBytes,
             fallbackArtifactCount: tracker.totalArtifacts,
             completedArtifacts: tracker.completedArtifacts
         )
@@ -355,9 +425,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             progress: progress,
             completedBytes: tracker.completedBytes,
             currentArtifactBytes: artifactProgress.bytesWritten,
-            totalExpectedBytes: tracker.totalExpectedBytes ?? summedExpectedBytes(from: tracker.artifactExpectedBytes),
+            totalExpectedBytes: totalExpectedBytes,
             fallbackArtifactCount: tracker.totalArtifacts,
-            usesByteProgress: true
+            usesByteProgress: totalExpectedBytes != nil,
+            isTotalEstimated: tracker.totalExpectedBytes == nil ? false : tracker.isTotalEstimated
         )
 
         try? await publishDownloadProgressIfNeeded(
@@ -374,16 +445,17 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         currentArtifactBytes: Int64,
         totalExpectedBytes: Int64?,
         fallbackArtifactCount: Int,
-        usesByteProgress: Bool
+        usesByteProgress: Bool,
+        isTotalEstimated: Bool
     ) -> ModelInstallProgress {
         let clampedProgress = min(max(progress, 0), 1)
-        if let totalExpectedBytes, totalExpectedBytes > 0 {
+        if usesByteProgress, let totalExpectedBytes, totalExpectedBytes > 0 {
             let writtenBytes = min(completedBytes + currentArtifactBytes, totalExpectedBytes)
             return ModelInstallProgress(
                 fractionCompleted: clampedProgress,
                 completedBytes: writtenBytes,
                 totalBytes: totalExpectedBytes,
-                isEstimated: !usesByteProgress
+                isEstimated: isTotalEstimated
             )
         }
 
@@ -432,8 +504,14 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         continuation.yield(.progressDetail(descriptorID, progress))
     }
 
-    private func summedExpectedBytes(from artifactExpectedBytes: [String: Int64]) -> Int64? {
-        let total = artifactExpectedBytes.values.reduce(0, +)
+    private func progressTotalBytes(from tracker: DownloadProgressTracker) -> Int64? {
+        if let totalExpectedBytes = tracker.totalExpectedBytes {
+            return totalExpectedBytes
+        }
+        guard tracker.artifactExpectedBytes.count == tracker.totalArtifacts else {
+            return nil
+        }
+        let total = tracker.artifactExpectedBytes.values.reduce(0, +)
         return total > 0 ? total : nil
     }
 
@@ -497,7 +575,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         if nsError.domain == NSURLErrorDomain, nsError.code == URLError.fileDoesNotExist.rawValue {
             return .downloadFailed("The remote artifact could not be resolved. Retry the installation.")
         }
-        return .executionFailed(String(describing: error))
+        if nsError.domain == NSURLErrorDomain {
+            return .downloadFailed(Self.networkDownloadMessage(for: nsError))
+        }
+        return .executionFailed("Installation failed. Retry the operation.")
     }
 
     private static func description(for error: LLMError) -> String {
@@ -523,18 +604,50 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             return "Compilation failed."
         }
     }
+
+    private static func networkDownloadMessage(for error: NSError) -> String {
+        switch URLError.Code(rawValue: error.code) {
+        case .networkConnectionLost:
+            return "Network connection was lost during model download. Retry the installation."
+        case .timedOut:
+            return "Model download timed out. Retry the installation."
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return "Could not connect during model download. Retry the installation."
+        case .notConnectedToInternet:
+            return "No internet connection during model download."
+        default:
+            return "Model download failed. Retry the installation."
+        }
+    }
+
+    private static func byteCountTitle(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+private struct DownloadExpectedBytes: Sendable {
+    let bytes: Int64
+    let isEstimated: Bool
+}
+
+private struct DownloadPreflightResult: Sendable {
+    let totalExpectedBytes: DownloadExpectedBytes?
+    let requiredDownloadBytes: Int64?
+    let verifiedExistingBytes: [String: Int64]
 }
 
 private final class DownloadProgressTracker: @unchecked Sendable {
     let totalExpectedBytes: Int64?
+    let isTotalEstimated: Bool
     let totalArtifacts: Int
     var completedBytes: Int64
     var artifactExpectedBytes: [String: Int64]
     var completedArtifacts: Int
     var lastReportedProgress: Double
 
-    init(totalExpectedBytes: Int64?, totalArtifacts: Int) {
+    init(totalExpectedBytes: Int64?, isTotalEstimated: Bool, totalArtifacts: Int) {
         self.totalExpectedBytes = totalExpectedBytes
+        self.isTotalEstimated = isTotalEstimated
         self.totalArtifacts = totalArtifacts
         self.completedBytes = 0
         self.artifactExpectedBytes = [:]

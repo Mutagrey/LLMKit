@@ -38,11 +38,37 @@ public protocol ProgressReportingModelArtifactDownloading: ModelArtifactDownload
     ) async throws -> ModelArtifactDownloadResult
 }
 
-public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactDownloading {
-    private let session: URLSession
+public protocol ModelArtifactDownloadCacheCleaning: Sendable {
+    func removeCachedDownload(for artifact: ModelArtifact, at destination: URL) throws
+}
 
-    public init(session: URLSession = .shared) {
-        self.session = session
+public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactDownloading {
+    typealias DownloadAttempt = @Sendable (
+        _ artifact: ModelArtifact,
+        _ destination: URL,
+        _ resumeData: Data?,
+        _ onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void
+    ) async throws -> ModelArtifactDownloadResult
+
+    private let maximumResumeAttempts: Int
+    private let attemptDownload: DownloadAttempt
+
+    public init(session: URLSession = .shared, maximumResumeAttempts: Int = 3) {
+        self.maximumResumeAttempts = max(0, maximumResumeAttempts)
+        self.attemptDownload = { artifact, destination, resumeData, onProgress in
+            try await Self.runURLSessionDownload(
+                artifact: artifact,
+                destination: destination,
+                resumeData: resumeData,
+                configuration: session.configuration,
+                onProgress: onProgress
+            )
+        }
+    }
+
+    init(maximumResumeAttempts: Int = 3, attemptDownload: @escaping DownloadAttempt) {
+        self.maximumResumeAttempts = max(0, maximumResumeAttempts)
+        self.attemptDownload = attemptDownload
     }
 
     public func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
@@ -54,18 +80,63 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
         to destination: URL,
         onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void
     ) async throws -> ModelArtifactDownloadResult {
+        var resumeData = try cachedResumeData(for: destination)
+        var resumeAttempts = 0
+
+        while true {
+            try Task.checkCancellation()
+
+            do {
+                let result = try await attemptDownload(artifact, destination, resumeData, onProgress)
+                try removeCachedDownload(for: artifact, at: destination)
+                return result
+            } catch is CancellationError {
+                try? removeCachedDownload(for: artifact, at: destination)
+                throw CancellationError()
+            } catch let error as ResumableDownloadAttemptError {
+                if let nextResumeData = error.resumeData, !nextResumeData.isEmpty {
+                    resumeData = nextResumeData
+                    try? cacheResumeData(nextResumeData, for: destination)
+                }
+
+                if Self.isTransient(error.underlyingError), resumeAttempts < maximumResumeAttempts {
+                    resumeAttempts += 1
+                    continue
+                }
+
+                throw Self.normalizedDownloadError(error.underlyingError, artifactID: artifact.id)
+            } catch {
+                if Self.isTransient(error), resumeAttempts < maximumResumeAttempts {
+                    resumeAttempts += 1
+                    resumeData = nil
+                    try? removeCachedDownload(for: artifact, at: destination)
+                    continue
+                }
+
+                throw Self.normalizedDownloadError(error, artifactID: artifact.id)
+            }
+        }
+    }
+
+    private static func runURLSessionDownload(
+        artifact: ModelArtifact,
+        destination: URL,
+        resumeData: Data?,
+        configuration: URLSessionConfiguration,
+        onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void
+    ) async throws -> ModelArtifactDownloadResult {
         let delegate = URLSessionArtifactDownloadDelegate(
             artifact: artifact,
             destination: destination,
             onProgress: onProgress
         )
         let session = URLSession(
-            configuration: session.configuration,
+            configuration: configuration,
             delegate: delegate,
             delegateQueue: nil
         )
 
-        let downloadTask = session.downloadTask(with: artifact.url)
+        let taskBox = URLSessionDownloadTaskBox()
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -73,13 +144,100 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
                     session.finishTasksAndInvalidate()
                     continuation.resume(with: result)
                 }
+                let downloadTask: URLSessionDownloadTask
+                if let resumeData, !resumeData.isEmpty {
+                    downloadTask = session.downloadTask(withResumeData: resumeData)
+                } else {
+                    downloadTask = session.downloadTask(with: artifact.url)
+                }
+                taskBox.set(downloadTask)
                 downloadTask.resume()
             }
         } onCancel: {
-            downloadTask.cancel()
+            taskBox.cancel()
             session.invalidateAndCancel()
         }
     }
+
+    private func cachedResumeData(for destination: URL) throws -> Data? {
+        let url = resumeDataURL(for: destination)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return try Data(contentsOf: url)
+    }
+
+    private func cacheResumeData(_ data: Data, for destination: URL) throws {
+        let url = resumeDataURL(for: destination)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: [.atomic])
+    }
+
+    private func resumeDataURL(for destination: URL) -> URL {
+        destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).resumeData")
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else {
+            return false
+        }
+
+        switch urlError.code {
+        case .networkConnectionLost,
+             .timedOut,
+             .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func normalizedDownloadError(_ error: Error, artifactID: String) -> LLMError {
+        if let llmError = error as? LLMError {
+            return llmError
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .networkConnectionLost:
+                return .downloadFailed("Network connection was lost while downloading \(artifactID). Retry the installation.")
+            case .timedOut:
+                return .downloadFailed("Download timed out for \(artifactID). Retry the installation.")
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return .downloadFailed("Could not connect while downloading \(artifactID). Retry the installation.")
+            case .notConnectedToInternet:
+                return .downloadFailed("No internet connection while downloading \(artifactID).")
+            case .cancelled:
+                return .cancelled
+            default:
+                return .downloadFailed("Download failed for \(artifactID). Retry the installation.")
+            }
+        }
+
+        return .downloadFailed("Download failed for \(artifactID). Retry the installation.")
+    }
+}
+
+extension URLSessionModelArtifactDownloader: ModelArtifactDownloadCacheCleaning {
+    public func removeCachedDownload(for artifact: ModelArtifact, at destination: URL) throws {
+        let url = resumeDataURL(for: destination)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+}
+
+struct ResumableDownloadAttemptError: Error, Sendable {
+    let underlyingError: Error
+    let resumeData: Data?
 }
 
 private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
@@ -167,7 +325,10 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
                 finish(with: .failure(CancellationError()))
                 return
             }
-            finish(with: .failure(error))
+            finish(with: .failure(ResumableDownloadAttemptError(
+                underlyingError: error,
+                resumeData: Self.resumeData(from: error)
+            )))
             return
         }
 
@@ -192,5 +353,28 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
         completed = true
         onComplete?(result)
         onComplete = nil
+    }
+
+    private static func resumeData(from error: Error) -> Data? {
+        let userInfo = (error as NSError).userInfo
+        return userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+    }
+}
+
+private final class URLSessionDownloadTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionDownloadTask?
+
+    func set(_ task: URLSessionDownloadTask) {
+        lock.lock()
+        self.task = task
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
     }
 }

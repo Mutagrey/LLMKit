@@ -29,12 +29,18 @@ replacing descriptors that share the same `ModelID`.
 `ModelArtifactDownloading` is the injectable download boundary used by `ModelInstallCoordinator`. When an implementation
 also conforms to `ProgressReportingModelArtifactDownloading`, the coordinator emits byte-level progress updates instead
 of only per-file completion updates. The default `URLSessionModelArtifactDownloader` supports that richer progress path.
+The default downloader retries transient URL loading failures with `URLSession` resume data when available, stores resume data
+beside the destination artifact while retrying, removes that cache after success or cancellation, and maps transport failures
+to short lifecycle errors without exposing presigned URLs or raw `NSError` payloads.
 Task cancellation now propagates into the default downloader so user-requested cancellation can stop an in-flight transfer
-instead of waiting for the current artifact to finish.
+instead of waiting for the current artifact to finish. Downloaders that own sidecar partial state can conform to
+`ModelArtifactDownloadCacheCleaning` so cancellation cleanup can remove incomplete cache without touching verified artifacts.
 
 `ModelIntegrityVerifier` validates manifest signatures plus downloaded artifact size and checksum metadata.
 `ModelInstallCoordinator` now transitions installs through download and verification phases before marking a
 model ready, and it records `.failed(...)` install state when download or integrity checks fail.
+Before downloading, it checks available disk space through `ModelInstallDiskSpaceProviding` when the manifest has known or
+estimated download bytes, subtracting already verified artifacts so retries do not overstate required space.
 `ModelInstallInterruptionPolicy` defines how cancellation cleanup behaves. The default policy preserves already verified
 artifacts so a later install can resume from completed files while still deleting invalid leftovers from an interrupted
 attempt. Callers that prefer the previous eager cleanup behavior can opt into `.removeAllArtifacts`.

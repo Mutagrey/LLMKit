@@ -1,9 +1,9 @@
 import CryptoKit
 import Foundation
 import LLMCore
-import LLMModelLifecycle
 import LLMProtocols
 import Testing
+@testable import LLMModelLifecycle
 
 private actor InMemoryManifestStore: ManifestStore {
     private var manifests: [String: Data] = [:]
@@ -22,6 +22,27 @@ private actor DownloadCounter {
 
     func increment() {
         count += 1
+    }
+}
+
+private actor DownloadAttemptLog {
+    private(set) var resumeDataValues: [Data?] = []
+
+    func record(_ resumeData: Data?) -> Int {
+        resumeDataValues.append(resumeData)
+        return resumeDataValues.count
+    }
+
+    func snapshot() -> [Data?] {
+        resumeDataValues
+    }
+}
+
+private struct FixedDiskSpaceProvider: ModelInstallDiskSpaceProviding {
+    let availableBytes: Int64?
+
+    func availableBytes(at url: URL) throws -> Int64? {
+        availableBytes
     }
 }
 
@@ -93,13 +114,31 @@ private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifa
 
 private actor DownloadedArtifactLog {
     private(set) var artifactIDs: [String] = []
+    private(set) var startedArtifacts: [String] = []
+    private(set) var cleanedArtifacts: [String] = []
 
     func record(_ artifactID: String) {
         artifactIDs.append(artifactID)
     }
 
+    func recordStarted(_ artifactID: String) {
+        startedArtifacts.append(artifactID)
+    }
+
+    func recordCleaned(_ artifactID: String) {
+        cleanedArtifacts.append(artifactID)
+    }
+
     func snapshot() -> [String] {
         artifactIDs
+    }
+
+    func startedSnapshot() -> [String] {
+        startedArtifacts
+    }
+
+    func cleanedSnapshot() -> [String] {
+        cleanedArtifacts
     }
 }
 
@@ -128,6 +167,39 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
         await log.record(artifact.id)
 
         return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(data.count))
+    }
+}
+
+private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelArtifactDownloadCacheCleaning {
+    let partialData: Data
+    let log: DownloadedArtifactLog
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try partialData.write(to: destination, options: [.atomic])
+        try Data("resume".utf8).write(to: resumeDataURL(for: destination), options: [.atomic])
+        await log.recordStarted(artifact.id)
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(partialData.count))
+    }
+
+    func removeCachedDownload(for artifact: ModelArtifact, at destination: URL) throws {
+        let url = resumeDataURL(for: destination)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        Task {
+            await log.recordCleaned(artifact.id)
+        }
+    }
+
+    private func resumeDataURL(for destination: URL) -> URL {
+        destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).resumeData")
     }
 }
 
@@ -351,6 +423,71 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     #expect(try Data(contentsOf: destinationURL) == sourceData)
 }
 
+@Test func urlSessionArtifactDownloaderRetriesTransientFailureWithResumeData() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let destinationURL = rootDirectory.appendingPathComponent("model.safetensors")
+    let payload = Data("finished".utf8)
+    let resumeData = Data("resume-token".utf8)
+    let attempts = DownloadAttemptLog()
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors"
+    )
+    let downloader = URLSessionModelArtifactDownloader(maximumResumeAttempts: 1) { artifact, destination, incomingResumeData, _ in
+        let attemptNumber = await attempts.record(incomingResumeData)
+        if attemptNumber == 1 {
+            throw ResumableDownloadAttemptError(
+                underlyingError: URLError(.networkConnectionLost),
+                resumeData: resumeData
+            )
+        }
+
+        #expect(incomingResumeData == resumeData)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try payload.write(to: destination, options: [.atomic])
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(payload.count))
+    }
+
+    let result = try await downloader.download(artifact, to: destinationURL)
+
+    #expect(result.bytesWritten == Int64(payload.count))
+    #expect(await attempts.snapshot() == [nil, resumeData])
+    #expect(!FileManager.default.fileExists(
+        atPath: rootDirectory.appendingPathComponent(".model.safetensors.resumeData").path
+    ))
+}
+
+@Test func urlSessionArtifactDownloaderReturnsConciseErrorAfterTransientRetryExhaustion() async throws {
+    let destinationURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("model.safetensors")
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://cas-bridge.xethub.hf.co/private?X-Amz-Signature=secret")!,
+        relativePath: "model.safetensors"
+    )
+    let downloader = URLSessionModelArtifactDownloader(maximumResumeAttempts: 0) { _, _, _, _ in
+        throw ResumableDownloadAttemptError(
+            underlyingError: URLError(.networkConnectionLost),
+            resumeData: Data("resume".utf8)
+        )
+    }
+
+    do {
+        _ = try await downloader.download(artifact, to: destinationURL)
+        Issue.record("Expected transient download failure to be normalized.")
+    } catch let error as LLMError {
+        #expect(error == .downloadFailed("Network connection was lost while downloading weights. Retry the installation."))
+        #expect(!String(describing: error).contains("X-Amz-Signature"))
+        #expect(!String(describing: error).contains("NSURLSessionDownloadTaskResumeData"))
+    }
+}
+
 @Test func cancelledInstallPreservesVerifiedArtifactsForResumeByDefault() async throws {
     let weightsData = Data("weights".utf8)
     let tokenizerData = Data("tokenizer".utf8)
@@ -502,6 +639,63 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
     #expect(!FileManager.default.fileExists(atPath: modelDirectory.path))
 }
 
+@Test func cancelledInstallRemovesPartialArtifactAndResumeCache() async throws {
+    let validData = Data("complete-weights".utf8)
+    let partialData = Data("partial".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors",
+        byteCount: Int64(validData.count),
+        checksum: ModelArtifactChecksum(
+            algorithm: "sha256",
+            value: SHA256.hash(data: validData).map { String(format: "%02x", $0) }.joined()
+        )
+    )
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-cancel-partial",
+        displayName: "Qwen Cancel Partial",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [artifact]
+        )
+    )
+    let log = DownloadedArtifactLog()
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: PartialCacheArtifactDownloader(partialData: partialData, log: log)
+    )
+
+    let installTask = Task {
+        for try await _ in coordinator.install(descriptor) {}
+    }
+    while await log.startedSnapshot().isEmpty {
+        await Task.yield()
+    }
+    installTask.cancel()
+    _ = await installTask.result
+
+    let artifactURL = try ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+        .artifactURL(modelID: descriptor.id, artifact: artifact)
+    let resumeDataURL = artifactURL
+        .deletingLastPathComponent()
+        .appendingPathComponent(".model.safetensors.resumeData")
+
+    for _ in 0..<20 where FileManager.default.fileExists(atPath: artifactURL.path) || FileManager.default.fileExists(atPath: resumeDataURL.path) {
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+
+    #expect(!FileManager.default.fileExists(atPath: artifactURL.path))
+    #expect(!FileManager.default.fileExists(atPath: resumeDataURL.path))
+    #expect(await log.cleanedSnapshot() == ["weights"])
+}
+
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {
     let artifactData = Data("weights".utf8)
     let expectedChecksum = SHA256.hash(data: Data("other-weights".utf8))
@@ -576,6 +770,55 @@ private struct CancellationAwareArtifactDownloader: ModelArtifactDownloading {
         Issue.record("Expected install to fail without an artifact root directory.")
     } catch {
         #expect(String(describing: error).contains("No artifact root directory configured"))
+    }
+}
+
+@Test func modelInstallCoordinatorFailsBeforeDownloadWhenDiskSpaceIsInsufficient() async throws {
+    let artifactData = Data("weights".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-low-disk",
+        displayName: "Qwen Low Disk",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: Int64(artifactData.count)
+                )
+            ]
+        )
+    )
+    let counter = DownloadCounter()
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: CountingArtifactDownloader(data: artifactData, counter: counter),
+        diskSpaceProvider: FixedDiskSpaceProvider(availableBytes: Int64(artifactData.count - 1))
+    )
+
+    do {
+        for try await _ in coordinator.install(descriptor) {}
+        Issue.record("Expected install to fail before downloading when disk space is insufficient.")
+    } catch let error as LLMError {
+        guard case .downloadFailed(let message) = error else {
+            Issue.record("Expected downloadFailed, got \(error).")
+            return
+        }
+        #expect(message.contains("Not enough disk space"))
+    }
+
+    #expect(await counter.count == 0)
+    if case .failed(let message) = try await coordinator.state(for: descriptor.id) {
+        #expect(message.contains("Not enough disk space"))
+    } else {
+        Issue.record("Expected failed install state after disk preflight failure.")
     }
 }
 

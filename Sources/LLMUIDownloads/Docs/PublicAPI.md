@@ -11,7 +11,8 @@ Hosts can optionally provide a cancel action for in-flight installs.
 `ModelInstallProgressView` renders install state as a compact line-style progress component suitable for lists and detail sections.
 
 `ModelDownloadsViewModel.install(_:)` consumes model install events, tracks in-flight installs by model ID, records thrown install
-errors for presentation, updates install state by model ID, and stores richer progress detail when the lifecycle layer exposes it.
+errors as short presentation-safe messages, updates install state by model ID, and stores richer progress detail when the
+lifecycle layer exposes it. Raw `NSError` payloads, resume data, and presigned download URLs are not surfaced to views.
 `refresh()` loads installed records and reconciles tracked descriptor states through `ModelLifecycleService` when one is provided.
 When the lifecycle service also conforms to `ModelLifecycleMaintenanceService`, the view model exposes installed storage totals
 and delete actions without owning file paths or persistence details.

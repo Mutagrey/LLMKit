@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMModelLifecycle
 import LLMObservability
@@ -169,7 +170,7 @@ public final class ModelDownloadsViewModel {
             try await refreshInstallStates()
             try await refreshStorageUsage()
         } catch {
-            lastErrorMessage = String(describing: error)
+            lastErrorMessage = Self.presentationMessage(for: error)
         }
     }
 
@@ -197,7 +198,7 @@ public final class ModelDownloadsViewModel {
                     upsert(record)
                     try? await refreshStorageUsage()
                 case .failed(let id, let error):
-                    installStates[id] = .failed(String(describing: error))
+                    installStates[id] = .failed(Self.presentationMessage(for: error))
                     installProgress[id] = nil
                     installingModelIDs.remove(id)
                     installTasks[id] = nil
@@ -208,7 +209,7 @@ public final class ModelDownloadsViewModel {
                 installStates[descriptor.id] = .notInstalled
                 installProgress[descriptor.id] = nil
             } else {
-                lastErrorMessage = String(describing: error)
+                lastErrorMessage = Self.presentationMessage(for: error)
             }
         }
         installingModelIDs.remove(descriptor.id)
@@ -247,7 +248,7 @@ public final class ModelDownloadsViewModel {
             models.removeAll { $0.descriptor.id == modelID }
             try await refreshStorageUsage()
         } catch {
-            lastErrorMessage = String(describing: error)
+            lastErrorMessage = Self.presentationMessage(for: error)
         }
     }
 
@@ -350,6 +351,55 @@ public final class ModelDownloadsViewModel {
             return
         }
         storageUsage = try await maintenanceService.storageUsage()
+    }
+
+    private static func presentationMessage(for error: Error) -> String {
+        if let llmError = error as? LLMError {
+            return presentationMessage(for: llmError)
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch URLError.Code(rawValue: nsError.code) {
+            case .networkConnectionLost:
+                return "Network connection was lost. Retry the installation."
+            case .timedOut:
+                return "Download timed out. Retry the installation."
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return "Could not connect. Retry the installation."
+            case .notConnectedToInternet:
+                return "No internet connection."
+            case .cancelled:
+                return "Cancelled."
+            default:
+                return "Download failed. Retry the installation."
+            }
+        }
+
+        return "Operation failed. Retry the operation."
+    }
+
+    private static func presentationMessage(for error: LLMError) -> String {
+        switch error {
+        case .downloadFailed(let message),
+             .verificationFailed(let message),
+             .executionFailed(let message),
+             .toolExecutionFailed(let message),
+             .invalidStructuredOutput(let message),
+             .unsupportedLocale(let message),
+             .modelSelectionFailed(let message):
+            return message
+        case .modelNotInstalled(let modelID):
+            return "\(modelID.rawValue) is not installed."
+        case .unsupportedCapabilities:
+            return "Unsupported capabilities."
+        case .compilationFailed:
+            return "Compilation failed."
+        case .unavailable:
+            return "Unavailable."
+        case .cancelled:
+            return "Cancelled."
+        }
     }
 }
 

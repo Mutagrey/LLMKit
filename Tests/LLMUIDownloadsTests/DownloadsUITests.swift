@@ -1,3 +1,4 @@
+import Foundation
 import LLMCore
 import LLMProtocols
 import LLMUIDownloads
@@ -48,6 +49,30 @@ private struct ThrowingInstallLifecycleService: ModelLifecycleService {
             continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0.1)))
             continuation.yield(.failed(descriptor.id, .downloadFailed("offline")))
             continuation.finish(throwing: LLMError.downloadFailed("offline"))
+        }
+    }
+
+    func state(for modelID: ModelID) async throws -> InstallState {
+        .notInstalled
+    }
+}
+
+private struct RawNetworkErrorLifecycleService: ModelLifecycleService {
+    func installedModels() async throws -> [InstalledModelRecord] {
+        []
+    }
+
+    func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0.1)))
+            continuation.finish(throwing: NSError(
+                domain: NSURLErrorDomain,
+                code: URLError.Code.networkConnectionLost.rawValue,
+                userInfo: [
+                    NSURLErrorFailingURLStringErrorKey: "https://cas-bridge.xethub.hf.co/private?X-Amz-Signature=secret",
+                    "NSURLSessionDownloadTaskResumeData": Data("resume".utf8)
+                ]
+            ))
         }
     }
 
@@ -127,7 +152,7 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
 
     await viewModel.refresh()
 
-    #expect(viewModel.lastErrorMessage == "unavailable")
+    #expect(viewModel.lastErrorMessage == "Unavailable.")
 }
 
 @MainActor
@@ -137,7 +162,7 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
 
     await viewModel.install(descriptor)
 
-    #expect(viewModel.installStates[descriptor.id] == .failed("downloadFailed(\"network\")"))
+    #expect(viewModel.installStates[descriptor.id] == .failed("network"))
     #expect(!viewModel.installingModelIDs.contains(descriptor.id))
     #expect(!viewModel.isInstallButtonDisabled(for: descriptor.id))
 }
@@ -149,9 +174,21 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
 
     await viewModel.install(descriptor)
 
-    #expect(viewModel.installStates[descriptor.id] == .failed("downloadFailed(\"offline\")"))
-    #expect(viewModel.lastErrorMessage == "downloadFailed(\"offline\")")
+    #expect(viewModel.installStates[descriptor.id] == .failed("offline"))
+    #expect(viewModel.lastErrorMessage == "offline")
     #expect(!viewModel.installingModelIDs.contains(descriptor.id))
+}
+
+@MainActor
+@Test func downloadsViewModelRedactsRawNetworkErrors() async {
+    let descriptor = ModelDescriptor(id: "model", displayName: "Model", family: .custom("test"), backend: .coreML, capabilities: [])
+    let viewModel = ModelDownloadsViewModel(lifecycleService: RawNetworkErrorLifecycleService())
+
+    await viewModel.install(descriptor)
+
+    #expect(viewModel.lastErrorMessage == "Network connection was lost. Retry the installation.")
+    #expect(viewModel.lastErrorMessage?.contains("X-Amz-Signature") == false)
+    #expect(viewModel.lastErrorMessage?.contains("NSURLSessionDownloadTaskResumeData") == false)
 }
 
 @MainActor

@@ -1,3 +1,6 @@
 # LLMProtocols Responsibilities
 
-Owns contracts between app-facing services and implementations. It does not implement routing, persistence, UI, networking, or backend SDK calls.
+Owns contracts between app-facing services and implementations. It may define narrow cleanup hooks for backend-owned
+runtime state, such as resetting cached native chat sessions by `SessionID`.
+
+It does not implement routing, persistence, UI, networking, or backend SDK calls.

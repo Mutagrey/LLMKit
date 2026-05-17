@@ -4,7 +4,7 @@ import LLMModelLifecycle
 import LLMObservability
 import LLMProtocols
 
-public struct MLXBackend: ModelBackend {
+public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
     public let backendKind: BackendKind = .mlx
     private let runtime: MLXLocalRuntime?
     private let supportMatrix: MLXModelSupportMatrix
@@ -60,9 +60,17 @@ public struct MLXBackend: ModelBackend {
         await runtime?.unload(modelID: handle.id)
     }
 
+    public func resetChatSession(modelID: ModelID, sessionID: SessionID) async {
+        await runtime?.resetChatSession(modelID: modelID, sessionID: sessionID)
+    }
+
+    public func resetChatSessions(sessionID: SessionID) async {
+        await runtime?.resetChatSessions(sessionID: sessionID)
+    }
+
     public func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     guard runtime != nil else {
                         throw LLMError.unavailable
@@ -80,12 +88,15 @@ public struct MLXBackend: ModelBackend {
                     continuation.finish(throwing: mapRuntimeError(error))
                 }
             }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 
     public func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     guard runtime != nil else {
                         throw LLMError.unavailable
@@ -107,8 +118,14 @@ public struct MLXBackend: ModelBackend {
                     continuation.yield(.completed(ChatResult(message: message, model: request.model)))
                     continuation.finish()
                 } catch {
+                    if let sessionID = request.request.sessionID {
+                        await resetChatSession(modelID: request.model.id, sessionID: sessionID)
+                    }
                     continuation.finish(throwing: mapRuntimeError(error))
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }

@@ -10,3 +10,6 @@ template control tokens such as `"<end_of_turn>"` do not leak into backend-neutr
 Chat requests are mapped to native `MLXLMCommon.Chat.Message` values instead of flattened `role: text` prompts. When a
 `SessionID` is provided, the runtime keeps an isolated MLX `ChatSession` per model/session pair and rehydrates it from the
 backend-neutral message history if the caller snapshot changes.
+
+Cached MLX `ChatSession` values are reset when a chat attempt fails or is cancelled, and can also be reset explicitly by
+`SessionID` when a host chat surface closes.

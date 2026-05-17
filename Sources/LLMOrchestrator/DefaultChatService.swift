@@ -27,7 +27,7 @@ public struct DefaultChatService: ChatService {
 
     public func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let effectiveRequest = try await requestAfterInputSafety(
                         await requestWithResolvedTools(request)
@@ -40,6 +40,19 @@ public struct DefaultChatService: ChatService {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+    }
+
+    public func resetSession(_ sessionID: SessionID) async {
+        let backends = await registry.allBackends()
+        for backend in backends {
+            guard let resettable = backend as? any BackendChatSessionResetting else {
+                continue
+            }
+            await resettable.resetChatSessions(sessionID: sessionID)
         }
     }
 
@@ -70,6 +83,7 @@ public struct DefaultChatService: ChatService {
                 continue
             }
 
+            var didResetCurrentAttempt = false
             do {
                 var shouldTryNextCandidate = false
                 var currentRequest = request
@@ -84,6 +98,8 @@ public struct DefaultChatService: ChatService {
                         switch event {
                         case .failed(let error):
                             lastError = error
+                            await resetChatSessionIfNeeded(backend: backend, model: model, sessionID: currentRequest.sessionID)
+                            didResetCurrentAttempt = true
                             guard shouldAttemptFallback(after: error, requirements: request.requirements) else {
                                 throw error
                             }
@@ -107,6 +123,8 @@ public struct DefaultChatService: ChatService {
                     }
 
                     guard let completedResult else {
+                        await resetChatSessionIfNeeded(backend: backend, model: model, sessionID: currentRequest.sessionID)
+                        didResetCurrentAttempt = true
                         throw LLMError.executionFailed("Chat stream finished without completion.")
                     }
 
@@ -131,6 +149,9 @@ public struct DefaultChatService: ChatService {
                 }
             } catch {
                 lastError = error
+                if !didResetCurrentAttempt {
+                    await resetChatSessionIfNeeded(backend: backend, model: model, sessionID: request.sessionID)
+                }
                 guard shouldAttemptFallback(after: error, requirements: request.requirements) else {
                     throw error
                 }
@@ -332,6 +353,17 @@ public struct DefaultChatService: ChatService {
             return false
         }
         return fallback.shouldFallback(after: error)
+    }
+
+    private func resetChatSessionIfNeeded(
+        backend: any ModelBackend,
+        model: ModelDescriptor,
+        sessionID: SessionID?
+    ) async {
+        guard let sessionID, let resettable = backend as? any BackendChatSessionResetting else {
+            return
+        }
+        await resettable.resetChatSession(modelID: model.id, sessionID: sessionID)
     }
 
     private func error(for availability: BackendAvailability, model: ModelDescriptor) -> LLMError {

@@ -108,6 +108,88 @@ private struct ThrowingBackend: ModelBackend {
     }
 }
 
+private struct ResetRecordingBackend: ModelBackend, BackendChatSessionResetting {
+    let backendKind: BackendKind
+    let responseText: String?
+    let state: ResetRecordingState
+
+    init(
+        backendKind: BackendKind,
+        responseText: String? = nil,
+        state: ResetRecordingState = ResetRecordingState()
+    ) {
+        self.backendKind = backendKind
+        self.responseText = responseText
+        self.state = state
+    }
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        .available
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            if let responseText {
+                continuation.yield(.completed(GenerationResult(text: responseText, model: request.model)))
+                continuation.finish()
+            } else {
+                continuation.finish(throwing: LLMError.executionFailed("stream threw"))
+            }
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            if let responseText {
+                let message = ChatMessage(role: .assistant, content: MessageContent(text: responseText))
+                continuation.yield(.completed(ChatResult(message: message, model: request.model)))
+                continuation.finish()
+            } else {
+                continuation.finish(throwing: LLMError.executionFailed("stream threw"))
+            }
+        }
+    }
+
+    func resetChatSession(modelID: ModelID, sessionID: SessionID) async {
+        await state.recordChatSessionReset(modelID: modelID, sessionID: sessionID)
+    }
+
+    func resetChatSessions(sessionID: SessionID) async {
+        await state.recordSessionReset(sessionID)
+    }
+}
+
+private actor ResetRecordingState {
+    private var chatSessionResetKeys: [String] = []
+    private var sessionResetIDs: [SessionID] = []
+
+    func recordChatSessionReset(modelID: ModelID, sessionID: SessionID) {
+        chatSessionResetKeys.append("\(modelID.rawValue)|\(sessionID.rawValue)")
+    }
+
+    func recordSessionReset(_ sessionID: SessionID) {
+        sessionResetIDs.append(sessionID)
+    }
+
+    func chatSessionResets() -> [String] {
+        chatSessionResetKeys
+    }
+
+    func sessionResets() -> [SessionID] {
+        sessionResetIDs
+    }
+}
+
 private struct UnavailableBackend: ModelBackend {
     let backendKind: BackendKind
 
@@ -661,6 +743,45 @@ private actor FailingToolService: ToolService {
 
     #expect(completed?.message.content.text == "chat recovered")
     #expect(completed?.model?.id == "remote")
+}
+
+@Test func chatServiceResetsBackendSessionAfterThrownChatAttempt() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .qwen, backend: .mlx, capabilities: [.chat])
+    let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let resetState = ResetRecordingState()
+    let catalog = DefaultModelCatalog(models: [remote, local])
+    let registry = BackendRegistry(backends: [
+        ResetRecordingBackend(backendKind: .mlx, state: resetState),
+        StreamingBackend(backendKind: .remote, responseText: "chat recovered")
+    ])
+    let service = DefaultChatService(router: ModelRouter(catalog: catalog), registry: registry)
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: "hi"))],
+        requirements: ExecutionRequirements(requiredCapabilities: [.chat]),
+        sessionID: "domain-agent-session"
+    )
+
+    for try await _ in service.send(request) {}
+
+    #expect(await resetState.chatSessionResets() == ["local|domain-agent-session"])
+}
+
+@Test func chatServiceResetSessionForwardsToResetCapableBackends() async {
+    let mlxState = ResetRecordingState()
+    let coreMLState = ResetRecordingState()
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: DefaultModelCatalog(models: [])),
+        registry: BackendRegistry(backends: [
+            ResetRecordingBackend(backendKind: .mlx, responseText: "unused", state: mlxState),
+            ResetRecordingBackend(backendKind: .coreML, responseText: "unused", state: coreMLState),
+            StreamingBackend(backendKind: .remote, responseText: "unused")
+        ])
+    )
+
+    await service.resetSession("sheet-session")
+
+    #expect(await mlxState.sessionResets() == ["sheet-session"])
+    #expect(await coreMLState.sessionResets() == ["sheet-session"])
 }
 
 @Test func chatServicePassesSessionIDToBackendRequest() async throws {

@@ -52,6 +52,14 @@ actor MLXLocalRuntime {
         chatSessions = chatSessions.filter { $0.key.modelID != modelID }
     }
 
+    func resetChatSession(modelID: ModelID, sessionID: SessionID) {
+        chatSessions[MLXChatSessionKey(modelID: modelID, sessionID: sessionID)] = nil
+    }
+
+    func resetChatSessions(sessionID: SessionID) {
+        chatSessions = chatSessions.filter { $0.key.sessionID != sessionID }
+    }
+
     func stream(
         prompt: String,
         model descriptor: ModelDescriptor,

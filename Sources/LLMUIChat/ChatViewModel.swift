@@ -83,6 +83,16 @@ public final class ChatViewModel {
         isStreaming = false
     }
 
+    public func close(resetRuntimeSession: Bool = true) {
+        cancelStreaming()
+        guard resetRuntimeSession, let sessionID, let chatService else {
+            return
+        }
+        Task {
+            await chatService.resetSession(sessionID)
+        }
+    }
+
     private func sendCurrentTranscript() async {
         guard let chatService else {
             sendTask = nil

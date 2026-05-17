@@ -5,6 +5,7 @@ import SwiftUI
 public struct ModelDownloadCardView: View {
     private let descriptor: ModelDescriptor
     private let state: InstallState
+    private let progressDetail: ModelInstallProgress?
     private let installedSizeBytes: Int64?
     private let isInstallButtonDisabled: Bool
     private let installAction: @Sendable () async -> Void
@@ -14,6 +15,7 @@ public struct ModelDownloadCardView: View {
     public init(
         descriptor: ModelDescriptor,
         state: InstallState,
+        progressDetail: ModelInstallProgress? = nil,
         installedSizeBytes: Int64? = nil,
         isInstallButtonDisabled: Bool,
         installAction: @escaping @Sendable () async -> Void,
@@ -22,6 +24,7 @@ public struct ModelDownloadCardView: View {
     ) {
         self.descriptor = descriptor
         self.state = state
+        self.progressDetail = progressDetail
         self.installedSizeBytes = installedSizeBytes
         self.isInstallButtonDisabled = isInstallButtonDisabled
         self.installAction = installAction
@@ -36,6 +39,7 @@ public struct ModelDownloadCardView: View {
             metadata
             ModelInstallProgressView(
                 state: state,
+                progressDetail: progressDetail,
                 estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
             )
             actionRow
@@ -292,10 +296,12 @@ private struct DownloadPill: View {
 
 public struct ModelInstallProgressView: View {
     private let state: InstallState
+    private let progressDetail: ModelInstallProgress?
     private let estimatedTotalBytes: Int64?
 
-    public init(state: InstallState, estimatedTotalBytes: Int64? = nil) {
+    public init(state: InstallState, progressDetail: ModelInstallProgress? = nil, estimatedTotalBytes: Int64? = nil) {
         self.state = state
+        self.progressDetail = progressDetail
         self.estimatedTotalBytes = estimatedTotalBytes
     }
 
@@ -383,7 +389,8 @@ public struct ModelInstallProgressView: View {
     private var progressTitle: String {
         switch state {
         case .downloading(let progress):
-            return "\(Int((progress * 100).rounded()))%"
+            let prefix = progressDetail?.isEstimated == true ? "~" : ""
+            return "\(prefix)\(Int((progress * 100).rounded()))%"
         case .notInstalled:
             return "0%"
         case .evicted:
@@ -396,14 +403,22 @@ public struct ModelInstallProgressView: View {
     }
 
     private var transferTitle: String? {
-        guard case .downloading(let progress) = state,
-              let estimatedTotalBytes,
-              estimatedTotalBytes > 0 else {
+        guard case .downloading = state else {
             return nil
         }
-
-        let writtenBytes = Int64((progress * Double(estimatedTotalBytes)).rounded())
-        return "\(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
+        if let progressDetail,
+           let completedBytes = progressDetail.completedBytes,
+           let totalBytes = progressDetail.totalBytes,
+           totalBytes > 0 {
+            let prefix = progressDetail.isEstimated ? "Approx. " : ""
+            return "\(prefix)\(byteCountTitle(for: completedBytes)) of \(byteCountTitle(for: totalBytes))"
+        }
+        guard let estimatedTotalBytes, estimatedTotalBytes > 0 else {
+            return nil
+        }
+        let progress = progressValue
+        let writtenBytes = Int64((Double(progress) * Double(estimatedTotalBytes)).rounded())
+        return "Approx. \(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
     }
 
     private var statusColor: Color {

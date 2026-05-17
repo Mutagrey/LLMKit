@@ -23,6 +23,8 @@ public final class ChatViewModel {
 
     @ObservationIgnored
     private let onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)?
+    @ObservationIgnored
+    private let beforeSend: (@MainActor @Sendable () async throws -> Void)?
 
     @ObservationIgnored
     private var sendTask: Task<Void, Never>?
@@ -32,7 +34,8 @@ public final class ChatViewModel {
         chatService: (any ChatService)? = nil,
         requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.chat]),
         sessionID: SessionID? = nil,
-        onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)? = nil
+        onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)? = nil,
+        beforeSend: (@MainActor @Sendable () async throws -> Void)? = nil
     ) {
         self.messages = messages
         self.transcriptItems = messages.map(ChatTranscriptItem.message)
@@ -40,6 +43,7 @@ public final class ChatViewModel {
         self.requirements = requirements
         self.sessionID = sessionID
         self.onMessageAppended = onMessageAppended
+        self.beforeSend = beforeSend
         self.isStreaming = false
         self.streamingText = ""
         self.lastError = nil
@@ -85,12 +89,13 @@ public final class ChatViewModel {
             return
         }
 
-        isStreaming = true
-        streamingText = ""
-        lastError = nil
-
-        var accumulator = StreamedTextAccumulator()
         do {
+            try await beforeSend?()
+            isStreaming = true
+            streamingText = ""
+            lastError = nil
+
+            var accumulator = StreamedTextAccumulator()
             let request = ChatRequest(messages: messages, requirements: requirements, sessionID: sessionID)
             for try await event in chatService.send(request) {
                 try Task.checkCancellation()

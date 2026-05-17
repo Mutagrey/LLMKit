@@ -167,10 +167,18 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     fallbackArtifactCount: tracker.totalArtifacts,
                     completedArtifacts: tracker.completedArtifacts
                 )
+                let resumedDetail = progressDetail(
+                    progress: resumedProgress,
+                    completedBytes: tracker.completedBytes,
+                    currentArtifactBytes: 0,
+                    totalExpectedBytes: tracker.totalExpectedBytes,
+                    fallbackArtifactCount: tracker.totalArtifacts,
+                    usesByteProgress: tracker.totalExpectedBytes != nil
+                )
                 try await publishDownloadProgressIfNeeded(
                     descriptorID: descriptor.id,
                     continuation: continuation,
-                    progress: resumedProgress,
+                    progress: resumedDetail,
                     tracker: tracker
                 )
                 continue
@@ -199,10 +207,18 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                 fallbackArtifactCount: tracker.totalArtifacts,
                 completedArtifacts: tracker.completedArtifacts
             )
+            let overallDetail = progressDetail(
+                progress: overallProgress,
+                completedBytes: tracker.completedBytes,
+                currentArtifactBytes: 0,
+                totalExpectedBytes: tracker.totalExpectedBytes,
+                fallbackArtifactCount: tracker.totalArtifacts,
+                usesByteProgress: tracker.totalExpectedBytes != nil
+            )
             try await publishDownloadProgressIfNeeded(
                 descriptorID: descriptor.id,
                 continuation: continuation,
-                progress: overallProgress,
+                progress: overallDetail,
                 tracker: tracker
             )
         }
@@ -335,12 +351,49 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             fallbackArtifactCount: tracker.totalArtifacts,
             completedArtifacts: tracker.completedArtifacts
         )
+        let progressDetail = progressDetail(
+            progress: progress,
+            completedBytes: tracker.completedBytes,
+            currentArtifactBytes: artifactProgress.bytesWritten,
+            totalExpectedBytes: tracker.totalExpectedBytes ?? summedExpectedBytes(from: tracker.artifactExpectedBytes),
+            fallbackArtifactCount: tracker.totalArtifacts,
+            usesByteProgress: true
+        )
 
         try? await publishDownloadProgressIfNeeded(
             descriptorID: descriptorID,
             continuation: continuation,
-            progress: progress,
+            progress: progressDetail,
             tracker: tracker
+        )
+    }
+
+    private func progressDetail(
+        progress: Double,
+        completedBytes: Int64,
+        currentArtifactBytes: Int64,
+        totalExpectedBytes: Int64?,
+        fallbackArtifactCount: Int,
+        usesByteProgress: Bool
+    ) -> ModelInstallProgress {
+        let clampedProgress = min(max(progress, 0), 1)
+        if let totalExpectedBytes, totalExpectedBytes > 0 {
+            let writtenBytes = min(completedBytes + currentArtifactBytes, totalExpectedBytes)
+            return ModelInstallProgress(
+                fractionCompleted: clampedProgress,
+                completedBytes: writtenBytes,
+                totalBytes: totalExpectedBytes,
+                isEstimated: !usesByteProgress
+            )
+        }
+
+        let totalUnits = Int64(max(fallbackArtifactCount, 1))
+        let completedUnits = Int64(min(max((clampedProgress * Double(totalUnits)).rounded(), 0), Double(totalUnits)))
+        return ModelInstallProgress(
+            fractionCompleted: clampedProgress,
+            completedBytes: completedUnits,
+            totalBytes: totalUnits,
+            isEstimated: true
         )
     }
 
@@ -365,10 +418,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private func publishDownloadProgressIfNeeded(
         descriptorID: ModelID,
         continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation,
-        progress: Double,
+        progress: ModelInstallProgress,
         tracker: DownloadProgressTracker
     ) async throws {
-        let clampedProgress = min(max(progress, 0), 1)
+        let clampedProgress = min(max(progress.fractionCompleted, 0), 1)
         guard clampedProgress >= 1 || clampedProgress - tracker.lastReportedProgress >= 0.01 else {
             return
         }
@@ -376,6 +429,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         tracker.lastReportedProgress = clampedProgress
         await stateMachine.transition(modelID: descriptorID, to: .downloading(progress: clampedProgress))
         continuation.yield(.progress(descriptorID, clampedProgress))
+        continuation.yield(.progressDetail(descriptorID, progress))
     }
 
     private func summedExpectedBytes(from artifactExpectedBytes: [String: Int64]) -> Int64? {

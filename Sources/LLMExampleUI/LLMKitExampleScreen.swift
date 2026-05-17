@@ -74,7 +74,10 @@ private struct ExampleChatTab: View {
                         title: descriptor.displayName,
                         viewModel: ChatViewModel(
                             chatService: configuration.container.chat,
-                            requirements: viewModel.chatRequirements
+                            requirements: viewModel.chatRequirements,
+                            beforeSend: {
+                                try await viewModel.validateSelectedModelForChat()
+                            }
                         )
                     )
                     .id(viewModel.chatIdentity)

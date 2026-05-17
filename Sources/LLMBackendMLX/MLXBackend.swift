@@ -129,12 +129,14 @@ public struct MLXBackend: ModelBackend {
         var sanitizer = MLXStreamOutputSanitizer()
         var output = ""
         for try await delta in stream {
-            let visibleDelta = sanitizer.append(delta)
-            guard !visibleDelta.isEmpty else {
-                continue
+            let outcome = sanitizer.append(delta)
+            if !outcome.visibleText.isEmpty {
+                output += outcome.visibleText
+                onDelta(outcome.visibleText)
             }
-            output += visibleDelta
-            onDelta(visibleDelta)
+            if outcome.shouldStop {
+                break
+            }
         }
 
         let trailingText = sanitizer.finish()

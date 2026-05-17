@@ -87,7 +87,7 @@ struct ExampleSessionChatTab: View {
                                 path.append(session.id)
                             } catch {
                                 await MainActor.run {
-                                    viewModel.setLastErrorMessage(error.localizedDescription)
+                                    viewModel.setLastErrorMessage(ChatErrorPresentation(error: error).message)
                                 }
                             }
                         }
@@ -214,6 +214,12 @@ private struct ExampleSessionDetailHost: View {
                     ExampleManualSessionScreen(
                         snapshot: snapshot,
                         descriptor: viewModel.backendDescriptor(for: snapshot.overview),
+                        preflight: {
+                            try await viewModel.validateExecutionRequirements(
+                                snapshot.executionRequirements ?? ExecutionRequirements(requiredCapabilities: [.chat]),
+                                context: "Manual chat"
+                            )
+                        },
                         configuration: configuration,
                         onSessionChanged: {
                             try? await viewModel.refreshSessions()
@@ -222,6 +228,7 @@ private struct ExampleSessionDetailHost: View {
                 case .automatedConversation:
                     ExampleAutomatedSessionScreen(
                         snapshot: snapshot,
+                        viewModel: viewModel,
                         configuration: configuration,
                         onSessionChanged: {
                             try? await viewModel.refreshSessions()
@@ -250,6 +257,7 @@ private struct ExampleSessionDetailHost: View {
 }
 
 private struct ExampleManualSessionScreen: View {
+    let preflight: @MainActor @Sendable () async throws -> Void
     let configuration: LLMKitExampleConfiguration
     let onSessionChanged: @Sendable () async -> Void
 
@@ -261,9 +269,11 @@ private struct ExampleManualSessionScreen: View {
     init(
         snapshot: SessionSnapshot,
         descriptor: ModelDescriptor?,
+        preflight: @escaping @MainActor @Sendable () async throws -> Void,
         configuration: LLMKitExampleConfiguration,
         onSessionChanged: @escaping @Sendable () async -> Void
     ) {
+        self.preflight = preflight
         self.configuration = configuration
         self.onSessionChanged = onSessionChanged
         self.sessionID = snapshot.id
@@ -280,6 +290,9 @@ private struct ExampleManualSessionScreen: View {
                         await onSessionChanged()
                     }
                 }
+            },
+            beforeSend: {
+                try await preflight()
             }
         ))
     }
@@ -300,6 +313,7 @@ private struct ExampleManualSessionScreen: View {
 }
 
 private struct ExampleAutomatedSessionScreen: View {
+    let viewModel: LLMKitExampleViewModel
     let configuration: LLMKitExampleConfiguration
     let onSessionChanged: @Sendable () async -> Void
 
@@ -308,9 +322,11 @@ private struct ExampleAutomatedSessionScreen: View {
 
     init(
         snapshot: SessionSnapshot,
+        viewModel: LLMKitExampleViewModel,
         configuration: LLMKitExampleConfiguration,
         onSessionChanged: @escaping @Sendable () async -> Void
     ) {
+        self.viewModel = viewModel
         self.configuration = configuration
         self.onSessionChanged = onSessionChanged
         self._snapshot = State(initialValue: snapshot)
@@ -406,6 +422,7 @@ private struct ExampleAutomatedSessionScreen: View {
             }
             let coordinator = configuration.makeAutomationCoordinator()
             do {
+                try await viewModel.validateAutomatedSession(snapshot)
                 let updated: SessionSnapshot
                 switch action {
                 case .start:
@@ -421,7 +438,7 @@ private struct ExampleAutomatedSessionScreen: View {
                 await onSessionChanged()
             } catch {
                 await MainActor.run {
-                    snapshot = snapshot.withFailureMessage(error.localizedDescription)
+                    snapshot = snapshot.withFailureMessage(ChatErrorPresentation(error: error).message)
                 }
             }
         }
@@ -564,7 +581,7 @@ private struct ExampleAutomationComposerSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    viewModel.setLastErrorMessage(error.localizedDescription)
+                    viewModel.setLastErrorMessage(ChatErrorPresentation(error: error).message)
                 }
             }
         }

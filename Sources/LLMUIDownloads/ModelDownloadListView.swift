@@ -99,6 +99,7 @@ public struct ModelDownloadListView: View {
         ModelDownloadCardView(
             descriptor: descriptor,
             state: viewModel.installState(for: descriptor.id),
+            progressDetail: viewModel.progressDetail(for: descriptor.id),
             installedSizeBytes: viewModel.storageBytes(for: descriptor.id),
             isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
         ) {
@@ -116,6 +117,7 @@ public struct ModelDownloadListView: View {
 public final class ModelDownloadsViewModel {
     public private(set) var models: [InstalledModelRecord]
     public private(set) var installStates: [ModelID: InstallState]
+    public private(set) var installProgress: [ModelID: ModelInstallProgress]
     public private(set) var installingModelIDs: Set<ModelID>
     public private(set) var storageUsage: ModelStorageUsage
     public private(set) var lastErrorMessage: String?
@@ -135,6 +137,7 @@ public final class ModelDownloadsViewModel {
     ) {
         self.models = models
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
+        self.installProgress = [:]
         self.installingModelIDs = []
         self.storageUsage = .empty
         self.descriptors = descriptors
@@ -146,6 +149,7 @@ public final class ModelDownloadsViewModel {
     public func replaceModels(_ models: [InstalledModelRecord]) {
         self.models = models
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
+        self.installProgress = [:]
     }
 
     public func updateDescriptors(_ descriptors: [ModelDescriptor]) {
@@ -182,14 +186,19 @@ public final class ModelDownloadsViewModel {
                     installStates[id] = state
                 case .progress(let id, let progress):
                     installStates[id] = .downloading(progress: progress)
+                case .progressDetail(let id, let detail):
+                    installStates[id] = .downloading(progress: detail.fractionCompleted)
+                    installProgress[id] = detail
                 case .completed(let record):
                     installStates[record.descriptor.id] = record.installState
+                    installProgress[record.descriptor.id] = nil
                     installingModelIDs.remove(record.descriptor.id)
                     installTasks[record.descriptor.id] = nil
                     upsert(record)
                     try? await refreshStorageUsage()
                 case .failed(let id, let error):
                     installStates[id] = .failed(String(describing: error))
+                    installProgress[id] = nil
                     installingModelIDs.remove(id)
                     installTasks[id] = nil
                 }
@@ -197,6 +206,7 @@ public final class ModelDownloadsViewModel {
         } catch {
             if let llmError = error as? LLMError, llmError == .cancelled {
                 installStates[descriptor.id] = .notInstalled
+                installProgress[descriptor.id] = nil
             } else {
                 lastErrorMessage = String(describing: error)
             }
@@ -220,6 +230,7 @@ public final class ModelDownloadsViewModel {
         installTasks[modelID] = nil
         installingModelIDs.remove(modelID)
         installStates[modelID] = .notInstalled
+        installProgress[modelID] = nil
     }
 
     public func delete(_ modelID: ModelID) async {
@@ -232,6 +243,7 @@ public final class ModelDownloadsViewModel {
         do {
             try await maintenanceService.deleteInstalledModel(modelID)
             installStates[modelID] = .notInstalled
+            installProgress[modelID] = nil
             models.removeAll { $0.descriptor.id == modelID }
             try await refreshStorageUsage()
         } catch {
@@ -244,7 +256,8 @@ public final class ModelDownloadsViewModel {
         case .notInstalled:
             return "Not installed"
         case .downloading(let progress):
-            return "Downloading \(Int((progress * 100).rounded()))%"
+            let prefix = installProgress[modelID]?.isEstimated == true ? "~" : ""
+            return "Downloading \(prefix)\(Int((progress * 100).rounded()))%"
         case .downloaded:
             return "Downloaded"
         case .verifying:
@@ -269,6 +282,10 @@ public final class ModelDownloadsViewModel {
             return nil
         }
         return progress
+    }
+
+    public func progressDetail(for modelID: ModelID) -> ModelInstallProgress? {
+        installProgress[modelID]
     }
 
     public func storageBytes(for modelID: ModelID) -> Int64? {
@@ -317,7 +334,12 @@ public final class ModelDownloadsViewModel {
         let trackedIDs = Set(descriptors.map(\.id)).union(models.map(\.descriptor.id))
         var resolvedStates = installStates
         for modelID in trackedIDs {
-            resolvedStates[modelID] = try await lifecycleService.state(for: modelID)
+            let state = try await lifecycleService.state(for: modelID)
+            resolvedStates[modelID] = state
+            if case .downloading = state {
+                continue
+            }
+            installProgress[modelID] = nil
         }
         installStates = resolvedStates
     }

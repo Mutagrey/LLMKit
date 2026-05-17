@@ -35,3 +35,7 @@ explicitly selected model is unavailable or fails.
 
 `LLMKitExampleViewModel` persists the selected model plus routing preferences and output-token budget in `UserDefaults`,
 so the demo restores the previous selection and settings after app restart while keeping that state inside the UI layer.
+
+Before manual chat sends and automated conversation runs, the example layer now performs a catalog and availability preflight
+for the selected or participant-pinned models so strict demo selections fail early with model-specific diagnostics instead of a
+generic runtime error later in the request path.

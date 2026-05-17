@@ -4,9 +4,10 @@ import Testing
 @Test func mlxStreamOutputSanitizerRemovesWholeControlTokens() {
     var sanitizer = MLXStreamOutputSanitizer()
 
-    let visible = sanitizer.append("hello<end_of_turn>world")
+    let outcome = sanitizer.append("hello<end_of_turn>world")
 
-    #expect(visible == "helloworld")
+    #expect(outcome.visibleText == "hello")
+    #expect(outcome.shouldStop)
     #expect(sanitizer.finish().isEmpty)
 }
 
@@ -16,16 +17,19 @@ import Testing
     let first = sanitizer.append("hello<end_")
     let second = sanitizer.append("of_turn>world")
 
-    #expect(first == "hello")
-    #expect(second == "world")
+    #expect(first.visibleText == "hello")
+    #expect(!first.shouldStop)
+    #expect(second.visibleText.isEmpty)
+    #expect(second.shouldStop)
     #expect(sanitizer.finish().isEmpty)
 }
 
 @Test func mlxStreamOutputSanitizerRemovesTrailingPartialControlToken() {
     var sanitizer = MLXStreamOutputSanitizer()
 
-    let visible = sanitizer.append("hello<eot")
+    let outcome = sanitizer.append("hello<eot")
 
-    #expect(visible == "hello")
+    #expect(outcome.visibleText == "hello")
+    #expect(!outcome.shouldStop)
     #expect(sanitizer.finish().isEmpty)
 }

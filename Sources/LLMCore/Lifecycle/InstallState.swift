@@ -34,6 +34,25 @@ public enum EvictionReason: Hashable, Codable, Sendable {
     case unknown
 }
 
+public struct ModelInstallProgress: Hashable, Codable, Sendable {
+    public let fractionCompleted: Double
+    public let completedBytes: Int64?
+    public let totalBytes: Int64?
+    public let isEstimated: Bool
+
+    public init(
+        fractionCompleted: Double,
+        completedBytes: Int64? = nil,
+        totalBytes: Int64? = nil,
+        isEstimated: Bool
+    ) {
+        self.fractionCompleted = fractionCompleted
+        self.completedBytes = completedBytes
+        self.totalBytes = totalBytes
+        self.isEstimated = isEstimated
+    }
+}
+
 public struct InstalledModelRecord: Hashable, Codable, Sendable, Identifiable {
     public var id: ModelID { descriptor.id }
 
@@ -63,6 +82,7 @@ public struct ModelStorageUsage: Hashable, Codable, Sendable {
 public enum ModelInstallEvent: Equatable, Sendable {
     case stateChanged(ModelID, InstallState)
     case progress(ModelID, Double)
+    case progressDetail(ModelID, ModelInstallProgress)
     case completed(InstalledModelRecord)
     case failed(ModelID, LLMError)
 }

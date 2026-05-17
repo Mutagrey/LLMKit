@@ -48,6 +48,14 @@ public final class LLMKitExampleViewModel {
     private let configuration: LLMKitExampleConfiguration
     @ObservationIgnored
     private let defaults: UserDefaults
+    @ObservationIgnored
+    private var preflight: ExampleModelPreflight {
+        ExampleModelPreflight(
+            catalog: configuration.catalog,
+            catalogStatusProvider: configuration.catalogStatusProvider,
+            backends: configuration.backends
+        )
+    }
 
     public init(configuration: LLMKitExampleConfiguration, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -155,6 +163,7 @@ public final class LLMKitExampleViewModel {
 
     @discardableResult
     public func createManualSession() async throws -> SessionSnapshot {
+        _ = try await validateSelectedModelForChat()
         let snapshot = try await configuration.container.sessions.createSession(
             title: nil,
             kind: .manualChat,
@@ -172,6 +181,10 @@ public final class LLMKitExampleViewModel {
         definition: AutomatedConversationDefinition,
         executionRequirements: ExecutionRequirements
     ) async throws -> SessionSnapshot {
+        try await validateAutomatedConversation(
+            definition: definition,
+            executionRequirements: executionRequirements
+        )
         let snapshot = try await configuration.container.sessions.createSession(
             title: title,
             kind: .automatedConversation,
@@ -199,6 +212,45 @@ public final class LLMKitExampleViewModel {
 
     public func setLastErrorMessage(_ message: String?) {
         lastErrorMessage = message
+    }
+
+    @discardableResult
+    public func validateSelectedModelForChat() async throws -> ModelDescriptor {
+        try await preflight.validate(
+            chatRequirements,
+            context: "Manual chat"
+        )
+    }
+
+    @discardableResult
+    public func validateExecutionRequirements(
+        _ requirements: ExecutionRequirements,
+        context: String
+    ) async throws -> ModelDescriptor {
+        try await preflight.validate(requirements, context: context)
+    }
+
+    public func validateAutomatedConversation(
+        definition: AutomatedConversationDefinition,
+        executionRequirements: ExecutionRequirements
+    ) async throws {
+        try await preflight.validate(
+            definition: definition,
+            executionRequirements: executionRequirements,
+            context: "Automated conversation"
+        )
+    }
+
+    public func validateAutomatedSession(_ snapshot: SessionSnapshot) async throws {
+        guard let definition = snapshot.automationDefinition else {
+            throw LLMError.executionFailed("Automated conversation definition is missing.")
+        }
+        let requirements = snapshot.executionRequirements
+            ?? ExecutionRequirements(requiredCapabilities: [.chat], preferredLatency: .background)
+        try await validateAutomatedConversation(
+            definition: definition,
+            executionRequirements: requirements
+        )
     }
 
     public func backendDescriptor(for overview: SessionOverview) -> ModelDescriptor? {

@@ -1,6 +1,11 @@
 import Foundation
 
 struct MLXStreamOutputSanitizer {
+    struct Outcome: Equatable {
+        let visibleText: String
+        let shouldStop: Bool
+    }
+
     private static let controlTokens = [
         "<end_of_turn>",
         "<eot_id>"
@@ -8,31 +13,57 @@ struct MLXStreamOutputSanitizer {
 
     private var rawText = ""
     private var emittedText = ""
+    private var stopDetected = false
 
-    mutating func append(_ delta: String) -> String {
+    mutating func append(_ delta: String) -> Outcome {
+        guard !stopDetected else {
+            return Outcome(visibleText: "", shouldStop: true)
+        }
+
         rawText += delta
-        return newlyVisibleText(from: sanitizedStableText(rawText))
+        return outcome(from: sanitizedStableText(rawText, isFinal: false))
     }
 
     mutating func finish() -> String {
-        newlyVisibleText(from: sanitizedStableText(rawText))
+        outcome(from: sanitizedStableText(rawText, isFinal: true)).visibleText
     }
 
-    private mutating func newlyVisibleText(from sanitizedText: String) -> String {
-        let newText = String(sanitizedText.dropFirst(emittedText.count))
-        emittedText = sanitizedText
-        return newText
-    }
-
-    private func sanitizedStableText(_ text: String) -> String {
-        let withoutControlTokens = Self.controlTokens.reduce(text) { partialResult, token in
-            partialResult.replacingOccurrences(of: token, with: "")
+    private mutating func outcome(from state: SanitizedState) -> Outcome {
+        if state.shouldStop {
+            stopDetected = true
         }
-        let trailingPrefixLength = Self.trailingControlTokenPrefixLength(in: withoutControlTokens)
+
+        let newText = String(state.visibleText.dropFirst(emittedText.count))
+        emittedText = state.visibleText
+        return Outcome(visibleText: newText, shouldStop: state.shouldStop)
+    }
+
+    private func sanitizedStableText(_ text: String, isFinal: Bool) -> SanitizedState {
+        if let stopIndex = Self.firstControlTokenIndex(in: text) {
+            return SanitizedState(visibleText: String(text[..<stopIndex]), shouldStop: true)
+        }
+
+        let trailingPrefixLength = Self.trailingControlTokenPrefixLength(in: text)
         guard trailingPrefixLength > 0 else {
-            return withoutControlTokens
+            return SanitizedState(visibleText: text, shouldStop: false)
         }
-        return String(withoutControlTokens.dropLast(trailingPrefixLength))
+
+        guard isFinal else {
+            return SanitizedState(
+                visibleText: String(text.dropLast(trailingPrefixLength)),
+                shouldStop: false
+            )
+        }
+
+        return SanitizedState(visibleText: String(text.dropLast(trailingPrefixLength)), shouldStop: false)
+    }
+
+    private static func firstControlTokenIndex(in text: String) -> String.Index? {
+        controlTokens
+            .compactMap { token in
+                text.range(of: token)?.lowerBound
+            }
+            .min()
     }
 
     private static func trailingControlTokenPrefixLength(in text: String) -> Int {
@@ -50,4 +81,9 @@ struct MLXStreamOutputSanitizer {
 
         return 0
     }
+}
+
+private struct SanitizedState {
+    let visibleText: String
+    let shouldStop: Bool
 }

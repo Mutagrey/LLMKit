@@ -1,5 +1,6 @@
 import Foundation
 import LLMCore
+import LLMModelLifecycle
 import LLMProtocols
 import LLMUIDownloads
 import Testing
@@ -96,6 +97,78 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
 
     func state(for modelID: ModelID) async throws -> InstallState {
         records.first { $0.descriptor.id == modelID }?.installState ?? .notInstalled
+    }
+}
+
+private actor ViewModelDownloadLog {
+    private(set) var started = false
+
+    func recordStarted() {
+        started = true
+    }
+}
+
+private struct BlockingPartialArtifactDownloader: ModelArtifactDownloading {
+    let partialData: Data
+    let log: ViewModelDownloadLog
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try partialData.write(to: destination, options: [.atomic])
+        try Data("resume".utf8).write(
+            to: destination
+                .deletingLastPathComponent()
+                .appendingPathComponent(".\(destination.lastPathComponent).resumeData"),
+            options: [.atomic]
+        )
+        await log.recordStarted()
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        return ModelArtifactDownloadResult(artifactID: artifact.id, bytesWritten: Int64(partialData.count))
+    }
+}
+
+private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceService {
+    private let descriptor: ModelDescriptor
+    private var state: InstallState
+    private var partialBytes: Int64
+
+    init(descriptor: ModelDescriptor, state: InstallState, partialBytes: Int64) {
+        self.descriptor = descriptor
+        self.state = state
+        self.partialBytes = partialBytes
+    }
+
+    func installedModels() async throws -> [InstalledModelRecord] {
+        []
+    }
+
+    nonisolated func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func state(for modelID: ModelID) async throws -> InstallState {
+        modelID == descriptor.id ? state : .notInstalled
+    }
+
+    func deleteInstalledModel(_ modelID: ModelID) async throws {
+        guard modelID == descriptor.id else {
+            return
+        }
+        partialBytes = 0
+        state = .notInstalled
+    }
+
+    func storageUsage() async throws -> ModelStorageUsage {
+        .empty
+    }
+
+    func storageUsage(for modelID: ModelID) async throws -> Int64 {
+        modelID == descriptor.id ? partialBytes : 0
     }
 }
 
@@ -242,4 +315,93 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
     ])
 
     #expect(viewModel.isInstalling(modelID))
+}
+
+@MainActor
+@Test func downloadsViewModelCancelInstallWaitsForCleanupAndClearsArtifacts() async throws {
+    let partialData = Data("partial".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors",
+        byteCount: 32
+    )
+    let descriptor = ModelDescriptor(
+        id: "mlx/cancel-from-ui",
+        displayName: "Cancel From UI",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [artifact]
+        )
+    )
+    let log = ViewModelDownloadLog()
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: BlockingPartialArtifactDownloader(partialData: partialData, log: log),
+        interruptionPolicy: ModelInstallInterruptionPolicy(cancellationBehavior: .removeAllArtifacts)
+    )
+    let viewModel = ModelDownloadsViewModel(
+        descriptors: [descriptor],
+        lifecycleService: coordinator
+    )
+
+    await viewModel.beginInstall(descriptor)
+    for _ in 0..<100 {
+        if await log.started {
+            break
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(await log.started)
+    #expect(viewModel.isInstallButtonDisabled(for: descriptor.id))
+
+    await viewModel.cancelInstall(descriptor.id)
+
+    let modelDirectory = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+        .modelDirectory(for: descriptor.id)
+    #expect(viewModel.installState(for: descriptor.id) == .notInstalled)
+    #expect(!viewModel.installingModelIDs.contains(descriptor.id))
+    #expect(!viewModel.cancelingModelIDs.contains(descriptor.id))
+    #expect(!viewModel.isInstallButtonDisabled(for: descriptor.id))
+    #expect(!FileManager.default.fileExists(atPath: modelDirectory.path))
+    #expect((viewModel.storageBytes(for: descriptor.id) ?? 0) == 0)
+}
+
+@MainActor
+@Test func failedPartialModelCanBeClearedWhileRetryStaysAvailable() async {
+    let descriptor = ModelDescriptor(
+        id: "failed-partial",
+        displayName: "Failed Partial",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat]
+    )
+    let service = PartialMaintenanceLifecycleService(
+        descriptor: descriptor,
+        state: .failed("network"),
+        partialBytes: 128
+    )
+    let viewModel = ModelDownloadsViewModel(
+        descriptors: [descriptor],
+        lifecycleService: service
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.installState(for: descriptor.id) == .failed("network"))
+    #expect(viewModel.storageBytes(for: descriptor.id) == 128)
+    #expect(viewModel.canDeleteArtifacts(for: descriptor.id))
+    #expect(!viewModel.isInstallButtonDisabled(for: descriptor.id))
+
+    await viewModel.delete(descriptor.id)
+
+    #expect(viewModel.installState(for: descriptor.id) == .notInstalled)
+    #expect((viewModel.storageBytes(for: descriptor.id) ?? 0) == 0)
+    #expect(!viewModel.canDeleteArtifacts(for: descriptor.id))
 }

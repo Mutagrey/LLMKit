@@ -54,8 +54,7 @@ public struct ModelIntegrityVerifier: Sendable {
         }
 
         if let checksum = artifact.checksum {
-            let data = try Data(contentsOf: fileURL)
-            let actual = try Self.digestHex(of: data, algorithm: checksum.algorithm)
+            let actual = try Self.digestHex(ofFileAt: fileURL, algorithm: checksum.algorithm)
             guard actual.caseInsensitiveCompare(checksum.value) == .orderedSame else {
                 throw LLMError.verificationFailed("Artifact checksum mismatch for \(artifact.relativePath).")
             }
@@ -68,6 +67,35 @@ public struct ModelIntegrityVerifier: Sendable {
         switch algorithm.lowercased() {
         case "sha256":
             return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        default:
+            throw LLMError.verificationFailed("Unsupported verification algorithm: \(algorithm).")
+        }
+    }
+
+    static func digestHex(ofFileAt fileURL: URL, algorithm: String, chunkSize: Int = 8 * 1_024 * 1_024) throws -> String {
+        guard chunkSize > 0 else {
+            throw LLMError.verificationFailed("Invalid checksum chunk size.")
+        }
+
+        switch algorithm.lowercased() {
+        case "sha256":
+            let fileHandle = try FileHandle(forReadingFrom: fileURL)
+            defer {
+                try? fileHandle.close()
+            }
+
+            var hasher = SHA256()
+            while true {
+                if Task.isCancelled {
+                    throw CancellationError()
+                }
+                let chunk = try fileHandle.read(upToCount: chunkSize) ?? Data()
+                if chunk.isEmpty {
+                    break
+                }
+                hasher.update(data: chunk)
+            }
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
         default:
             throw LLMError.verificationFailed("Unsupported verification algorithm: \(algorithm).")
         }

@@ -459,12 +459,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             )
         }
 
-        let totalUnits = Int64(max(fallbackArtifactCount, 1))
-        let completedUnits = Int64(min(max((clampedProgress * Double(totalUnits)).rounded(), 0), Double(totalUnits)))
         return ModelInstallProgress(
             fractionCompleted: clampedProgress,
-            completedBytes: completedUnits,
-            totalBytes: totalUnits,
+            completedBytes: nil,
+            totalBytes: nil,
             isEstimated: true
         )
     }

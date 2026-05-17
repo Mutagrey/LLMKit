@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import LLMCore
 import LLMProtocols
 import Testing
@@ -35,6 +38,87 @@ private actor DownloadAttemptLog {
 
     func snapshot() -> [Data?] {
         resumeDataValues
+    }
+}
+
+private final class CancelTrackingURLProtocolState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+    private var stopped = false
+
+    func reset() {
+        lock.lock()
+        started = false
+        stopped = false
+        lock.unlock()
+    }
+
+    func hasStarted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
+    }
+
+    func hasStopped() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+
+    func recordStarted() {
+        lock.lock()
+        started = true
+        lock.unlock()
+    }
+
+    func recordStopped() {
+        lock.lock()
+        stopped = true
+        lock.unlock()
+    }
+}
+
+private final class CancelTrackingURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let state = CancelTrackingURLProtocolState()
+
+    static func reset() {
+        state.reset()
+    }
+
+    static func hasStarted() -> Bool {
+        state.hasStarted()
+    }
+
+    static func hasStopped() -> Bool {
+        state.hasStopped()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.state.recordStarted()
+
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let response = URLResponse(
+            url: url,
+            mimeType: "application/octet-stream",
+            expectedContentLength: 1_024,
+            textEncodingName: nil
+        )
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {
+        Self.state.recordStopped()
     }
 }
 
@@ -307,6 +391,50 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(progressValues.contains(1))
 }
 
+@Test func modelInstallCoordinatorDoesNotExposeArtifactCountsAsBytes() async throws {
+    let artifactData = Data("weights".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-artifact-progress",
+        displayName: "Qwen Artifact Progress",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "config",
+                    url: URL(string: "https://example.com/config.json")!,
+                    relativePath: "config.json"
+                ),
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors"
+                )
+            ]
+        )
+    )
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: WritingArtifactDownloader(data: artifactData)
+    )
+
+    var progressDetails: [ModelInstallProgress] = []
+    for try await event in coordinator.install(descriptor) {
+        if case .progressDetail(_, let detail) = event {
+            progressDetails.append(detail)
+        }
+    }
+
+    #expect(!progressDetails.isEmpty)
+    #expect(progressDetails.allSatisfy { $0.completedBytes == nil })
+    #expect(progressDetails.allSatisfy { $0.totalBytes == nil })
+}
+
 @Test func modelInstallCoordinatorReusesValidExistingArtifactsOnRetry() async throws {
     let artifactData = Data("weights".utf8)
     let rootDirectory = FileManager.default.temporaryDirectory
@@ -423,6 +551,48 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(try Data(contentsOf: destinationURL) == sourceData)
 }
 
+@Test func urlSessionArtifactDownloaderCancelsUnderlyingTaskAndCompletesAwait() async throws {
+    CancelTrackingURLProtocol.reset()
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let destinationURL = rootDirectory
+        .appendingPathComponent("Artifacts", isDirectory: true)
+        .appendingPathComponent("model.safetensors")
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [CancelTrackingURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let downloader = URLSessionModelArtifactDownloader(session: session, maximumResumeAttempts: 0)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors"
+    )
+
+    let downloadTask = Task {
+        try await downloader.download(artifact, to: destinationURL)
+    }
+
+    for _ in 0..<100 where !CancelTrackingURLProtocol.hasStarted() {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(CancelTrackingURLProtocol.hasStarted())
+
+    downloadTask.cancel()
+    do {
+        _ = try await downloadTask.value
+        Issue.record("Expected cancelled URLSession download to throw.")
+    } catch is CancellationError {
+    } catch let error as LLMError {
+        #expect(error == .cancelled)
+    }
+
+    for _ in 0..<100 where !CancelTrackingURLProtocol.hasStopped() {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(CancelTrackingURLProtocol.hasStopped())
+    #expect(!FileManager.default.fileExists(atPath: destinationURL.path))
+}
+
 @Test func urlSessionArtifactDownloaderRetriesTransientFailureWithResumeData() async throws {
     let rootDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
@@ -460,6 +630,40 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(!FileManager.default.fileExists(
         atPath: rootDirectory.appendingPathComponent(".model.safetensors.resumeData").path
     ))
+}
+
+@Test func urlSessionArtifactDownloaderPreservesPartialAndResumeDataAfterDownloadError() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let destinationURL = rootDirectory.appendingPathComponent("model.safetensors")
+    let partialData = Data("partial".utf8)
+    let resumeData = Data("resume-token".utf8)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors"
+    )
+    let downloader = URLSessionModelArtifactDownloader(maximumResumeAttempts: 0) { artifact, destination, _, _ in
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try partialData.write(to: destination, options: [.atomic])
+        throw ResumableDownloadAttemptError(
+            underlyingError: URLError(.networkConnectionLost),
+            resumeData: resumeData
+        )
+    }
+
+    do {
+        _ = try await downloader.download(artifact, to: destinationURL)
+        Issue.record("Expected transient download failure.")
+    } catch let error as LLMError {
+        #expect(error == .downloadFailed("Network connection was lost while downloading weights. Retry the installation."))
+    }
+
+    #expect(try Data(contentsOf: destinationURL) == partialData)
+    #expect(try Data(contentsOf: rootDirectory.appendingPathComponent(".model.safetensors.resumeData")) == resumeData)
 }
 
 @Test func urlSessionArtifactDownloaderReturnsConciseErrorAfterTransientRetryExhaustion() async throws {

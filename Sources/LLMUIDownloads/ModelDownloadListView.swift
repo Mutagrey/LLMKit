@@ -119,6 +119,7 @@ public struct ModelDownloadListView: View {
             state: viewModel.installState(for: descriptor.id),
             progressDetail: viewModel.progressDetail(for: descriptor.id),
             installedSizeBytes: viewModel.storageBytes(for: descriptor.id),
+            canDeleteArtifacts: viewModel.canDeleteArtifacts(for: descriptor.id),
             isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
         ) {
             await viewModel.beginInstall(descriptor)
@@ -137,6 +138,7 @@ public final class ModelDownloadsViewModel {
     public private(set) var installStates: [ModelID: InstallState]
     public private(set) var installProgress: [ModelID: ModelInstallProgress]
     public private(set) var installingModelIDs: Set<ModelID>
+    public private(set) var cancelingModelIDs: Set<ModelID>
     public private(set) var storageUsage: ModelStorageUsage
     public private(set) var lastErrorMessage: String?
     @ObservationIgnored
@@ -157,6 +159,7 @@ public final class ModelDownloadsViewModel {
         self.installStates = Dictionary(uniqueKeysWithValues: models.map { ($0.descriptor.id, $0.installState) })
         self.installProgress = [:]
         self.installingModelIDs = []
+        self.cancelingModelIDs = []
         self.storageUsage = .empty
         self.descriptors = descriptors
         self.lifecycleService = lifecycleService
@@ -199,56 +202,52 @@ public final class ModelDownloadsViewModel {
         installingModelIDs.insert(descriptor.id)
         do {
             for try await event in lifecycleService.install(descriptor) {
-                switch event {
-                case .stateChanged(let id, let state):
-                    installStates[id] = state
-                case .progress(let id, let progress):
-                    installStates[id] = .downloading(progress: progress)
-                case .progressDetail(let id, let detail):
-                    installStates[id] = .downloading(progress: detail.fractionCompleted)
-                    installProgress[id] = detail
-                case .completed(let record):
-                    installStates[record.descriptor.id] = record.installState
-                    installProgress[record.descriptor.id] = nil
-                    installingModelIDs.remove(record.descriptor.id)
-                    installTasks[record.descriptor.id] = nil
-                    upsert(record)
-                    try? await refreshStorageUsage()
-                case .failed(let id, let error):
-                    installStates[id] = .failed(Self.presentationMessage(for: error))
-                    installProgress[id] = nil
-                    installingModelIDs.remove(id)
-                    installTasks[id] = nil
-                }
+                await handleInstallEvent(event)
             }
         } catch {
-            if let llmError = error as? LLMError, llmError == .cancelled {
-                installStates[descriptor.id] = .notInstalled
-                installProgress[descriptor.id] = nil
-            } else {
-                lastErrorMessage = Self.presentationMessage(for: error)
-            }
+            await handleInstallError(error, descriptor: descriptor)
         }
-        installingModelIDs.remove(descriptor.id)
-        installTasks[descriptor.id] = nil
+        finishTrackedInstall(for: descriptor.id)
     }
 
     public func beginInstall(_ descriptor: ModelDescriptor) async {
-        guard installTasks[descriptor.id] == nil else {
+        guard
+            let lifecycleService,
+            installTasks[descriptor.id] == nil,
+            !cancelingModelIDs.contains(descriptor.id)
+        else {
             return
         }
 
-        installTasks[descriptor.id] = Task { [weak self] in
-            await self?.install(descriptor)
+        lastErrorMessage = nil
+        installingModelIDs.insert(descriptor.id)
+        installTasks[descriptor.id] = Task { [weak self, lifecycleService] in
+            do {
+                for try await event in lifecycleService.install(descriptor) {
+                    await self?.handleInstallEvent(event)
+                }
+            } catch {
+                await self?.handleInstallError(error, descriptor: descriptor)
+            }
+            self?.finishTrackedInstall(for: descriptor.id)
         }
     }
 
     public func cancelInstall(_ modelID: ModelID) async {
-        installTasks[modelID]?.cancel()
+        guard let task = installTasks[modelID] else {
+            return
+        }
+        cancelingModelIDs.insert(modelID)
+        task.cancel()
+        await task.value
+        cancelingModelIDs.remove(modelID)
         installTasks[modelID] = nil
         installingModelIDs.remove(modelID)
-        installStates[modelID] = .notInstalled
-        installProgress[modelID] = nil
+        if !isInstalled(modelID) {
+            installStates[modelID] = .notInstalled
+            installProgress[modelID] = nil
+        }
+        try? await refreshStorageUsage()
     }
 
     public func delete(_ modelID: ModelID) async {
@@ -256,8 +255,13 @@ public final class ModelDownloadsViewModel {
             return
         }
         lastErrorMessage = nil
-        installTasks[modelID]?.cancel()
-        installTasks[modelID] = nil
+        if let task = installTasks[modelID] {
+            cancelingModelIDs.insert(modelID)
+            task.cancel()
+            await task.value
+            cancelingModelIDs.remove(modelID)
+            installTasks[modelID] = nil
+        }
         do {
             try await maintenanceService.deleteInstalledModel(modelID)
             installStates[modelID] = .notInstalled
@@ -310,6 +314,21 @@ public final class ModelDownloadsViewModel {
         storageUsage.modelBytes[modelID]
     }
 
+    public func canDeleteArtifacts(for modelID: ModelID) -> Bool {
+        guard maintenanceService != nil, !cancelingModelIDs.contains(modelID) else {
+            return false
+        }
+        if isInstalled(modelID) {
+            return true
+        }
+        switch installStates[modelID] {
+        case .failed, .evicted:
+            return true
+        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .ready, .warming, .active, nil:
+            return (storageBytes(for: modelID) ?? 0) > 0
+        }
+    }
+
     public var installedStorageTitle: String {
         ByteCountFormatter.string(fromByteCount: storageUsage.totalBytes, countStyle: .file)
     }
@@ -324,7 +343,7 @@ public final class ModelDownloadsViewModel {
     }
 
     public func isInstallButtonDisabled(for modelID: ModelID) -> Bool {
-        installingModelIDs.contains(modelID) || isInstalled(modelID)
+        installingModelIDs.contains(modelID) || cancelingModelIDs.contains(modelID) || isInstalled(modelID)
     }
 
     public func isInstalling(_ modelID: ModelID) -> Bool {
@@ -341,6 +360,52 @@ public final class ModelDownloadsViewModel {
             models[index] = record
         } else {
             models.append(record)
+        }
+    }
+
+    private func handleInstallEvent(_ event: ModelInstallEvent) async {
+        switch event {
+        case .stateChanged(let id, let state):
+            installStates[id] = state
+        case .progress(let id, let progress):
+            installStates[id] = .downloading(progress: progress)
+        case .progressDetail(let id, let detail):
+            installStates[id] = .downloading(progress: detail.fractionCompleted)
+            installProgress[id] = detail
+        case .completed(let record):
+            installStates[record.descriptor.id] = record.installState
+            installProgress[record.descriptor.id] = nil
+            installingModelIDs.remove(record.descriptor.id)
+            installTasks[record.descriptor.id] = nil
+            upsert(record)
+            try? await refreshStorageUsage()
+        case .failed(let id, let error):
+            installStates[id] = .failed(Self.presentationMessage(for: error))
+            installProgress[id] = nil
+            installingModelIDs.remove(id)
+            installTasks[id] = nil
+            try? await refreshStorageUsage()
+        }
+    }
+
+    private func handleInstallError(_ error: Error, descriptor: ModelDescriptor) async {
+        if let llmError = error as? LLMError, llmError == .cancelled {
+            installStates[descriptor.id] = .notInstalled
+            installProgress[descriptor.id] = nil
+            try? await refreshStorageUsage()
+        } else {
+            let message = Self.presentationMessage(for: error)
+            installStates[descriptor.id] = .failed(message)
+            installProgress[descriptor.id] = nil
+            lastErrorMessage = message
+            try? await refreshStorageUsage()
+        }
+    }
+
+    private func finishTrackedInstall(for modelID: ModelID) {
+        installingModelIDs.remove(modelID)
+        if cancelingModelIDs.contains(modelID) == false {
+            installTasks[modelID] = nil
         }
     }
 
@@ -367,7 +432,21 @@ public final class ModelDownloadsViewModel {
             storageUsage = .empty
             return
         }
-        storageUsage = try await maintenanceService.storageUsage()
+        let baseUsage = try await maintenanceService.storageUsage()
+        var modelBytes = baseUsage.modelBytes
+        let trackedIDs = Set(descriptors.map(\.id))
+            .union(models.map(\.descriptor.id))
+            .union(installStates.keys)
+        for modelID in trackedIDs where modelBytes[modelID] == nil {
+            let bytes = try await maintenanceService.storageUsage(for: modelID)
+            if bytes > 0 {
+                modelBytes[modelID] = bytes
+            }
+        }
+        storageUsage = ModelStorageUsage(
+            totalBytes: modelBytes.values.reduce(0, +),
+            modelBytes: modelBytes
+        )
     }
 
     private static func presentationMessage(for error: Error) -> String {

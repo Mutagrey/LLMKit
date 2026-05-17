@@ -10,3 +10,7 @@ next to their model catalog or selection surfaces. The full list uses rounded li
 while cards keep the default view focused on name, status, backend, family, size, actions, and progress. Secondary metadata such as
 provider, revision, license, context, and device requirements is available through disclosure content without leaking lifecycle logic
 into views.
+
+`ModelCatalogCardView` provides the compact catalog-row treatment used by the example app as reusable package UI. It accepts
+backend-neutral descriptor, status, install state, progress, selection, install, cancel, delete, and details actions without owning
+model lifecycle or selection policy.

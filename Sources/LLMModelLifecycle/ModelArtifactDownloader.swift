@@ -109,7 +109,6 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
                 if Self.isTransient(error), resumeAttempts < maximumResumeAttempts {
                     resumeAttempts += 1
                     resumeData = nil
-                    try? removeCachedDownload(for: artifact, at: destination)
                     continue
                 }
 
@@ -137,12 +136,14 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
         )
 
         let taskBox = URLSessionDownloadTaskBox()
+        let continuationBox = URLSessionDownloadContinuationBox()
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
+                continuationBox.set(continuation)
                 delegate.onComplete = { result in
                     session.finishTasksAndInvalidate()
-                    continuation.resume(with: result)
+                    continuationBox.resume(with: result)
                 }
                 let downloadTask: URLSessionDownloadTask
                 if let resumeData, !resumeData.isEmpty {
@@ -151,11 +152,20 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
                     downloadTask = session.downloadTask(with: artifact.url)
                 }
                 taskBox.set(downloadTask)
+                if Task.isCancelled {
+                    delegate.cancel()
+                    taskBox.cancel()
+                    session.invalidateAndCancel()
+                    continuationBox.resume(with: .failure(CancellationError()))
+                    return
+                }
                 downloadTask.resume()
             }
         } onCancel: {
+            delegate.cancel()
             taskBox.cancel()
             session.invalidateAndCancel()
+            continuationBox.resume(with: .failure(CancellationError()))
         }
     }
 
@@ -243,13 +253,14 @@ struct ResumableDownloadAttemptError: Error, Sendable {
 private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let artifact: ModelArtifact
     let destination: URL
-    let onProgress: @Sendable (ModelArtifactDownloadProgress) async -> Void
 
     var onComplete: ((Result<ModelArtifactDownloadResult, Error>) -> Void)?
 
+    private let progressReporter: URLSessionDownloadProgressReporter
     private let lock = NSLock()
     private var completionResult: Result<ModelArtifactDownloadResult, Error>?
     private var completed = false
+    private var cancelled = false
 
     init(
         artifact: ModelArtifact,
@@ -258,7 +269,7 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
     ) {
         self.artifact = artifact
         self.destination = destination
-        self.onProgress = onProgress
+        self.progressReporter = URLSessionDownloadProgressReporter(onProgress: onProgress)
     }
 
     func urlSession(
@@ -269,15 +280,13 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
         totalBytesExpectedToWrite: Int64
     ) {
         let expected = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : artifact.byteCount
-        Task {
-            await onProgress(
-                ModelArtifactDownloadProgress(
-                    artifactID: artifact.id,
-                    bytesWritten: totalBytesWritten,
-                    expectedTotalBytes: expected
-                )
+        progressReporter.report(
+            ModelArtifactDownloadProgress(
+                artifactID: artifact.id,
+                bytesWritten: totalBytesWritten,
+                expectedTotalBytes: expected
             )
-        }
+        )
     }
 
     func urlSession(
@@ -286,6 +295,13 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
         didFinishDownloadingTo location: URL
     ) {
         do {
+            lock.lock()
+            let isCancelled = cancelled
+            lock.unlock()
+            if isCancelled {
+                throw CancellationError()
+            }
+
             if let httpResponse = downloadTask.response as? HTTPURLResponse,
                !(200..<300).contains(httpResponse.statusCode) {
                 throw LLMError.downloadFailed("HTTP \(httpResponse.statusCode) for \(artifact.id)")
@@ -313,6 +329,13 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
             completionResult = .failure(error)
             lock.unlock()
         }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+        progressReporter.cancel()
     }
 
     func urlSession(
@@ -351,6 +374,7 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
             return
         }
         completed = true
+        progressReporter.cancel()
         onComplete?(result)
         onComplete = nil
     }
@@ -358,6 +382,115 @@ private final class URLSessionArtifactDownloadDelegate: NSObject, URLSessionDown
     private static func resumeData(from error: Error) -> Data? {
         let userInfo = (error as NSError).userInfo
         return userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+    }
+}
+
+private final class URLSessionDownloadProgressReporter: @unchecked Sendable {
+    private let onProgress: @Sendable (ModelArtifactDownloadProgress) async -> Void
+    private let lock = NSLock()
+    private var latestProgress: ModelArtifactDownloadProgress?
+    private var isPublishing = false
+    private var isCancelled = false
+
+    init(onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func report(_ progress: ModelArtifactDownloadProgress) {
+        lock.lock()
+        guard !isCancelled else {
+            lock.unlock()
+            return
+        }
+        latestProgress = progress
+        guard !isPublishing else {
+            lock.unlock()
+            return
+        }
+        isPublishing = true
+        lock.unlock()
+
+        Task { [weak self] in
+            await self?.publishLoop()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        latestProgress = nil
+        lock.unlock()
+    }
+
+    private func publishLoop() async {
+        while true {
+            guard let progress = nextProgress() else {
+                return
+            }
+            await onProgress(progress)
+        }
+    }
+
+    private func nextProgress() -> ModelArtifactDownloadProgress? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if isCancelled {
+            isPublishing = false
+            return nil
+        }
+
+        guard let progress = latestProgress else {
+            isPublishing = false
+            return nil
+        }
+
+        latestProgress = nil
+        return progress
+    }
+}
+
+private final class URLSessionDownloadContinuationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<ModelArtifactDownloadResult, Error>?
+    private var pendingResult: Result<ModelArtifactDownloadResult, Error>?
+    private var completed = false
+
+    func set(_ continuation: CheckedContinuation<ModelArtifactDownloadResult, Error>) {
+        let resultToResume: Result<ModelArtifactDownloadResult, Error>?
+        lock.lock()
+        if let pendingResult {
+            resultToResume = pendingResult
+            self.pendingResult = nil
+        } else if completed {
+            resultToResume = .failure(CancellationError())
+        } else {
+            self.continuation = continuation
+            resultToResume = nil
+        }
+        lock.unlock()
+
+        if let resultToResume {
+            continuation.resume(with: resultToResume)
+        }
+    }
+
+    func resume(with result: Result<ModelArtifactDownloadResult, Error>) {
+        let continuationToResume: CheckedContinuation<ModelArtifactDownloadResult, Error>?
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        continuationToResume = continuation
+        continuation = nil
+        if continuationToResume == nil {
+            pendingResult = result
+        }
+        lock.unlock()
+
+        continuationToResume?.resume(with: result)
     }
 }
 

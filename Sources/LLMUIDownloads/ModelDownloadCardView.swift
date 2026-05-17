@@ -7,6 +7,7 @@ public struct ModelDownloadCardView: View {
     private let state: InstallState
     private let progressDetail: ModelInstallProgress?
     private let installedSizeBytes: Int64?
+    private let canDeleteArtifacts: Bool
     private let isInstallButtonDisabled: Bool
     private let installAction: @Sendable () async -> Void
     private let cancelAction: (@Sendable () async -> Void)?
@@ -17,6 +18,7 @@ public struct ModelDownloadCardView: View {
         state: InstallState,
         progressDetail: ModelInstallProgress? = nil,
         installedSizeBytes: Int64? = nil,
+        canDeleteArtifacts: Bool = false,
         isInstallButtonDisabled: Bool,
         installAction: @escaping @Sendable () async -> Void,
         cancelAction: (@Sendable () async -> Void)? = nil,
@@ -26,6 +28,7 @@ public struct ModelDownloadCardView: View {
         self.state = state
         self.progressDetail = progressDetail
         self.installedSizeBytes = installedSizeBytes
+        self.canDeleteArtifacts = canDeleteArtifacts
         self.isInstallButtonDisabled = isInstallButtonDisabled
         self.installAction = installAction
         self.cancelAction = cancelAction
@@ -119,16 +122,7 @@ public struct ModelDownloadCardView: View {
 
     private var actionRow: some View {
         HStack(spacing: 12) {
-            if isInstalled, let deleteAction {
-                Button(role: .destructive) {
-                    Task { await deleteAction() }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-            } else if isInstalling, let cancelAction {
+            if isInstalling, let cancelAction {
                 Button(role: .cancel) {
                     Task { await cancelAction() }
                 } label: {
@@ -138,15 +132,28 @@ public struct ModelDownloadCardView: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
             } else {
-                Button {
-                    Task { await installAction() }
-                } label: {
-                    Label(actionTitle, systemImage: actionSymbol)
-                        .frame(maxWidth: .infinity)
+                if canDeleteArtifacts, let deleteAction {
+                    Button(role: .destructive) {
+                        Task { await deleteAction() }
+                    } label: {
+                        Label(deleteTitle, systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .disabled(isInstallButtonDisabled)
+
+                if !isInstalled {
+                    Button {
+                        Task { await installAction() }
+                    } label: {
+                        Label(actionTitle, systemImage: actionSymbol)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .disabled(isInstallButtonDisabled)
+                }
             }
 
             if isInstalled {
@@ -159,6 +166,13 @@ public struct ModelDownloadCardView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var deleteTitle: String {
+        if isInstalled {
+            return "Delete"
+        }
+        return "Clear"
     }
 
     private var familyTitle: String {
@@ -228,6 +242,9 @@ public struct ModelDownloadCardView: View {
         if isInstalling {
             return "Downloading"
         }
+        if isFailed {
+            return "Retry"
+        }
         return "Download"
     }
 
@@ -237,6 +254,9 @@ public struct ModelDownloadCardView: View {
         }
         if isInstalling {
             return "arrow.down.circle.fill"
+        }
+        if isFailed {
+            return "arrow.clockwise"
         }
         return "arrow.down.circle"
     }
@@ -259,12 +279,25 @@ public struct ModelDownloadCardView: View {
         }
     }
 
+    private var isFailed: Bool {
+        if case .failed = state {
+            return true
+        }
+        return false
+    }
+
     private var installBadgeTitle: String {
         if isInstalled {
             return "Installed"
         }
         if isInstalling {
             return "In Progress"
+        }
+        if isFailed {
+            return "Failed"
+        }
+        if case .evicted = state {
+            return "Evicted"
         }
         return "Not Installed"
     }
@@ -275,6 +308,12 @@ public struct ModelDownloadCardView: View {
         }
         if isInstalling {
             return .blue
+        }
+        if isFailed {
+            return .red
+        }
+        if case .evicted = state {
+            return .secondary
         }
         return .orange
     }

@@ -4,9 +4,13 @@ Public API includes `LLMKitContainer`, factory entry points, `ModelRouter`, `Exe
 
 `ModelRouter.plan(requirements:)` returns the ordered candidate set used by runtime services. `DefaultLanguageGenerationService` and `DefaultChatService` check backend availability, then stream through candidates until one completes or all eligible candidates fail. Fallback applies to both backend-emitted failure events and thrown stream errors unless the failure is cancellation, unsupported capabilities, or `ExecutionRequirements.allowsFallback` is `false`.
 
+When `ModelSelectionPolicy.require` is used, router failures distinguish missing catalog entries from capability,
+RAM, and offline/remote constraint mismatches so host apps can present actionable setup errors.
+
 `ExecutionPlanner` consumes `DeviceProfile` and `RuntimeConstraints` snapshots to filter descriptors whose
-declared minimum RAM or free-disk requirements exceed the current device budget. For `.fast` quality it
-prefers lower-footprint models, while `.best` still prefers higher-capacity candidates that remain eligible.
+declared minimum RAM exceeds the current device budget. Free-disk requirements are install-time lifecycle
+constraints, not inference-time routing gates. For `.fast` quality it prefers lower-footprint models, while
+`.best` still prefers higher-capacity candidates that remain eligible.
 
 `DefaultStructuredGenerationService` forwards stable execution requirements together with the backend-neutral
 `StructuredOutputSchema`. It decodes only strict JSON and performs one prompt-level repair attempt by default, which lets

@@ -28,20 +28,7 @@ public struct ExecutionPlanner: Sendable {
 
     public func plan(models: [ModelDescriptor], requirements: ExecutionRequirements) -> ExecutionPlan {
         let filtered = models.filter { descriptor in
-            guard matcher.model(descriptor, satisfies: requirements) else {
-                return false
-            }
-            guard meetsDeviceRequirements(descriptor) else {
-                return false
-            }
-            switch requirements.executionMode {
-            case .offlineOnly:
-                return !descriptor.isRemote
-            case .preferOffline:
-                return true
-            case .hybrid, .remoteAllowed:
-                return true
-            }
+            rejectionReasons(for: descriptor, requirements: requirements).isEmpty
         }
         let sorted = filtered.sorted { lhs, rhs in
             if requirements.executionMode == .preferOffline, lhs.isRemote != rhs.isRemote {
@@ -64,20 +51,27 @@ public struct ExecutionPlanner: Sendable {
         return ExecutionPlan(candidates: sorted, requirements: requirements)
     }
 
-    private func meetsDeviceRequirements(_ descriptor: ModelDescriptor) -> Bool {
+    func rejectionReasons(for descriptor: ModelDescriptor, requirements: ExecutionRequirements) -> [String] {
+        var reasons: [String] = []
+
+        if !matcher.model(descriptor, satisfies: requirements) {
+            let missing = requirements.requiredCapabilities.subtracting(descriptor.capabilities)
+            let names = missing.map { String(describing: $0) }.sorted().joined(separator: ", ")
+            reasons.append("missing capabilities: \(names)")
+        }
+
         if let minimumRAMGB = descriptor.minimumRAMGB,
            let deviceProfile,
            deviceProfile.physicalMemoryBytes < UInt64(minimumRAMGB) * 1_073_741_824 {
-            return false
+            let currentRAMGB = deviceProfile.physicalMemoryBytes / 1_073_741_824
+            reasons.append("requires \(minimumRAMGB) GB RAM, current device has \(currentRAMGB) GB")
         }
 
-        if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB,
-           let availableFreeDiskGB = runtimeConstraints.minimumFreeDiskGB,
-           availableFreeDiskGB < minimumFreeDiskGB {
-            return false
+        if requirements.executionMode == .offlineOnly, descriptor.isRemote {
+            reasons.append("offline-only requests cannot use remote models")
         }
 
-        return true
+        return reasons
     }
 
     private func footprintScore(_ descriptor: ModelDescriptor) -> Int64 {

@@ -431,7 +431,7 @@ private actor FailingToolService: ToolService {
     #expect(plan.candidates.map(\.id) == ["local", "remote"])
 }
 
-@Test func executionPlannerFiltersModelsThatExceedDeviceAndDiskBudgets() {
+@Test func executionPlannerFiltersModelsThatExceedDeviceRamBudget() {
     let compact = ModelDescriptor(
         id: "compact",
         displayName: "Compact",
@@ -439,7 +439,7 @@ private actor FailingToolService: ToolService {
         backend: .mlx,
         capabilities: [.chat],
         minimumRAMGB: 4,
-        minimumFreeDiskGB: 6,
+        minimumFreeDiskGB: 64,
         estimatedDownloadSizeBytes: 2_000_000_000
     )
     let oversized = ModelDescriptor(
@@ -465,6 +465,31 @@ private actor FailingToolService: ToolService {
     let plan = planner.plan(models: [oversized, compact], requirements: requirements)
 
     #expect(plan.candidates.map(\.id) == ["compact"])
+}
+
+@Test func executionPlannerDoesNotFilterRuntimeCandidatesByFreeDiskBudget() {
+    let descriptor = ModelDescriptor(
+        id: "installed-large",
+        displayName: "Installed Large",
+        family: .gemma,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 64
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 8 * 1_073_741_824,
+            processorCount: 6
+        ),
+        runtimeConstraints: RuntimeConstraints(minimumFreeDiskGB: 1)
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
+
+    let plan = planner.plan(models: [descriptor], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["installed-large"])
 }
 
 @Test func executionPlannerPrefersLowerFootprintForFastTier() {
@@ -695,7 +720,71 @@ private actor FailingToolService: ToolService {
         ))
         Issue.record("Expected strict model selection to fail.")
     } catch {
-        #expect(error as? LLMError == .modelSelectionFailed("Required model missing does not satisfy the current request or is unavailable in the active catalog."))
+        #expect(error as? LLMError == .modelSelectionFailed("Required model missing is not present in the active catalog."))
+    }
+}
+
+@Test func routerReportsRequiredModelCapabilityMismatch() async throws {
+    let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.completion])
+    let catalog = DefaultModelCatalog(models: [local])
+    let router = ModelRouter(catalog: catalog)
+
+    do {
+        _ = try await router.plan(requirements: ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            selectionPolicy: .require("local")
+        ))
+        Issue.record("Expected strict model selection to explain the capability mismatch.")
+    } catch {
+        #expect(error as? LLMError == .modelSelectionFailed("Required model local cannot be selected: missing capabilities: chat."))
+    }
+}
+
+@Test func routerReportsRequiredModelRamMismatch() async throws {
+    let local = ModelDescriptor(
+        id: "local",
+        displayName: "A Local",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [.chat],
+        minimumRAMGB: 16
+    )
+    let catalog = DefaultModelCatalog(models: [local])
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 8 * 1_073_741_824,
+            processorCount: 6
+        ),
+        runtimeConstraints: RuntimeConstraints(minimumFreeDiskGB: 32)
+    )
+    let router = ModelRouter(catalog: catalog, planner: planner)
+
+    do {
+        _ = try await router.plan(requirements: ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            selectionPolicy: .require("local")
+        ))
+        Issue.record("Expected strict model selection to explain the RAM mismatch.")
+    } catch {
+        #expect(error as? LLMError == .modelSelectionFailed("Required model local cannot be selected: requires 16 GB RAM, current device has 8 GB."))
+    }
+}
+
+@Test func routerReportsRequiredRemoteModelForOfflineOnlyRequest() async throws {
+    let remote = ModelDescriptor(id: "remote", displayName: "Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)
+    let catalog = DefaultModelCatalog(models: [remote])
+    let router = ModelRouter(catalog: catalog)
+
+    do {
+        _ = try await router.plan(requirements: ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            selectionPolicy: .require("remote"),
+            executionMode: .offlineOnly
+        ))
+        Issue.record("Expected strict model selection to explain the offline mismatch.")
+    } catch {
+        #expect(error as? LLMError == .modelSelectionFailed("Required model remote cannot be selected: offline-only requests cannot use remote models."))
     }
 }
 

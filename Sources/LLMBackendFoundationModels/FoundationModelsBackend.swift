@@ -5,9 +5,19 @@ import LLMProtocols
 public struct FoundationModelsBackend: ModelBackend {
     public let backendKind: BackendKind = .foundationModels
     private let configuredAvailability: FoundationModelsRuntimeAvailability?
+    private let runtime: any FoundationModelsRuntime
 
     public init(runtimeAvailability: FoundationModelsRuntimeAvailability? = nil) {
         self.configuredAvailability = runtimeAvailability
+        self.runtime = FoundationModelsNativeRuntime()
+    }
+
+    init(
+        runtimeAvailability: FoundationModelsRuntimeAvailability? = nil,
+        runtime: any FoundationModelsRuntime
+    ) {
+        self.configuredAvailability = runtimeAvailability
+        self.runtime = runtime
     }
 
     public func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
@@ -56,11 +66,15 @@ public struct FoundationModelsBackend: ModelBackend {
             let task = Task {
                 do {
                     try await ensureAvailable(request.model)
-                    let text = try await FoundationModelsNativeRuntime.generate(request)
-                    if !text.isEmpty {
-                        continuation.yield(.delta(text))
+                    var accumulator = StreamedTextAccumulator()
+                    for try await delta in runtime.generate(request) {
+                        guard !delta.isEmpty else {
+                            continue
+                        }
+                        accumulator.append(delta)
+                        continuation.yield(.delta(delta))
                     }
-                    continuation.yield(.completed(GenerationResult(text: text, model: request.model)))
+                    continuation.yield(.completed(GenerationResult(text: accumulator.text, model: request.model)))
                     continuation.finish()
                 } catch let error as LLMError {
                     continuation.finish(throwing: error)
@@ -80,11 +94,15 @@ public struct FoundationModelsBackend: ModelBackend {
             let task = Task {
                 do {
                     try await ensureAvailable(request.model)
-                    let text = try await FoundationModelsNativeRuntime.chat(request)
-                    if !text.isEmpty {
-                        continuation.yield(.delta(text))
+                    var accumulator = StreamedTextAccumulator()
+                    for try await delta in runtime.chat(request) {
+                        guard !delta.isEmpty else {
+                            continue
+                        }
+                        accumulator.append(delta)
+                        continuation.yield(.delta(delta))
                     }
-                    let message = ChatMessage(role: .assistant, content: MessageContent(text: text))
+                    let message = ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text))
                     continuation.yield(.completed(ChatResult(message: message, model: request.model)))
                     continuation.finish()
                 } catch let error as LLMError {

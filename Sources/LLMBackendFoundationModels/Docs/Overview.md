@@ -4,6 +4,8 @@
 
 The adapter probes `SystemLanguageModel` availability inside this backend target, loads backend-neutral model handles, and maps generic generation/chat requests to Foundation Models prompts and options.
 
+Plain generation and chat use Foundation Models `streamResponse` APIs and map cumulative snapshots into backend-neutral append-only text deltas. Structured output keeps the conservative full-response path when native schema generation is used, because partial `GeneratedContent` snapshots are not guaranteed to map cleanly to append-only JSON text.
+
 Chat prompt mapping preserves backend-neutral tool context by folding available tool definitions into instructions and explicit tool result messages into the prompt transcript when native Foundation Models tool APIs are not in use.
 
 For generation requests that carry a backend-neutral `StructuredOutputSchema`, the adapter attempts to map that schema

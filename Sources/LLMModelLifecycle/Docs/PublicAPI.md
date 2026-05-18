@@ -6,8 +6,8 @@ Public API includes manifests, catalog, installer, installed record persistence,
 models capped at 8 GB RAM requirements. The curated iPhone list includes current Qwen3.5 OptiQ, Qwen3 Instruct,
 Gemma 4 E2B, Llama 3.2, and selected uncensored/abliterated Qwen and Llama variants so host apps can build catalogs
 without hardcoding descriptors in UI modules.
-`localIPhoneGGUFTextModels` separately exposes small Llama 3.2 GGUF Q4_K_M descriptors for the llama.cpp backend, with
-single `.gguf` artifacts represented through the same backend-neutral download metadata.
+`localIPhoneGGUFTextModels` separately exposes Llama GGUF descriptors for the llama.cpp backend, with single `.gguf`
+artifacts represented through the same backend-neutral download metadata.
 
 `ManifestLoader` decodes and encodes `ModelManifest` values from files, `ManifestStore`, and remote URLs using ISO 8601 dates,
 keeping manifest loading in the lifecycle layer instead of pushing it into backends or UI. It can optionally

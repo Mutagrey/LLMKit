@@ -74,6 +74,34 @@ import Testing
     }
 }
 
+@Test func foundationModelsGenerationStreamsMultipleDeltasBeforeCompletion() async throws {
+    let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.completion, .streaming])
+    let backend = FoundationModelsBackend(
+        runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true),
+        runtime: FakeFoundationModelsRuntime(generationDeltas: ["hel", "lo"])
+    )
+
+    var didStart = false
+    var deltas: [String] = []
+    var completedText: String?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: descriptor)) {
+        switch event {
+        case .started(let model):
+            didStart = model == descriptor
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completedText = result.text
+        case .failed:
+            Issue.record("Foundation Models fake runtime should not emit a failure event.")
+        }
+    }
+
+    #expect(didStart)
+    #expect(deltas == ["hel", "lo"])
+    #expect(completedText == "hello")
+}
+
 @Test func foundationModelsChatFailsWhenRuntimeUnavailable() async throws {
     let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.chat])
     let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: false, reason: "not ready"))
@@ -87,6 +115,52 @@ import Testing
     } catch {
         #expect(error as? LLMError == .unavailable)
     }
+}
+
+@Test func foundationModelsChatStreamsMultipleDeltasBeforeCompletion() async throws {
+    let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.chat, .streaming])
+    let request = ChatRequest(messages: [
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ])
+    let backend = FoundationModelsBackend(
+        runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true),
+        runtime: FakeFoundationModelsRuntime(chatDeltas: ["he", "llo"])
+    )
+
+    var deltas: [String] = []
+    var completedMessage: ChatMessage?
+    for try await event in backend.chat(BackendChatRequest(request: request, model: descriptor)) {
+        switch event {
+        case .started:
+            break
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completedMessage = result.message
+        case .toolCallRequested, .toolCallCompleted, .failed:
+            Issue.record("Foundation Models fake runtime should only emit text events.")
+        }
+    }
+
+    #expect(deltas == ["he", "llo"])
+    #expect(completedMessage?.role == .assistant)
+    #expect(completedMessage?.content.text == "hello")
+}
+
+@Test func foundationModelsStreamDeltaReducerConvertsCumulativeSnapshotsToDeltas() {
+    var reducer = FoundationModelsStreamDeltaReducer()
+
+    #expect(reducer.delta(from: "") == nil)
+    #expect(reducer.delta(from: "hel") == "hel")
+    #expect(reducer.delta(from: "hello") == "lo")
+    #expect(reducer.delta(from: "hello") == nil)
+}
+
+@Test func foundationModelsStreamDeltaReducerHandlesUnicodeBoundaries() {
+    var reducer = FoundationModelsStreamDeltaReducer()
+
+    #expect(reducer.delta(from: "👨‍💻") == "👨‍💻")
+    #expect(reducer.delta(from: "👨‍💻 готов") == " готов")
 }
 
 @Test func foundationModelsStructuredOutputMapperBuildsPlanForObjectSchema() throws {
@@ -124,5 +198,27 @@ import Testing
 
     #expect(throws: BackendError.self) {
         _ = try FoundationModelsStructuredOutputMapper.plan(for: schema)
+    }
+}
+
+private struct FakeFoundationModelsRuntime: FoundationModelsRuntime {
+    var generationDeltas: [String] = []
+    var chatDeltas: [String] = []
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<String, Error> {
+        stream(generationDeltas)
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<String, Error> {
+        stream(chatDeltas)
+    }
+
+    private func stream(_ deltas: [String]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            for delta in deltas {
+                continuation.yield(delta)
+            }
+            continuation.finish()
+        }
     }
 }

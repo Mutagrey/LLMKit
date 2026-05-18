@@ -34,7 +34,10 @@ public enum CuratedModelManifests {
         id: "llmkit.local.iphone-gguf-text-models",
         models: [
             llama32OneBInstructGGUFQ4KM,
-            llama32ThreeBInstructGGUFQ4KM
+            llama32OneBInstructGGUFQ5KM,
+            llama32ThreeBInstructGGUFQ4KM,
+            llama32ThreeBInstructGGUFQ5KM,
+            metaLlama31EightBInstructGGUFQ4KM
         ]
     )
 
@@ -348,6 +351,47 @@ public enum CuratedModelManifests {
         tags: ["balanced", "iphone-recommended"]
     )
 
+    public static let llama32OneBInstructGGUFQ5KM = llamaGGUFModel(
+        id: "bartowski.Llama-3.2-1B-Instruct-GGUF.Q5_K_M",
+        displayName: "Llama 3.2 1B Instruct GGUF Q5_K_M",
+        repository: "bartowski/Llama-3.2-1B-Instruct-GGUF",
+        revision: "067b946cf014b7c697f3654f621d577a3e3afd1c",
+        fileName: "Llama-3.2-1B-Instruct-Q5_K_M.gguf",
+        byteCount: 911_503_488,
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 1,
+        contextWindowTokens: 131_072,
+        quantization: Quantization(format: "GGUF Q5_K_M", bits: 5),
+        tags: ["starter", "iphone-entry", "quality"]
+    )
+
+    public static let llama32ThreeBInstructGGUFQ5KM = llamaGGUFModel(
+        id: "bartowski.Llama-3.2-3B-Instruct-GGUF.Q5_K_M",
+        displayName: "Llama 3.2 3B Instruct GGUF Q5_K_M",
+        repository: "bartowski/Llama-3.2-3B-Instruct-GGUF",
+        revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
+        fileName: "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
+        byteCount: 2_322_154_016,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 131_072,
+        quantization: Quantization(format: "GGUF Q5_K_M", bits: 5),
+        tags: ["balanced", "iphone-pro", "quality"]
+    )
+
+    public static let metaLlama31EightBInstructGGUFQ4KM = llamaGGUFModel(
+        id: "bartowski.Meta-Llama-3.1-8B-Instruct-GGUF.Q4_K_M",
+        displayName: "Llama 3.1 8B Instruct GGUF Q4_K_M",
+        repository: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+        revision: "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
+        fileName: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        byteCount: 4_920_739_232,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 131_072,
+        tags: ["quality", "iphone-pro"]
+    )
+
     public static func merged(id: String, manifests: [ModelManifest]) -> ModelManifest {
         let models = manifests
             .flatMap(\.models)
@@ -528,6 +572,7 @@ public enum CuratedModelManifests {
         minimumRAMGB: Int,
         minimumFreeDiskGB: Int,
         contextWindowTokens: Int,
+        quantization: Quantization = Quantization(format: "GGUF Q4_K_M", bits: 4),
         tags: [String]
     ) -> ModelDescriptor {
         ModelDescriptor(
@@ -553,7 +598,7 @@ public enum CuratedModelManifests {
                 byteCount: byteCount
             ),
             license: llamaLicense(repository: repository),
-            quantization: Quantization(format: "GGUF Q4_K_M", bits: 4),
+            quantization: quantization,
             estimatedDownloadSizeBytes: byteCount,
             tags: baseGGUFLocalTags + ["llama"] + tags
         )

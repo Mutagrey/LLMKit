@@ -8,6 +8,8 @@ Public API is limited to generic backend conformers and availability helpers.
 
 Foundation Models chat mapping remains backend-neutral: tool definitions and tool result references are folded into prompt text until a dedicated native tool-calling surface is adopted in this target.
 
+For plain generation and chat, `FoundationModelsBackend` emits incremental `.delta` events from Foundation Models `streamResponse` snapshots. The public stream event shape is unchanged.
+
 Structured generation metadata is preserved on `GenerationRequest`. When a backend-neutral `StructuredOutputSchema`
 can be mapped to Foundation Models guided generation, the adapter now uses native `GenerationSchema` APIs and returns
 the resulting structured content as JSON text to keep upper layers unchanged. Unsupported schema constructs still fall

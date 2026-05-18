@@ -593,6 +593,33 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(!FileManager.default.fileExists(atPath: destinationURL.path))
 }
 
+@Test func urlSessionArtifactDownloaderPreservesResumeDataAfterCancellation() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let destinationURL = rootDirectory.appendingPathComponent("model.safetensors")
+    let resumeData = Data("resume-token".utf8)
+    let resumeDataURL = rootDirectory.appendingPathComponent(".model.safetensors.resumeData")
+    try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+    try resumeData.write(to: resumeDataURL, options: [.atomic])
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors"
+    )
+    let downloader = URLSessionModelArtifactDownloader(maximumResumeAttempts: 0) { _, _, incomingResumeData, _ in
+        #expect(incomingResumeData == resumeData)
+        throw CancellationError()
+    }
+
+    do {
+        _ = try await downloader.download(artifact, to: destinationURL)
+        Issue.record("Expected cancellation.")
+    } catch is CancellationError {
+    }
+
+    #expect(try Data(contentsOf: resumeDataURL) == resumeData)
+}
+
 @Test func urlSessionArtifactDownloaderRetriesTransientFailureWithResumeData() async throws {
     let rootDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
@@ -843,7 +870,7 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(!FileManager.default.fileExists(atPath: modelDirectory.path))
 }
 
-@Test func cancelledInstallRemovesPartialArtifactAndResumeCache() async throws {
+@Test func cancelledInstallRemovesPartialArtifactAndPreservesResumeCacheByDefault() async throws {
     let validData = Data("complete-weights".utf8)
     let partialData = Data("partial".utf8)
     let rootDirectory = FileManager.default.temporaryDirectory
@@ -891,13 +918,13 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
         .deletingLastPathComponent()
         .appendingPathComponent(".model.safetensors.resumeData")
 
-    for _ in 0..<20 where FileManager.default.fileExists(atPath: artifactURL.path) || FileManager.default.fileExists(atPath: resumeDataURL.path) {
+    for _ in 0..<20 where FileManager.default.fileExists(atPath: artifactURL.path) {
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
 
     #expect(!FileManager.default.fileExists(atPath: artifactURL.path))
-    #expect(!FileManager.default.fileExists(atPath: resumeDataURL.path))
-    #expect(await log.cleanedSnapshot() == ["weights"])
+    #expect(try Data(contentsOf: resumeDataURL) == Data("resume".utf8))
+    #expect(await log.cleanedSnapshot().isEmpty)
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {

@@ -32,7 +32,7 @@ of only per-file completion updates. The default `URLSessionModelArtifactDownloa
 When only artifact-count progress is available, progress details omit byte totals so UI does not present file counts as bytes.
 The default downloader retries transient URL loading failures with `URLSession` resume data when available, stores resume data
 beside the destination artifact while retrying, preserves partial/resume artifacts after ordinary download failure for retry,
-removes that cache after success or cancellation, coalesces high-frequency transfer callbacks before publishing lifecycle progress,
+removes that cache after success, preserves it after cancellation for retry, coalesces high-frequency transfer callbacks before publishing lifecycle progress,
 and maps transport failures
 to short lifecycle errors without exposing presigned URLs or raw `NSError` payloads.
 Task cancellation now propagates into the default downloader so user-requested cancellation can stop an in-flight transfer
@@ -46,8 +46,9 @@ model ready, and it records `.failed(...)` install state when download or integr
 Before downloading, it checks available disk space through `ModelInstallDiskSpaceProviding` when the manifest has known or
 estimated download bytes, subtracting already verified artifacts so retries do not overstate required space.
 `ModelInstallInterruptionPolicy` defines how cancellation cleanup behaves. The default policy preserves already verified
-artifacts so a later install can resume from completed files while still deleting invalid leftovers from an interrupted
-attempt. Callers that prefer the previous eager cleanup behavior can opt into `.removeAllArtifacts`.
+artifacts and downloader resume cache so a later install can resume from completed files or the interrupted transfer while
+still deleting invalid completed leftovers from an interrupted attempt. Callers that prefer the previous eager cleanup
+behavior can opt into `.removeAllArtifacts`.
 When an install is cancelled, the coordinator still returns the install state to `.notInstalled` rather than leaving a
 misleading terminal failure state behind.
 Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk

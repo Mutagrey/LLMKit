@@ -91,12 +91,11 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
                 try removeCachedDownload(for: artifact, at: destination)
                 return result
             } catch is CancellationError {
-                try? removeCachedDownload(for: artifact, at: destination)
                 throw CancellationError()
             } catch let error as ResumableDownloadAttemptError {
                 if let nextResumeData = error.resumeData, !nextResumeData.isEmpty {
                     resumeData = nextResumeData
-                    try? cacheResumeData(nextResumeData, for: destination)
+                    try? Self.cacheResumeData(nextResumeData, for: destination)
                 }
 
                 if Self.isTransient(error.underlyingError), resumeAttempts < maximumResumeAttempts {
@@ -154,30 +153,51 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
                 taskBox.set(downloadTask)
                 if Task.isCancelled {
                     delegate.cancel()
-                    taskBox.cancel()
-                    session.invalidateAndCancel()
-                    continuationBox.resume(with: .failure(CancellationError()))
+                    cancelDownload(
+                        taskBox: taskBox,
+                        destination: destination,
+                        session: session,
+                        continuationBox: continuationBox
+                    )
                     return
                 }
                 downloadTask.resume()
             }
         } onCancel: {
             delegate.cancel()
-            taskBox.cancel()
+            cancelDownload(
+                taskBox: taskBox,
+                destination: destination,
+                session: session,
+                continuationBox: continuationBox
+            )
+        }
+    }
+
+    private static func cancelDownload(
+        taskBox: URLSessionDownloadTaskBox,
+        destination: URL,
+        session: URLSession,
+        continuationBox: URLSessionDownloadContinuationBox
+    ) {
+        taskBox.cancelByProducingResumeData { resumeData in
+            if let resumeData, !resumeData.isEmpty {
+                try? cacheResumeData(resumeData, for: destination)
+            }
             session.invalidateAndCancel()
             continuationBox.resume(with: .failure(CancellationError()))
         }
     }
 
     private func cachedResumeData(for destination: URL) throws -> Data? {
-        let url = resumeDataURL(for: destination)
+        let url = Self.resumeDataURL(for: destination)
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
         return try Data(contentsOf: url)
     }
 
-    private func cacheResumeData(_ data: Data, for destination: URL) throws {
+    private static func cacheResumeData(_ data: Data, for destination: URL) throws {
         let url = resumeDataURL(for: destination)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -186,7 +206,7 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
         try data.write(to: url, options: [.atomic])
     }
 
-    private func resumeDataURL(for destination: URL) -> URL {
+    private static func resumeDataURL(for destination: URL) -> URL {
         destination
             .deletingLastPathComponent()
             .appendingPathComponent(".\(destination.lastPathComponent).resumeData")
@@ -238,7 +258,7 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
 
 extension URLSessionModelArtifactDownloader: ModelArtifactDownloadCacheCleaning {
     public func removeCachedDownload(for artifact: ModelArtifact, at destination: URL) throws {
-        let url = resumeDataURL(for: destination)
+        let url = Self.resumeDataURL(for: destination)
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
@@ -504,10 +524,16 @@ private final class URLSessionDownloadTaskBox: @unchecked Sendable {
         lock.unlock()
     }
 
-    func cancel() {
+    func cancelByProducingResumeData(_ completionHandler: @escaping @Sendable (Data?) -> Void) {
         lock.lock()
         let task = self.task
         lock.unlock()
-        task?.cancel()
+
+        guard let task else {
+            completionHandler(nil)
+            return
+        }
+
+        task.cancel(byProducingResumeData: completionHandler)
     }
 }

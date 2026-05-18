@@ -334,6 +334,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         case .preserveVerifiedArtifactsForResume:
             try await cleanupInterruptedArtifactsForResume(descriptor)
         case .removeAllArtifacts:
+            try cleanupCachedDownloads(for: descriptor)
             try await cleanupAllArtifacts(for: descriptor.id)
         }
     }
@@ -350,7 +351,6 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         for artifact in artifacts {
             let artifactURL = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
                 .artifactURL(modelID: descriptor.id, artifact: artifact)
-            try cleanupCachedDownload(for: artifact, at: artifactURL)
 
             guard FileManager.default.fileExists(atPath: artifactURL.path) else {
                 continue
@@ -371,11 +371,21 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
     }
 
-    private func cleanupCachedDownload(for artifact: ModelArtifact, at destination: URL) throws {
-        guard let cacheCleaner = artifactDownloader as? any ModelArtifactDownloadCacheCleaning else {
+    private func cleanupCachedDownloads(for descriptor: ModelDescriptor) throws {
+        guard
+            let artifactRootDirectory,
+            let artifacts = descriptor.source?.artifacts,
+            !artifacts.isEmpty,
+            let cacheCleaner = artifactDownloader as? any ModelArtifactDownloadCacheCleaning
+        else {
             return
         }
-        try cacheCleaner.removeCachedDownload(for: artifact, at: destination)
+
+        for artifact in artifacts {
+            let artifactURL = try ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+                .artifactURL(modelID: descriptor.id, artifact: artifact)
+            try cacheCleaner.removeCachedDownload(for: artifact, at: artifactURL)
+        }
     }
 
     private func cleanupAllArtifacts(for modelID: ModelID) async throws {

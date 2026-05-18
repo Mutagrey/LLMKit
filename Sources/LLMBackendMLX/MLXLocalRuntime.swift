@@ -8,7 +8,7 @@ import Tokenizers
 
 actor MLXLocalRuntime {
     private let resolver: ModelArtifactLocationResolver
-    private let memoryPolicy: MLXMemoryPolicy
+    private var memoryPolicy: MLXMemoryPolicy
     private var containers: [ModelID: ModelContainer] = [:]
     private var chatSessions: [MLXChatSessionKey: MLXChatSessionState] = [:]
 
@@ -135,6 +135,14 @@ actor MLXLocalRuntime {
         }
         let key = MLXChatSessionKey(modelID: modelID, sessionID: sessionID)
         chatSessions[key]?.cachedMessageCount = requestMessageCount + 1
+    }
+
+    func updateMemoryPolicy(_ memoryPolicy: MLXMemoryPolicy) {
+        self.memoryPolicy = memoryPolicy
+        Self.apply(memoryPolicy)
+        if !memoryPolicy.retainChatSessions {
+            chatSessions.removeAll()
+        }
     }
 
     func finishGenerationCleanup() {

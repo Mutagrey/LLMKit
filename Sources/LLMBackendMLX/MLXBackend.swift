@@ -64,6 +64,10 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
         await runtime?.unload(modelID: handle.id)
     }
 
+    public func updateMemoryPolicy(_ memoryPolicy: MLXMemoryPolicy) async {
+        await runtime?.updateMemoryPolicy(memoryPolicy)
+    }
+
     public func resetChatSession(modelID: ModelID, sessionID: SessionID) async {
         await runtime?.resetChatSession(modelID: modelID, sessionID: sessionID)
     }

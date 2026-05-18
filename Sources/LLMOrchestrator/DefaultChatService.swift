@@ -1,5 +1,6 @@
 import LLMCore
 import LLMProtocols
+import LLMSessions
 
 public struct DefaultChatService: ChatService {
     private let router: ModelRouter
@@ -8,6 +9,7 @@ public struct DefaultChatService: ChatService {
     private let tools: (any ToolService)?
     private let maximumToolRoundTrips: Int
     private let safetyPolicy: (any SafetyPolicyEvaluating)?
+    private let tokenEstimator: SessionTokenEstimator
 
     public init(
         router: ModelRouter,
@@ -15,7 +17,8 @@ public struct DefaultChatService: ChatService {
         fallback: FallbackCoordinator = FallbackCoordinator(),
         tools: (any ToolService)? = nil,
         maximumToolRoundTrips: Int = 8,
-        safetyPolicy: (any SafetyPolicyEvaluating)? = nil
+        safetyPolicy: (any SafetyPolicyEvaluating)? = nil,
+        tokenEstimator: SessionTokenEstimator = SessionTokenEstimator()
     ) {
         self.router = router
         self.registry = registry
@@ -23,6 +26,7 @@ public struct DefaultChatService: ChatService {
         self.tools = tools
         self.maximumToolRoundTrips = maximumToolRoundTrips
         self.safetyPolicy = safetyPolicy
+        self.tokenEstimator = tokenEstimator
     }
 
     public func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
@@ -32,6 +36,7 @@ public struct DefaultChatService: ChatService {
                     let effectiveRequest = try await requestAfterInputSafety(
                         await requestWithResolvedTools(request)
                     )
+                    try enforceInputBudget(for: effectiveRequest)
                     let plan = try await router.plan(requirements: effectiveRequest.requirements)
                     try await stream(effectiveRequest, using: plan, continuation: continuation)
                 } catch let error as SafetyPolicyDenied {
@@ -220,6 +225,20 @@ public struct DefaultChatService: ChatService {
             sessionID: request.sessionID,
             tools: request.tools
         )
+    }
+
+    private func enforceInputBudget(for request: ChatRequest) throws {
+        guard let maxInputTokens = request.requirements.budget?.maxInputTokens, maxInputTokens > 0 else {
+            return
+        }
+        let estimatedInputTokens = request.messages.reduce(0) { partialResult, message in
+            partialResult + tokenEstimator.estimateTokens(in: message)
+        }
+        guard estimatedInputTokens <= maxInputTokens else {
+            throw LLMError.executionFailed(
+                "Input exceeds the configured context window (\(estimatedInputTokens) estimated tokens > \(maxInputTokens) tokens). Reduce conversation history or context."
+            )
+        }
     }
 
     private func resultAfterOutputSafety(_ result: ChatResult, model: ModelDescriptor) async throws -> ChatResult {

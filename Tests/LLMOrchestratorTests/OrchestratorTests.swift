@@ -898,6 +898,41 @@ private actor FailingToolService: ToolService {
     #expect(capturedRequests.first?.request.sessionID == "domain-agent-session")
 }
 
+@Test func chatServiceRejectsRequestsOverInputBudgetBeforeBackendExecution() async throws {
+    let descriptor = ModelDescriptor(
+        id: "local-chat",
+        displayName: "Local Chat",
+        family: .custom("test"),
+        backend: .mlx,
+        capabilities: [.chat]
+    )
+    let backend = ToolLoopBackend(backendKind: .mlx)
+    let service = DefaultChatService(
+        router: ModelRouter(catalog: DefaultModelCatalog(models: [descriptor])),
+        registry: BackendRegistry(backends: [backend])
+    )
+    let request = ChatRequest(
+        messages: [ChatMessage(role: .user, content: MessageContent(text: String(repeating: "a", count: 100)))],
+        requirements: ExecutionRequirements(
+            requiredCapabilities: [.chat],
+            budget: ExecutionBudget(maxInputTokens: 1, maxOutputTokens: 32)
+        )
+    )
+
+    do {
+        for try await _ in service.send(request) {}
+        Issue.record("Expected input budget rejection before backend execution.")
+    } catch let error as LLMError {
+        guard case .executionFailed(let message) = error else {
+            Issue.record("Expected controlled execution failure.")
+            return
+        }
+        #expect(message.contains("Input exceeds the configured context window"))
+    }
+
+    #expect(await backend.capturedRequests().isEmpty)
+}
+
 @Test func chatServiceCanDisableFallbackForPreferredModel() async throws {
     let local = ModelDescriptor(id: "local", displayName: "A Local", family: .custom("test"), backend: .coreML, capabilities: [.chat])
     let remote = ModelDescriptor(id: "remote", displayName: "Z Remote", family: .custom("test"), backend: .remote, capabilities: [.chat], isRemote: true)

@@ -1,17 +1,21 @@
 import Foundation
 import LLMCore
 import LLMModelLifecycle
+import MLX
 import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
 actor MLXLocalRuntime {
     private let resolver: ModelArtifactLocationResolver
+    private let memoryPolicy: MLXMemoryPolicy
     private var containers: [ModelID: ModelContainer] = [:]
     private var chatSessions: [MLXChatSessionKey: MLXChatSessionState] = [:]
 
-    init(modelRootDirectory: URL) {
+    init(modelRootDirectory: URL, memoryPolicy: MLXMemoryPolicy = .default) {
         self.resolver = ModelArtifactLocationResolver(rootDirectory: modelRootDirectory)
+        self.memoryPolicy = memoryPolicy
+        Self.apply(memoryPolicy)
     }
 
     func hasLocalFiles(for descriptor: ModelDescriptor) -> Bool {
@@ -39,6 +43,8 @@ actor MLXLocalRuntime {
             throw LLMError.modelNotInstalled(descriptor.id)
         }
 
+        unloadContainersIfNeeded(beforeLoading: descriptor.id)
+
         let container = try await LLMModelFactory.shared.loadContainer(
             from: directory,
             using: TransformersTokenizerLoader()
@@ -50,6 +56,7 @@ actor MLXLocalRuntime {
     func unload(modelID: ModelID) {
         containers[modelID] = nil
         chatSessions = chatSessions.filter { $0.key.modelID != modelID }
+        clearCacheAfterUnloadIfNeeded()
     }
 
     func resetChatSession(modelID: ModelID, sessionID: SessionID) {
@@ -68,7 +75,7 @@ actor MLXLocalRuntime {
         let container = try await loadContainer(for: descriptor)
         let session = ChatSession(
             container,
-            generateParameters: GenerateParameters(maxTokens: maxTokens ?? 256)
+            generateParameters: generateParameters(maxTokens: maxTokens)
         )
         return session.streamResponse(to: prompt)
     }
@@ -81,9 +88,9 @@ actor MLXLocalRuntime {
     ) async throws -> AsyncThrowingStream<String, Error> {
         let container = try await loadContainer(for: descriptor)
         let mapped = try MLXChatMessageMapper().prompt(from: messages)
-        let generateParameters = GenerateParameters(maxTokens: maxTokens ?? 256)
+        let generateParameters = generateParameters(maxTokens: maxTokens)
 
-        guard let sessionID else {
+        guard let sessionID, memoryPolicy.retainChatSessions else {
             let session = ChatSession(
                 container,
                 history: mapped.history,
@@ -123,11 +130,68 @@ actor MLXLocalRuntime {
     }
 
     func recordChatCompletion(modelID: ModelID, sessionID: SessionID?, requestMessageCount: Int) {
-        guard let sessionID else {
+        guard let sessionID, memoryPolicy.retainChatSessions else {
             return
         }
         let key = MLXChatSessionKey(modelID: modelID, sessionID: sessionID)
         chatSessions[key]?.cachedMessageCount = requestMessageCount + 1
+    }
+
+    func finishGenerationCleanup() {
+        guard memoryPolicy.clearCacheAfterGeneration else {
+            return
+        }
+        Memory.clearCache()
+    }
+
+    private func unloadContainersIfNeeded(beforeLoading modelID: ModelID) {
+        guard let maxLoadedModels = memoryPolicy.maxLoadedModels else {
+            return
+        }
+        let loadedModelIDs = Array(containers.keys.filter { $0 != modelID })
+        guard loadedModelIDs.count >= maxLoadedModels else {
+            return
+        }
+        for loadedModelID in loadedModelIDs {
+            containers[loadedModelID] = nil
+        }
+        chatSessions = chatSessions.filter { $0.key.modelID == modelID }
+        clearCacheAfterUnloadIfNeeded()
+    }
+
+    private func clearCacheAfterUnloadIfNeeded() {
+        guard memoryPolicy.clearCacheOnUnload else {
+            return
+        }
+        Memory.clearCache()
+    }
+
+    private static func apply(_ memoryPolicy: MLXMemoryPolicy) {
+        if let cacheLimitBytes = memoryPolicy.cacheLimitBytes {
+            Memory.cacheLimit = cacheLimitBytes
+        }
+    }
+
+    private func generateParameters(maxTokens: Int?) -> GenerateParameters {
+        let defaults = GenerateParameters(maxTokens: maxTokens ?? 256)
+        return GenerateParameters(
+            maxTokens: maxTokens ?? 256,
+            maxKVSize: memoryPolicy.maxKVSize ?? defaults.maxKVSize,
+            kvBits: memoryPolicy.kvBits ?? defaults.kvBits,
+            kvGroupSize: memoryPolicy.kvGroupSize,
+            quantizedKVStart: memoryPolicy.quantizedKVStart,
+            temperature: defaults.temperature,
+            topP: defaults.topP,
+            topK: defaults.topK,
+            minP: defaults.minP,
+            repetitionPenalty: defaults.repetitionPenalty,
+            repetitionContextSize: defaults.repetitionContextSize,
+            presencePenalty: defaults.presencePenalty,
+            presenceContextSize: defaults.presenceContextSize,
+            frequencyPenalty: defaults.frequencyPenalty,
+            frequencyContextSize: defaults.frequencyContextSize,
+            prefillStepSize: memoryPolicy.prefillStepSize ?? defaults.prefillStepSize
+        )
     }
 }
 

@@ -24,6 +24,34 @@ import Testing
     #expect(requiresInstall.status == .requiresInstall)
 }
 
+@Test func mlxDefaultMemoryPolicyPreservesRuntimeBehavior() {
+    let policy = MLXMemoryPolicy.default
+
+    #expect(policy.cacheLimitBytes == nil)
+    #expect(!policy.clearCacheAfterGeneration)
+    #expect(!policy.clearCacheOnUnload)
+    #expect(policy.maxLoadedModels == nil)
+    #expect(policy.retainChatSessions)
+    #expect(policy.maxKVSize == nil)
+    #expect(policy.kvBits == nil)
+    #expect(policy.prefillStepSize == nil)
+}
+
+@Test func mlxStrictMemoryPolicyDisablesSessionRetentionAndCapsCache() {
+    let policy = MLXMemoryPolicy.strictForMemoryConstrainedApps
+
+    #expect(policy.cacheLimitBytes == 64 * 1024 * 1024)
+    #expect(policy.clearCacheAfterGeneration)
+    #expect(policy.clearCacheOnUnload)
+    #expect(policy.maxLoadedModels == 1)
+    #expect(!policy.retainChatSessions)
+    #expect(policy.maxKVSize == 8_192)
+    #expect(policy.kvBits == 4)
+    #expect(policy.kvGroupSize == 64)
+    #expect(policy.quantizedKVStart == 0)
+    #expect(policy.prefillStepSize == 256)
+}
+
 @Test func mlxBackendRejectsUnsupportedFamilyAndWrongBackend() async throws {
     let unsupportedFamily = ModelDescriptor(id: "custom", displayName: "Custom", family: .custom("test"), backend: .mlx, capabilities: [.completion])
     let wrongBackend = ModelDescriptor(id: "coreml", displayName: "Core ML", family: .qwen, backend: .coreML, capabilities: [.completion])

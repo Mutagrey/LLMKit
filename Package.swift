@@ -133,6 +133,7 @@ let package = Package(
         )
     ],
     dependencies: [
+        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMajor(from: "0.31.3")),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMajor(from: "3.31.3")),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0")
         // .package(url: "https://github.com/apple/swift-collections", from: "1.0.0")
@@ -262,6 +263,7 @@ let package = Package(
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability",
+                .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),

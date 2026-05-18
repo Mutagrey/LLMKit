@@ -12,10 +12,14 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
     public init(
         runtimeAvailable: Bool = false,
         modelRootDirectory: URL? = ModelArtifactLocationResolver.defaultRootDirectory(),
-        supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix()
+        supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix(),
+        memoryPolicy: MLXMemoryPolicy = .default
     ) {
         if runtimeAvailable, let modelRootDirectory {
-            self.runtime = MLXLocalRuntime(modelRootDirectory: modelRootDirectory)
+            self.runtime = MLXLocalRuntime(
+                modelRootDirectory: modelRootDirectory,
+                memoryPolicy: memoryPolicy
+            )
         } else {
             self.runtime = nil
         }
@@ -140,13 +144,19 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
             throw LLMError.unavailable
         }
 
-        let stream = try await runtime.stream(
-            prompt: prompt,
-            model: model,
-            maxTokens: maxTokens
-        )
-
-        return try await collectSanitizedText(from: stream, onDelta: onDelta)
+        do {
+            let stream = try await runtime.stream(
+                prompt: prompt,
+                model: model,
+                maxTokens: maxTokens
+            )
+            let output = try await collectSanitizedText(from: stream, onDelta: onDelta)
+            await runtime.finishGenerationCleanup()
+            return output
+        } catch {
+            await runtime.finishGenerationCleanup()
+            throw error
+        }
     }
 
     private func streamSanitizedChat(
@@ -160,14 +170,20 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
             throw LLMError.unavailable
         }
 
-        let stream = try await runtime.stream(
-            messages: messages,
-            sessionID: sessionID,
-            model: model,
-            maxTokens: maxTokens
-        )
-
-        return try await collectSanitizedText(from: stream, onDelta: onDelta)
+        do {
+            let stream = try await runtime.stream(
+                messages: messages,
+                sessionID: sessionID,
+                model: model,
+                maxTokens: maxTokens
+            )
+            let output = try await collectSanitizedText(from: stream, onDelta: onDelta)
+            await runtime.finishGenerationCleanup()
+            return output
+        } catch {
+            await runtime.finishGenerationCleanup()
+            throw error
+        }
     }
 
     private func collectSanitizedText(

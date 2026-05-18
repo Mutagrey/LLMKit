@@ -1577,6 +1577,37 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(artifactPaths.contains("processor_config.json"))
 }
 
+@Test func curatedCatalogIncludesExperimentalUncensoredQwenModels() {
+    let descriptors = [
+        CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit,
+        CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit,
+        CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit
+    ]
+    let manifestIDs = Set(CuratedModelManifests.localIPhoneTextModels.models.map(\.id))
+
+    #expect(descriptors.allSatisfy { manifestIDs.contains($0.id) })
+    #expect(descriptors.allSatisfy { $0.family == .qwen })
+    #expect(descriptors.allSatisfy { $0.backend == .mlx })
+    #expect(descriptors.allSatisfy { $0.contextWindowTokens == 32768 })
+    #expect(descriptors.allSatisfy { $0.tags.contains("experimental") })
+    #expect(descriptors.allSatisfy { $0.tags.contains("uncensored") })
+    #expect(descriptors.allSatisfy { !$0.tags.contains("iphone-recommended") })
+
+    let gabliteratedArtifacts = CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
+    let abliteratedArtifacts = CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
+    let skyHighHermesArtifacts = CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
+
+    #expect(CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit.id == "mlx-community.Qwen3-0.6B-gabliterated-4bit")
+    #expect(CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit.id == "mlx-community.Josiefied-Qwen3-1.7B-abliterated-v1-4bit")
+    #expect(CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit.id == "mlx-community.Qwen3-4B-Sky-High-Hermes-gabliterated-4bit")
+    #expect(gabliteratedArtifacts.contains("chat_template.jinja"))
+    #expect(gabliteratedArtifacts.contains("generation_config.json"))
+    #expect(abliteratedArtifacts.contains("added_tokens.json"))
+    #expect(abliteratedArtifacts.contains("merges.txt"))
+    #expect(skyHighHermesArtifacts.contains("chat_template.jinja"))
+    #expect(skyHighHermesArtifacts.contains("generation_config.json"))
+}
+
 @Test func huggingFaceFeaturedCatalogBuildsGemma4E2BDescriptorWithProcessorArtifacts() async throws {
     let catalog = HuggingFaceFeaturedModelCatalog(
         fallbackCatalog: DefaultModelCatalog(models: []),

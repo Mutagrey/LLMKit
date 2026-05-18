@@ -13,9 +13,12 @@ public enum CuratedModelManifests {
             gemma4E2BInstructionMLX4Bit,
             qwen25HalfBInstructMLX4Bit,
             qwen30Point6BMLX4Bit,
+            qwen30Point6BGabliteratedMLX4Bit,
             qwen31Point7BMLX4Bit,
+            qwen31Point7BAbliteratedMLX4Bit,
             gemma31BInstructionMLX4Bit,
-            qwen34BMLX4Bit
+            qwen34BMLX4Bit,
+            qwen34BSkyHighHermesGabliteratedMLX4Bit
         ]
     )
 
@@ -76,6 +79,19 @@ public enum CuratedModelManifests {
         tags: ["starter", "iphone-entry"]
     )
 
+    public static let qwen30Point6BGabliteratedMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3-0.6B-gabliterated-4bit",
+        displayName: "Qwen3 0.6B Gabliterated 4-bit",
+        repository: "mlx-community/Qwen3-0.6B-gabliterated-4bit",
+        revision: "7c4366720cfe5fb2a3a0802ed9d712cfc3b1b955",
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 1,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 347_000_000,
+        artifacts: qwenChatTemplateArtifacts,
+        tags: ["experimental", "uncensored", "gabliterated"]
+    )
+
     public static let qwen31Point7BMLX4Bit = qwenModel(
         id: "mlx-community.Qwen3-1.7B-4bit",
         displayName: "Qwen3 1.7B 4-bit",
@@ -88,6 +104,18 @@ public enum CuratedModelManifests {
         tags: ["balanced", "iphone-recommended"]
     )
 
+    public static let qwen31Point7BAbliteratedMLX4Bit = qwenModel(
+        id: "mlx-community.Josiefied-Qwen3-1.7B-abliterated-v1-4bit",
+        displayName: "Qwen3 1.7B Abliterated 4-bit",
+        repository: "mlx-community/Josiefied-Qwen3-1.7B-abliterated-v1-4bit",
+        revision: "d3d25b1ab4aab996965239f3cd1e8a1887e97d30",
+        minimumRAMGB: 6,
+        minimumFreeDiskGB: 2,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 984_000_000,
+        tags: ["experimental", "uncensored", "abliterated"]
+    )
+
     public static let qwen34BMLX4Bit = qwenModel(
         id: "mlx-community.Qwen3-4B-4bit",
         displayName: "Qwen3 4B 4-bit",
@@ -98,6 +126,19 @@ public enum CuratedModelManifests {
         contextWindowTokens: 32768,
         estimatedDownloadSizeBytes: 2_274_445_183,
         tags: ["quality", "iphone-pro"]
+    )
+
+    public static let qwen34BSkyHighHermesGabliteratedMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3-4B-Sky-High-Hermes-gabliterated-4bit",
+        displayName: "Qwen3 4B Sky High Hermes Gabliterated 4-bit",
+        repository: "mlx-community/Qwen3-4B-Sky-High-Hermes-gabliterated-4bit",
+        revision: "312009c7dc51cdf5b87b3e16701fd0441391205a",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 4,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 2_270_000_000,
+        artifacts: qwenChatTemplateArtifacts,
+        tags: ["experimental", "uncensored", "gabliterated"]
     )
 
     public static let gemma31BInstructionMLX4Bit = gemmaTextModel(
@@ -143,6 +184,7 @@ public enum CuratedModelManifests {
         minimumFreeDiskGB: Int,
         contextWindowTokens: Int,
         estimatedDownloadSizeBytes: Int64,
+        artifacts: [String] = qwenArtifacts,
         tags: [String]
     ) -> ModelDescriptor {
         ModelDescriptor(
@@ -164,7 +206,7 @@ public enum CuratedModelManifests {
             source: pinnedSource(
                 repository: repository,
                 revision: revision,
-                artifacts: qwenArtifacts
+                artifacts: artifacts
             ),
             license: apacheTwoLicense(repositoryOwner: repository),
             quantization: Quantization(format: "MLX 4-bit", bits: 4),
@@ -301,6 +343,16 @@ public enum CuratedModelManifests {
         "tokenizer.json",
         "tokenizer_config.json",
         "vocab.json"
+    ]
+
+    private static let qwenChatTemplateArtifacts = [
+        "chat_template.jinja",
+        "config.json",
+        "generation_config.json",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
     ]
 
     private static let gemmaTextArtifacts = [

@@ -35,7 +35,10 @@ import Testing
 
     #expect(models.count >= 5)
     #expect(models.contains { $0.id.rawValue == "mlx-community.Qwen3-0.6B-4bit" })
+    #expect(models.contains { $0.id == LLMKitExampleModels.qwen30Point6BGabliteratedMLX4Bit.id })
     #expect(models.contains { $0.id.rawValue == "mlx-community.Qwen3-1.7B-4bit" })
+    #expect(models.contains { $0.id == LLMKitExampleModels.qwen31Point7BAbliteratedMLX4Bit.id })
+    #expect(models.contains { $0.id == LLMKitExampleModels.qwen34BSkyHighHermesGabliteratedMLX4Bit.id })
     #expect(models.contains { $0.id.rawValue == "mlx-community.gemma-3-1b-it-4bit" })
 }
 
@@ -46,6 +49,9 @@ import Testing
     #expect(configuration.downloadableModels.count == LLMKitExampleModels.localIPhoneTextModels.count)
     #expect(models.contains { $0.id == LLMKitExampleModels.appleIntelligence.id })
     #expect(models.contains { $0.id == LLMKitExampleModels.qwen34BMLX4Bit.id })
+    #expect(configuration.downloadableModels.contains {
+        $0.id == LLMKitExampleModels.qwen34BSkyHighHermesGabliteratedMLX4Bit.id
+    })
 }
 
 @MainActor

@@ -14,7 +14,6 @@ xcuserdata/
 *.xcresult
 
 # Generated/downloaded native runtime artifacts
-Vendor/llama.cpp/llama.xcframework/
 Vendor/llama.cpp/*.zip
 Vendor/llama.cpp/**/*.dSYM/
 Vendor/llama.cpp/**/dSYMs/

@@ -12,6 +12,7 @@ local artifacts.
 `ModelCatalogCardView` renders a compact model catalog row/card for model pickers and example catalogs. Hosts provide generic status,
 availability, selection, install, cancel, delete, and details actions; the view does not choose models, route requests, or touch storage.
 `ModelInstallProgressView` renders install state as a compact line-style progress component suitable for lists and detail sections.
+Progress presentation is normalized defensively so percent-shaped external inputs do not render inflated percentages.
 
 `ModelDownloadsViewModel.install(_:)` consumes model install events, tracks in-flight installs by model ID, records thrown install
 errors as short presentation-safe messages, updates install state by model ID, and stores richer progress detail when the

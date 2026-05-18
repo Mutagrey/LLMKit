@@ -53,7 +53,7 @@ public struct FoundationModelsBackend: ModelBackend {
     public func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(.started(request.model))
-            Task {
+            let task = Task {
                 do {
                     try await ensureAvailable(request.model)
                     let text = try await FoundationModelsNativeRuntime.generate(request)
@@ -68,13 +68,16 @@ public struct FoundationModelsBackend: ModelBackend {
                     continuation.finish(throwing: LLMError.executionFailed(error.localizedDescription))
                 }
             }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 
     public func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(.started(request.model))
-            Task {
+            let task = Task {
                 do {
                     try await ensureAvailable(request.model)
                     let text = try await FoundationModelsNativeRuntime.chat(request)
@@ -89,6 +92,9 @@ public struct FoundationModelsBackend: ModelBackend {
                 } catch {
                     continuation.finish(throwing: LLMError.executionFailed(error.localizedDescription))
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }

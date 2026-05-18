@@ -10,22 +10,38 @@ public enum CuratedModelManifests {
     public static let localIPhoneTextModels = ModelManifest(
         id: "llmkit.local.iphone-text-models",
         models: [
-            gemma4E2BInstructionMLX4Bit,
-            qwen25HalfBInstructMLX4Bit,
+            qwen35Point8BOptiQMLX4Bit,
+            qwen35TwoBOptiQMLX4Bit,
+            qwen35FourBOptiQMLX4Bit,
             qwen30Point6BMLX4Bit,
             qwen30Point6BGabliteratedMLX4Bit,
             qwen31Point7BMLX4Bit,
             qwen31Point7BAbliteratedMLX4Bit,
+            qwen34BInstruct2507MLX4Bit,
             gemma31BInstructionMLX4Bit,
-            qwen34BMLX4Bit,
-            qwen34BSkyHighHermesGabliteratedMLX4Bit
+            gemma4E2BInstructionMLX4Bit,
+            llama32OneBInstructMLX4Bit,
+            llama32ThreeBInstructMLX4Bit,
+            llama32ThreeBInstructUncensoredMLX6Bit,
+            josiefiedQwen38BAbliteratedMLX4Bit,
+            qwen25SevenBInstructUncensoredMLX4Bit,
+            qwen34BSkyHighHermesGabliteratedMLX4Bit,
+            metaLlama31EightBInstructAbliteratedMLX4Bit
+        ]
+    )
+
+    public static let localIPhoneGGUFTextModels = ModelManifest(
+        id: "llmkit.local.iphone-gguf-text-models",
+        models: [
+            llama32OneBInstructGGUFQ4KM,
+            llama32ThreeBInstructGGUFQ4KM
         ]
     )
 
     public static func combinedExampleCatalog() -> ModelManifest {
         merged(
             id: "llmkit.example.catalog",
-            manifests: [appleFoundation, localIPhoneTextModels]
+            manifests: [appleFoundation, localIPhoneTextModels, localIPhoneGGUFTextModels]
         )
     }
 
@@ -79,6 +95,45 @@ public enum CuratedModelManifests {
         tags: ["starter", "iphone-entry"]
     )
 
+    public static let qwen35Point8BOptiQMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3.5-0.8B-OptiQ-4bit",
+        displayName: "Qwen3.5 0.8B OptiQ 4-bit",
+        repository: "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
+        revision: "d46340b3af35798ffa8f63a8ad72afed038b234a",
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 1,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 650_257_188,
+        artifacts: qwenOptiQArtifacts,
+        tags: ["starter", "iphone-entry", "optiq", "latest"]
+    )
+
+    public static let qwen35TwoBOptiQMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3.5-2B-OptiQ-4bit",
+        displayName: "Qwen3.5 2B OptiQ 4-bit",
+        repository: "mlx-community/Qwen3.5-2B-OptiQ-4bit",
+        revision: "dc9f6362624807ba8b11ec40df10474c1d467f77",
+        minimumRAMGB: 6,
+        minimumFreeDiskGB: 2,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 1_533_885_748,
+        artifacts: qwenOptiQArtifacts,
+        tags: ["balanced", "iphone-recommended", "optiq", "latest"]
+    )
+
+    public static let qwen35FourBOptiQMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3.5-4B-OptiQ-4bit",
+        displayName: "Qwen3.5 4B OptiQ 4-bit",
+        repository: "mlx-community/Qwen3.5-4B-OptiQ-4bit",
+        revision: "fecba971a2d0cd02b6b025862c1aaa7d2e3dad15",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 4,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 3_269_669_552,
+        artifacts: qwenOptiQArtifacts,
+        tags: ["quality", "iphone-pro", "optiq", "latest"]
+    )
+
     public static let qwen30Point6BGabliteratedMLX4Bit = qwenModel(
         id: "mlx-community.Qwen3-0.6B-gabliterated-4bit",
         displayName: "Qwen3 0.6B Gabliterated 4-bit",
@@ -128,6 +183,48 @@ public enum CuratedModelManifests {
         tags: ["quality", "iphone-pro"]
     )
 
+    public static let qwen34BInstruct2507MLX4Bit = qwenModel(
+        id: "mlx-community.Qwen3-4B-Instruct-2507-4bit",
+        displayName: "Qwen3 4B Instruct 2507 4-bit",
+        repository: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        revision: "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 4,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 2_263_022_417,
+        artifacts: qwenInstructArtifacts,
+        tags: ["quality", "iphone-pro", "instruct", "latest"]
+    )
+
+    public static let josiefiedQwen38BAbliteratedMLX4Bit = qwenModel(
+        id: "mlx-community.Josiefied-Qwen3-8B-abliterated-v1-4bit",
+        displayName: "Qwen3 8B Abliterated 4-bit",
+        repository: "mlx-community/Josiefied-Qwen3-8B-abliterated-v1-4bit",
+        revision: "82a8d731dc4f724f2c908090b5949984cf5a6348",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 4_607_835_164,
+        tags: ["quality", "iphone-pro", "experimental", "uncensored", "abliterated"]
+    )
+
+    public static let qwen25SevenBInstructUncensoredMLX4Bit = qwenModel(
+        id: "mlx-community.Qwen2.5-7B-Instruct-Uncensored-4bit",
+        displayName: "Qwen2.5 7B Instruct Uncensored 4-bit",
+        repository: "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit",
+        revision: "1d8b6a0dd6a659bb6c8711be60f993682e5c83f1",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 32768,
+        estimatedDownloadSizeBytes: 4_284_346_187,
+        license: ModelLicense(
+            name: "GNU General Public License v3.0",
+            spdxIdentifier: "GPL-3.0",
+            url: URL(string: "https://huggingface.co/mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit/blob/main/LICENSE")
+        ),
+        tags: ["quality", "iphone-pro", "uncensored", "gpl-3.0"]
+    )
+
     public static let qwen34BSkyHighHermesGabliteratedMLX4Bit = qwenModel(
         id: "mlx-community.Qwen3-4B-Sky-High-Hermes-gabliterated-4bit",
         displayName: "Qwen3 4B Sky High Hermes Gabliterated 4-bit",
@@ -164,6 +261,93 @@ public enum CuratedModelManifests {
         tags: ["quality", "iphone-pro", "gemma4", "agentic"]
     )
 
+    public static let gemma4E2BInstructionOptiQMLX4Bit = gemma4TextModel(
+        id: "mlx-community.gemma-4-e2b-it-OptiQ-4bit",
+        displayName: "Gemma 4 E2B Instruct OptiQ 4-bit",
+        repository: "mlx-community/gemma-4-e2b-it-OptiQ-4bit",
+        revision: "789c0188f6ea14f6543101ef509e02b3cfb432ab",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 4_296_816_768,
+        tags: ["quality", "iphone-pro", "gemma4", "agentic", "optiq", "latest"]
+    )
+
+    public static let llama32OneBInstructMLX4Bit = llamaModel(
+        id: "mlx-community.Llama-3.2-1B-Instruct-4bit",
+        displayName: "Llama 3.2 1B Instruct 4-bit",
+        repository: "mlx-community/Llama-3.2-1B-Instruct-4bit",
+        revision: "08231374eeacb049a0eade7922910865b8fce912",
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 1,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 695_283_921,
+        tags: ["starter", "iphone-entry"]
+    )
+
+    public static let llama32ThreeBInstructMLX4Bit = llamaModel(
+        id: "mlx-community.Llama-3.2-3B-Instruct-4bit",
+        displayName: "Llama 3.2 3B Instruct 4-bit",
+        repository: "mlx-community/Llama-3.2-3B-Instruct-4bit",
+        revision: "7f0dc925e0d0afb0322d96f9255cfddf2ba5636e",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 1_807_496_278,
+        tags: ["balanced", "iphone-recommended"]
+    )
+
+    public static let llama32ThreeBInstructUncensoredMLX6Bit = llamaModel(
+        id: "mlx-community.Llama-3.2-3B-Instruct-uncensored-6bit",
+        displayName: "Llama 3.2 3B Instruct Uncensored 6-bit",
+        repository: "mlx-community/Llama-3.2-3B-Instruct-uncensored-6bit",
+        revision: "3aba7aeea6314641a6110edd1ef40e49ad941033",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 2_610_640_196,
+        quantization: Quantization(format: "MLX 6-bit", bits: 6),
+        tags: ["balanced", "iphone-pro", "uncensored"]
+    )
+
+    public static let metaLlama31EightBInstructAbliteratedMLX4Bit = llamaModel(
+        id: "mlx-community.Meta-Llama-3.1-8B-Instruct-abliterated-4bit",
+        displayName: "Llama 3.1 8B Instruct Abliterated 4-bit",
+        repository: "mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-4bit",
+        revision: "4d161a4206d3a408bc942effa61dbfff4febe63c",
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 5,
+        contextWindowTokens: 131_072,
+        estimatedDownloadSizeBytes: 4_517_489_037,
+        tags: ["quality", "iphone-pro", "uncensored", "abliterated"]
+    )
+
+    public static let llama32OneBInstructGGUFQ4KM = llamaGGUFModel(
+        id: "bartowski.Llama-3.2-1B-Instruct-GGUF.Q4_K_M",
+        displayName: "Llama 3.2 1B Instruct GGUF Q4_K_M",
+        repository: "bartowski/Llama-3.2-1B-Instruct-GGUF",
+        revision: "067b946cf014b7c697f3654f621d577a3e3afd1c",
+        fileName: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        byteCount: 807_694_464,
+        minimumRAMGB: 4,
+        minimumFreeDiskGB: 1,
+        contextWindowTokens: 131_072,
+        tags: ["starter", "iphone-entry"]
+    )
+
+    public static let llama32ThreeBInstructGGUFQ4KM = llamaGGUFModel(
+        id: "bartowski.Llama-3.2-3B-Instruct-GGUF.Q4_K_M",
+        displayName: "Llama 3.2 3B Instruct GGUF Q4_K_M",
+        repository: "bartowski/Llama-3.2-3B-Instruct-GGUF",
+        revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
+        fileName: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        byteCount: 2_019_377_696,
+        minimumRAMGB: 6,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 131_072,
+        tags: ["balanced", "iphone-recommended"]
+    )
+
     public static func merged(id: String, manifests: [ModelManifest]) -> ModelManifest {
         let models = manifests
             .flatMap(\.models)
@@ -185,6 +369,7 @@ public enum CuratedModelManifests {
         contextWindowTokens: Int,
         estimatedDownloadSizeBytes: Int64,
         artifacts: [String] = qwenArtifacts,
+        license: ModelLicense? = nil,
         tags: [String]
     ) -> ModelDescriptor {
         ModelDescriptor(
@@ -208,7 +393,7 @@ public enum CuratedModelManifests {
                 revision: revision,
                 artifacts: artifacts
             ),
-            license: apacheTwoLicense(repositoryOwner: repository),
+            license: license ?? apacheTwoLicense(repositoryOwner: repository),
             quantization: Quantization(format: "MLX 4-bit", bits: 4),
             estimatedDownloadSizeBytes: estimatedDownloadSizeBytes,
             tags: baseLocalTags + ["qwen"] + tags
@@ -286,10 +471,91 @@ public enum CuratedModelManifests {
                 revision: revision,
                 artifacts: gemma4TextArtifacts
             ),
-            license: apacheTwoLicense(repositoryOwner: repository),
+            license: gemmaLicense,
             quantization: Quantization(format: "MLX 4-bit", bits: 4),
             estimatedDownloadSizeBytes: estimatedDownloadSizeBytes,
             tags: baseLocalTags + ["gemma"] + tags
+        )
+    }
+
+    private static func llamaModel(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        estimatedDownloadSizeBytes: Int64,
+        quantization: Quantization = Quantization(format: "MLX 4-bit", bits: 4),
+        tags: [String]
+    ) -> ModelDescriptor {
+        ModelDescriptor(
+            id: id,
+            displayName: displayName,
+            family: .llama,
+            backend: .mlx,
+            capabilities: [
+                .chat,
+                .completion,
+                .streaming,
+                .offline,
+                .longContext
+            ],
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            supportsStreaming: true,
+            source: pinnedSource(
+                repository: repository,
+                revision: revision,
+                artifacts: llamaTextArtifacts
+            ),
+            license: llamaLicense(repository: repository),
+            quantization: quantization,
+            estimatedDownloadSizeBytes: estimatedDownloadSizeBytes,
+            tags: baseLocalTags + ["llama"] + tags
+        )
+    }
+
+    private static func llamaGGUFModel(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        fileName: String,
+        byteCount: Int64,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        tags: [String]
+    ) -> ModelDescriptor {
+        ModelDescriptor(
+            id: id,
+            displayName: displayName,
+            family: .llama,
+            backend: .llamaCpp,
+            capabilities: [
+                .chat,
+                .completion,
+                .streaming,
+                .offline,
+                .longContext
+            ],
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            supportsStreaming: true,
+            source: ggufSource(
+                repository: repository,
+                revision: revision,
+                fileName: fileName,
+                byteCount: byteCount
+            ),
+            license: llamaLicense(repository: repository),
+            quantization: Quantization(format: "GGUF Q4_K_M", bits: 4),
+            estimatedDownloadSizeBytes: byteCount,
+            tags: baseGGUFLocalTags + ["llama"] + tags
         )
     }
 
@@ -313,6 +579,28 @@ public enum CuratedModelManifests {
         )
     }
 
+    private static func ggufSource(
+        repository: String,
+        revision: String,
+        fileName: String,
+        byteCount: Int64
+    ) -> ModelSource {
+        ModelSource(
+            provider: .huggingFace,
+            repository: repository,
+            revision: revision,
+            homepageURL: URL(string: "https://huggingface.co/\(repository)"),
+            artifacts: [
+                ModelArtifact(
+                    id: fileName,
+                    url: URL(string: "https://huggingface.co/\(repository)/resolve/\(revision)/\(fileName)")!,
+                    relativePath: fileName,
+                    byteCount: byteCount
+                )
+            ]
+        )
+    }
+
     private static func apacheTwoLicense(repositoryOwner repository: String) -> ModelLicense {
         ModelLicense(
             name: "Apache License 2.0",
@@ -329,6 +617,14 @@ public enum CuratedModelManifests {
     private static let baseLocalTags = [
         "downloadable",
         "mlx",
+        "local",
+        "iphone"
+    ]
+
+    private static let baseGGUFLocalTags = [
+        "downloadable",
+        "gguf",
+        "llama.cpp",
         "local",
         "iphone"
     ]
@@ -355,6 +651,29 @@ public enum CuratedModelManifests {
         "tokenizer_config.json"
     ]
 
+    private static let qwenOptiQArtifacts = [
+        "chat_template.jinja",
+        "config.json",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
+    ]
+
+    private static let qwenInstructArtifacts = [
+        "added_tokens.json",
+        "chat_template.jinja",
+        "config.json",
+        "generation_config.json",
+        "merges.txt",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json"
+    ]
+
     private static let gemmaTextArtifacts = [
         "added_tokens.json",
         "config.json",
@@ -377,4 +696,20 @@ public enum CuratedModelManifests {
         "tokenizer.json",
         "tokenizer_config.json"
     ]
+
+    private static let llamaTextArtifacts = [
+        "config.json",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
+    ]
+
+    private static func llamaLicense(repository: String) -> ModelLicense {
+        ModelLicense(
+            name: "Llama Community License",
+            url: URL(string: "https://huggingface.co/\(repository)/blob/main/LICENSE")
+        )
+    }
 }

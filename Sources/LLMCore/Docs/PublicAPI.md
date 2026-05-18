@@ -5,6 +5,8 @@ Public API is limited to stable value types and enums needed across targets.
 Downloadable local models are described through backend-neutral metadata on `ModelDescriptor`:
 `ModelSource`, `ModelArtifact`, `ModelLicense`, and `Quantization`. These types describe where artifacts come from
 without making core depend on any downloader, model hub SDK, or backend runtime.
+`BackendKind.llamaCpp` identifies native llama.cpp GGUF adapters while keeping GGUF file metadata in the same
+backend-neutral `ModelArtifact` shape used by other downloadable model formats.
 
 Structured generation uses `StructuredOutputSchema` as the backend-neutral schema contract. It stores a canonical
 JSON-schema-like object tree using existing `ToolValue` primitives so schema payloads do not require a second generic

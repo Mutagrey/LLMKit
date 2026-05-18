@@ -28,6 +28,39 @@ private actor RecordingTransport: HTTPTransport {
     }
 }
 
+private actor StreamingRecordingTransport: HTTPStreamingTransport {
+    private(set) var requests: [HTTPRequest] = []
+    private let chunks: [String]
+    private let statusCode: Int
+
+    init(chunks: [String], statusCode: Int = 200) {
+        self.chunks = chunks
+        self.statusCode = statusCode
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        requests.append(request)
+        return HTTPResponse(statusCode: statusCode, body: Data(chunks.joined().utf8))
+    }
+
+    nonisolated func stream(_ request: HTTPRequest) -> AsyncThrowingStream<HTTPStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                await record(request)
+                continuation.yield(.response(HTTPResponseHead(statusCode: statusCode)))
+                for chunk in chunks {
+                    continuation.yield(.body(Data(chunk.utf8)))
+                }
+                continuation.finish()
+            }
+        }
+    }
+
+    private func record(_ request: HTTPRequest) {
+        requests.append(request)
+    }
+}
+
 @Test func remoteConfigurationStoresProviderID() throws {
     let url = try #require(URL(string: "https://example.com"))
     let configuration = RemoteConfiguration(providerID: "test", baseURL: url)
@@ -208,6 +241,45 @@ private actor RecordingTransport: HTTPTransport {
     #expect(requests.first?.method == .post)
     #expect(requests.first?.url.absoluteString == "https://example.com/v1/completions")
     #expect(requests.first?.headers["Authorization"] == "Bearer token")
+}
+
+@Test func remoteBackendStreamsRemoteDeltasBeforeCompletion() async throws {
+    let url = try #require(URL(string: "https://example.com/v1"))
+    let transport = StreamingRecordingTransport(chunks: [
+        #"data: {"choices":[{"text":"hel"}]}"# + "\n\n",
+        #"data: {"choices":[{"text":"lo","finish_reason":"stop"}]}"# + "\n\n",
+        "data: [DONE]\n\n"
+    ])
+    let backend = RemoteBackend(
+        configuration: RemoteConfiguration(providerID: "test", baseURL: url),
+        transport: transport
+    )
+    let model = ModelDescriptor(
+        id: "remote-model",
+        displayName: "Remote",
+        family: .custom("test"),
+        backend: .remote,
+        capabilities: [.completion, .streaming],
+        supportsStreaming: true,
+        isRemote: true
+    )
+
+    var deltas: [String] = []
+    var completed: GenerationResult?
+    for try await event in backend.generate(BackendGenerationRequest(request: GenerationRequest(prompt: "hello"), model: model)) {
+        switch event {
+        case .delta(let text):
+            deltas.append(text)
+        case .completed(let result):
+            completed = result
+        case .started, .failed:
+            break
+        }
+    }
+
+    #expect(deltas == ["hel", "lo"])
+    #expect(completed?.text == "hello")
+    #expect(await transport.requests.count == 1)
 }
 
 @Test func remoteBackendMapsGenerationRequestBody() async throws {

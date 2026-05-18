@@ -1577,21 +1577,30 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(artifactPaths.contains("processor_config.json"))
 }
 
-@Test func curatedCatalogIncludesExperimentalUncensoredQwenModels() {
+@Test func curatedIPhoneCatalogIsCappedToEightGBRAM() {
+    let descriptors = CuratedModelManifests.localIPhoneTextModels.models
+
+    #expect(descriptors.allSatisfy { $0.backend == .mlx })
+    #expect(descriptors.allSatisfy { ($0.minimumRAMGB ?? 0) <= 8 })
+    #expect(descriptors.allSatisfy { $0.tags.contains("iphone") })
+}
+
+@Test func curatedCatalogIncludesRunnableUncensoredIPhoneModels() {
     let descriptors = [
         CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit,
         CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit,
-        CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit
+        CuratedModelManifests.josiefiedQwen38BAbliteratedMLX4Bit,
+        CuratedModelManifests.qwen25SevenBInstructUncensoredMLX4Bit,
+        CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit,
+        CuratedModelManifests.llama32ThreeBInstructUncensoredMLX6Bit,
+        CuratedModelManifests.metaLlama31EightBInstructAbliteratedMLX4Bit
     ]
     let manifestIDs = Set(CuratedModelManifests.localIPhoneTextModels.models.map(\.id))
 
     #expect(descriptors.allSatisfy { manifestIDs.contains($0.id) })
-    #expect(descriptors.allSatisfy { $0.family == .qwen })
     #expect(descriptors.allSatisfy { $0.backend == .mlx })
-    #expect(descriptors.allSatisfy { $0.contextWindowTokens == 32768 })
-    #expect(descriptors.allSatisfy { $0.tags.contains("experimental") })
     #expect(descriptors.allSatisfy { $0.tags.contains("uncensored") })
-    #expect(descriptors.allSatisfy { !$0.tags.contains("iphone-recommended") })
+    #expect(descriptors.allSatisfy { ($0.minimumRAMGB ?? 0) <= 8 })
 
     let gabliteratedArtifacts = CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
     let abliteratedArtifacts = CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
@@ -1608,7 +1617,7 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(skyHighHermesArtifacts.contains("generation_config.json"))
 }
 
-@Test func huggingFaceFeaturedCatalogBuildsGemma4E2BDescriptorWithProcessorArtifacts() async throws {
+@Test func huggingFaceFeaturedCatalogBuildsGemma4E2BDescriptorWithStats() async throws {
     let catalog = HuggingFaceFeaturedModelCatalog(
         fallbackCatalog: DefaultModelCatalog(models: []),
         repositories: ["mlx-community/gemma-4-e2b-it-4bit"],
@@ -1616,15 +1625,17 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
             Data("""
             {
               "sha": "99d9a53ff828d365a8ecae538e45f80a08d612cd",
+              "downloads": 113800,
+              "likes": 16,
               "siblings": [
-                { "rfilename": "config.json", "size": 1024 },
-                { "rfilename": "generation_config.json", "size": 128 },
-                { "rfilename": "model.safetensors", "size": 3843248947 },
-                { "rfilename": "model.safetensors.index.json", "size": 256 },
-                { "rfilename": "processor_config.json", "size": 128 },
-                { "rfilename": "tokenizer.json", "size": 2048 },
-                { "rfilename": "tokenizer_config.json", "size": 512 },
-                { "rfilename": "chat_template.jinja", "size": 512 }
+                { "rfilename": "config.json" },
+                { "rfilename": "generation_config.json" },
+                { "rfilename": "model.safetensors" },
+                { "rfilename": "model.safetensors.index.json" },
+                { "rfilename": "processor_config.json" },
+                { "rfilename": "tokenizer.json" },
+                { "rfilename": "tokenizer_config.json" },
+                { "rfilename": "chat_template.jinja" }
               ]
             }
             """.utf8)
@@ -1637,8 +1648,64 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(descriptor.displayName == "Gemma 4 E2B Instruct 4-bit")
     #expect(descriptor.contextWindowTokens == 131_072)
     #expect(descriptor.capabilities.contains(.longContext))
+    #expect(descriptor.estimatedDownloadSizeBytes == 3_843_248_947)
+    #expect(descriptor.tags.contains("hf-downloads:113800"))
+    #expect(descriptor.tags.contains("hf-likes:16"))
     #expect(artifactPaths.contains("processor_config.json"))
     #expect(artifactPaths.contains("chat_template.jinja"))
+}
+
+@Test func huggingFaceFeaturedCatalogSortsByPopularityAndUsesSizeHints() async throws {
+    let catalog = HuggingFaceFeaturedModelCatalog(
+        fallbackCatalog: DefaultModelCatalog(models: []),
+        repositories: [
+            "mlx-community/gemma-4-e2b-it-4bit",
+            "mlx-community/Llama-3.2-1B-Instruct-4bit"
+        ],
+        fetchData: { url in
+            if url.absoluteString.contains("Llama-3.2-1B-Instruct-4bit") {
+                return Data("""
+                {
+                  "sha": "08231374eeacb049a0eade7922910865b8fce912",
+                  "downloads": 61994,
+                  "likes": 19,
+                  "siblings": [
+                    { "rfilename": "config.json" },
+                    { "rfilename": "model.safetensors" },
+                    { "rfilename": "model.safetensors.index.json" },
+                    { "rfilename": "special_tokens_map.json" },
+                    { "rfilename": "tokenizer.json" },
+                    { "rfilename": "tokenizer_config.json" }
+                  ]
+                }
+                """.utf8)
+            }
+
+            return Data("""
+            {
+              "sha": "99d9a53ff828d365a8ecae538e45f80a08d612cd",
+              "downloads": 2800,
+              "likes": 2,
+              "siblings": [
+                { "rfilename": "config.json" },
+                { "rfilename": "generation_config.json" },
+                { "rfilename": "model.safetensors" },
+                { "rfilename": "model.safetensors.index.json" },
+                { "rfilename": "processor_config.json" },
+                { "rfilename": "tokenizer.json" },
+                { "rfilename": "tokenizer_config.json" },
+                { "rfilename": "chat_template.jinja" }
+              ]
+            }
+            """.utf8)
+        }
+    )
+
+    let models = try await catalog.availableModels()
+
+    #expect(models.first?.id == "mlx-community.Llama-3.2-1B-Instruct-4bit")
+    #expect(models.first?.estimatedDownloadSizeBytes == 695_283_921)
+    #expect(models.first?.tags.contains("hf-downloads:61994") == true)
 }
 
 private func downloadableDescriptor(id: ModelID, checksum: String?) -> ModelDescriptor {

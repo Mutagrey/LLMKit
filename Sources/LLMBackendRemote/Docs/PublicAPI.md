@@ -14,7 +14,7 @@ Public API includes remote backend configuration and generic backend conformers.
 
 `RemoteAPIStyle` selects the request mapping strategy. The default remains generic completions/chat mapping; OpenAI can use Chat Completions or Responses request and response shapes; Anthropic uses Messages request and response shapes.
 
-When a response body contains server-sent events, `RemoteBackend` maps text deltas into core streaming events and finishes with the accumulated result. For OpenAI Responses and Anthropic Messages, tool call items are mapped into backend-neutral `ToolInvocation` events before completion. Streams that complete without text or tool calls fail with a backend-neutral mapping error.
+When a model supports streaming and the injected transport conforms to `HTTPStreamingTransport`, `RemoteBackend` consumes server-sent events incrementally and yields text deltas before the full response has completed. If only `HTTPTransport` is available, it preserves the existing full-body parsing fallback. For OpenAI Responses and Anthropic Messages, tool call items are mapped into backend-neutral `ToolInvocation` events before completion. Streams that complete without text or tool calls fail with a backend-neutral mapping error.
 
 Generation requests preserve any backend-neutral structured output schema on `GenerationRequest`. OpenAI Responses
 and OpenAI Chat Completions generation map that schema to provider-native JSON schema response fields; other remote

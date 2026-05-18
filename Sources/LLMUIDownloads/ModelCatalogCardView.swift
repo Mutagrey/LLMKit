@@ -61,25 +61,22 @@ public struct ModelCatalogCardView: View {
             selectionAction?()
         }
         .swipeActions(edge: .trailing) {
-            if let deleteAction {
-                Button(role: .destructive) {
-                    Task { await deleteAction() }
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .accessibilityLabel("Delete model")
+            Button {
+                Task { await deleteAction?() }
+            } label: {
+                Image(systemName: "trash")
             }
+            .tint(.red)
+            .accessibilityLabel("Delete model")
         }
         .swipeActions(edge: .leading) {
-            if let detailsAction {
-                Button {
-                    detailsAction()
-                } label: {
-                    Image(systemName: "info.circle")
-                }
-                .tint(.blue)
-                .accessibilityLabel("Model details")
+            Button {
+                detailsAction?()
+            } label: {
+                Image(systemName: "info.circle")
             }
+            .tint(.blue)
+            .accessibilityLabel("Model details")
         }
     }
 
@@ -119,7 +116,7 @@ public struct ModelCatalogCardView: View {
                 progressDetail: progressDetail,
                 estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
             )
-            .frame(maxWidth: 320, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -134,6 +131,7 @@ public struct ModelCatalogCardView: View {
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
             .font(.caption2.weight(.semibold))
+            .tint(.red)
         } else if shouldShowInstallButton, let installAction {
             Button {
                 Task { await installAction() }
@@ -253,6 +251,8 @@ public struct ModelCatalogCardView: View {
             return "Core ML"
         case .mlx:
             return "MLX"
+        case .llamaCpp:
+            return "llama.cpp"
         case .remote:
             return "Remote"
         case .executorch:

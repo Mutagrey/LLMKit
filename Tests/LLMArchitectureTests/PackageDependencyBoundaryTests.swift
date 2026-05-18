@@ -115,7 +115,7 @@ private struct PackageManifest {
         target: "LLMOrchestrator"
     )
 
-    for target in ["LLMBackendFoundationModels", "LLMBackendCoreML", "LLMBackendMLX", "LLMBackendRemote"] {
+    for target in ["LLMBackendFoundationModels", "LLMBackendCoreML", "LLMBackendMLX", "LLMBackendLlamaCpp", "LLMBackendRemote"] {
         let targetDependencies = dependencies[target, default: []]
         expectNoForbiddenDependencies(targetDependencies, forbiddenPrefixes: ["LLMUI"], target: target)
         expectNoForbiddenDependencies(
@@ -168,6 +168,7 @@ private struct PackageManifest {
         "LLMBackendFoundationModels": ["LLMCore", "LLMProtocols", "LLMObservability"],
         "LLMBackendCoreML": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendMLX": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
+        "LLMBackendLlamaCpp": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendRemote": ["LLMCore", "LLMProtocols", "LLMNetworking", "LLMObservability"],
         "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability"],
         "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"]

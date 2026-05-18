@@ -48,14 +48,15 @@ public struct RemoteBackend: ModelBackend {
 
     public func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     continuation.yield(.started(request.model))
                     let httpRequest = try makeGenerationRequest(request)
-                    let response = try await send(httpRequest)
                     let mapper = responseMapper
-                    if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
-                        let payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
+                    if request.model.supportsStreaming, let streamingTransport = transport as? any HTTPStreamingTransport {
+                        let payload = try await stream(httpRequest, using: streamingTransport) {
+                            continuation.yield(.delta($0))
+                        }
                         continuation.yield(.completed(GenerationResult(
                             text: payload.text,
                             model: request.model,
@@ -63,7 +64,13 @@ public struct RemoteBackend: ModelBackend {
                             finishReason: payload.finishReason
                         )))
                     } else {
-                        let payload = try mapper.decodeTextPayload(response.body)
+                        let response = try await send(httpRequest)
+                        let payload: RemoteTextPayload
+                        if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
+                            payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
+                        } else {
+                            payload = try mapper.decodeTextPayload(response.body)
+                        }
                         continuation.yield(.completed(GenerationResult(
                             text: payload.text,
                             model: request.model,
@@ -76,22 +83,31 @@ public struct RemoteBackend: ModelBackend {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 
     public func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     continuation.yield(.started(request.model))
                     let httpRequest = try makeChatRequest(request)
-                    let response = try await send(httpRequest)
                     let payload: RemoteTextPayload
                     let mapper = responseMapper
-                    if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
-                        payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
+                    if request.model.supportsStreaming, let streamingTransport = transport as? any HTTPStreamingTransport {
+                        payload = try await stream(httpRequest, using: streamingTransport) {
+                            continuation.yield(.delta($0))
+                        }
                     } else {
-                        payload = try mapper.decodeTextPayload(response.body)
+                        let response = try await send(httpRequest)
+                        if let events = mapper.streamEvents(from: response.body), !events.isEmpty {
+                            payload = try mapper.collectStreamText(events) { continuation.yield(.delta($0)) }
+                        } else {
+                            payload = try mapper.decodeTextPayload(response.body)
+                        }
                     }
                     for invocation in payload.toolInvocations {
                         continuation.yield(.toolCallRequested(invocation))
@@ -107,6 +123,9 @@ public struct RemoteBackend: ModelBackend {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }
@@ -244,6 +263,54 @@ public struct RemoteBackend: ModelBackend {
         return response
     }
 
+    private func stream(
+        _ request: HTTPRequest,
+        using transport: any HTTPStreamingTransport,
+        yield: (String) -> Void
+    ) async throws -> RemoteTextPayload {
+        var statusCode: Int?
+        var headers: [String: String] = [:]
+        var errorBody = Data()
+        var parser = RemoteSSEStreamParser()
+        var accumulator = responseMapper.makeStreamAccumulator()
+
+        for try await event in transport.stream(request) {
+            try Task.checkCancellation()
+            switch event {
+            case .response(let head):
+                statusCode = head.statusCode
+                headers = head.headers
+            case .body(let data):
+                guard let code = statusCode else {
+                    throw URLError(.badServerResponse)
+                }
+                guard 200..<300 ~= code else {
+                    errorBody.append(data)
+                    continue
+                }
+                for sseEvent in parser.append(data) {
+                    try accumulator.consume(sseEvent, yield: yield)
+                }
+            }
+        }
+
+        guard let code = statusCode else {
+            throw URLError(.badServerResponse)
+        }
+        guard 200..<300 ~= code else {
+            throw BackendError.providerFailed(RemoteProviderErrorMapper.message(
+                statusCode: code,
+                headers: headers,
+                body: errorBody,
+                decoder: decoder
+            ))
+        }
+        for event in parser.finish() {
+            try accumulator.consume(event, yield: yield)
+        }
+        return try accumulator.finish()
+    }
+
     private var responseMapper: RemoteResponseMapper {
         RemoteResponseMapper(apiStyle: configuration?.apiStyle, decoder: decoder)
     }
@@ -266,3 +333,29 @@ public struct RemoteBackend: ModelBackend {
 }
 
 public enum LLMBackendRemoteNamespace {}
+
+private struct RemoteSSEStreamParser {
+    private var bufferedData = Data()
+    private let parser = SSEParser()
+
+    mutating func append(_ data: Data) -> [SSEEvent] {
+        bufferedData.append(data)
+        guard let text = String(data: bufferedData, encoding: .utf8) else {
+            return []
+        }
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        let blocks = normalized.components(separatedBy: "\n\n")
+        let hasCompleteTrailingBlock = normalized.hasSuffix("\n\n")
+        let completeBlocks = blocks.dropLast()
+        bufferedData = Data((hasCompleteTrailingBlock ? "" : blocks.last ?? "").utf8)
+        return completeBlocks.flatMap { parser.parse($0 + "\n\n") }
+    }
+
+    mutating func finish() -> [SSEEvent] {
+        guard !bufferedData.isEmpty, let text = String(data: bufferedData, encoding: .utf8) else {
+            return []
+        }
+        bufferedData.removeAll()
+        return parser.parse(text + "\n\n")
+    }
+}

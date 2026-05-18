@@ -5,7 +5,7 @@ public struct MLXModelSupportMatrix: Sendable {
 
     public func supports(_ family: ModelFamily) -> Bool {
         switch family {
-        case .qwen, .gemma:
+        case .qwen, .gemma, .llama, .mistral:
             true
         default:
             false

@@ -207,6 +207,17 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
 }
 
 @MainActor
+@Test func downloadsViewModelNormalizesPercentShapedProgress() {
+    let descriptor = ModelDescriptor(id: "model", displayName: "Model", family: .custom("test"), backend: .coreML, capabilities: [])
+    let viewModel = ModelDownloadsViewModel(models: [
+        InstalledModelRecord(descriptor: descriptor, installState: .downloading(progress: 50))
+    ])
+
+    #expect(viewModel.statusText(for: descriptor.id) == "Downloading 50%")
+    #expect(viewModel.progress(for: descriptor.id) == 0.5)
+}
+
+@MainActor
 @Test func downloadsViewModelRefreshLoadsInstalledModels() async {
     let descriptor = ModelDescriptor(id: "model", displayName: "Model", family: .custom("test"), backend: .coreML, capabilities: [])
     let record = InstalledModelRecord(descriptor: descriptor, installState: .active)

@@ -3,7 +3,11 @@
 Public API includes manifests, catalog, installer, installed record persistence, and install state machine support.
 
 `CuratedModelManifests` exposes lifecycle-owned `ModelManifest` values for Apple system models and iPhone-oriented local MLX text
-models, including Gemma 4 E2B Instruct 4-bit, so host apps can build catalogs without hardcoding descriptors in UI modules.
+models capped at 8 GB RAM requirements. The curated iPhone list includes current Qwen3.5 OptiQ, Qwen3 Instruct,
+Gemma 4 E2B, Llama 3.2, and selected uncensored/abliterated Qwen and Llama variants so host apps can build catalogs
+without hardcoding descriptors in UI modules.
+`localIPhoneGGUFTextModels` separately exposes small Llama 3.2 GGUF Q4_K_M descriptors for the llama.cpp backend, with
+single `.gguf` artifacts represented through the same backend-neutral download metadata.
 
 `ManifestLoader` decodes and encodes `ModelManifest` values from files, `ManifestStore`, and remote URLs using ISO 8601 dates,
 keeping manifest loading in the lifecycle layer instead of pushing it into backends or UI. It can optionally
@@ -20,8 +24,10 @@ one or more trusted Ed25519 public keys so key rotation can happen without movin
 `HuggingFaceFeaturedModelCatalog` is a lifecycle-owned live internet catalog for demo/example hosts. It resolves a curated
 set of featured MLX repositories through Hugging Face model metadata, builds artifact lists from the live repository file
 set, merges those descriptors with a local fallback catalog, and reports fallback status when the remote fetch fails.
-The featured catalog includes the Gemma 4 E2B Instruct 4-bit MLX repository and preserves required tokenizer, safetensors,
-chat template, and processor configuration artifacts when they are present.
+The featured catalog is limited to iPhone-oriented text-generation repositories with declared RAM requirements of 8 GB or
+less, includes selected uncensored/abliterated models, and tags live descriptors with `hf-downloads:*` and `hf-likes:*`
+metadata from Hugging Face. It preserves required tokenizer, safetensors, chat template, and processor configuration
+artifacts when they are present.
 
 `CompositeModelCatalog` combines multiple backend-neutral catalogs into one sorted model list, with later catalogs
 replacing descriptors that share the same `ModelID`.

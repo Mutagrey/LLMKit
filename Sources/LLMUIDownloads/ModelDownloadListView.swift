@@ -279,8 +279,11 @@ public final class ModelDownloadsViewModel {
         case .notInstalled:
             return "Not installed"
         case .downloading(let progress):
-            let prefix = installProgress[modelID]?.isEstimated == true ? "~" : ""
-            return "Downloading \(prefix)\(Int((progress * 100).rounded()))%"
+            let percentTitle = DownloadProgressPresentation.percentTitle(
+                for: progress,
+                isEstimated: installProgress[modelID]?.isEstimated == true
+            )
+            return "Downloading \(percentTitle)"
         case .downloaded:
             return "Downloaded"
         case .verifying:
@@ -304,7 +307,7 @@ public final class ModelDownloadsViewModel {
         guard case .downloading(let progress) = installStates[modelID] else {
             return nil
         }
-        return progress
+        return DownloadProgressPresentation.normalizedFraction(progress)
     }
 
     public func progressDetail(for modelID: ModelID) -> ModelInstallProgress? {

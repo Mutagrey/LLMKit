@@ -8,6 +8,8 @@ import Testing
 @Test func mlxSupportMatrixIncludesInitialFamilies() {
     #expect(MLXModelSupportMatrix().supports(.qwen))
     #expect(MLXModelSupportMatrix().supports(.gemma))
+    #expect(MLXModelSupportMatrix().supports(.llama))
+    #expect(MLXModelSupportMatrix().supports(.mistral))
     #expect(!MLXModelSupportMatrix().supports(.custom("test")))
 }
 

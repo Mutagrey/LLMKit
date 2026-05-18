@@ -38,7 +38,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
 
     public func stream(_ request: GenerationRequest) -> AsyncThrowingStream<GenerationEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let safeRequest = try await requestAfterInputSafety(request)
                     let plan = try await router.plan(requirements: safeRequest.requirements)
@@ -48,6 +48,9 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }

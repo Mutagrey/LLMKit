@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public struct URLSessionHTTPTransport: HTTPTransport {
+public struct URLSessionHTTPTransport: HTTPStreamingTransport {
     private let session: URLSession
 
     public init(session: URLSession = .shared) {
@@ -25,6 +25,44 @@ public struct URLSessionHTTPTransport: HTTPTransport {
             headers: headers(from: httpResponse),
             body: data
         )
+    }
+
+    public func stream(_ request: HTTPRequest) -> AsyncThrowingStream<HTTPStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let urlRequest = makeURLRequest(from: request)
+                    let (bytes, response) = try await session.bytes(for: urlRequest)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw URLError(.badServerResponse)
+                    }
+                    continuation.yield(.response(HTTPResponseHead(
+                        statusCode: httpResponse.statusCode,
+                        headers: headers(from: httpResponse)
+                    )))
+
+                    var buffer = Data()
+                    buffer.reserveCapacity(4_096)
+                    for try await byte in bytes {
+                        try Task.checkCancellation()
+                        buffer.append(byte)
+                        if buffer.count >= 4_096 {
+                            continuation.yield(.body(buffer))
+                            buffer.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    if !buffer.isEmpty {
+                        continuation.yield(.body(buffer))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
     }
 
     private func makeURLRequest(from request: HTTPRequest) -> URLRequest {

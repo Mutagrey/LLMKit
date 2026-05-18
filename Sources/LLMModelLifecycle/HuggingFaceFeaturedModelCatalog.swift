@@ -69,12 +69,19 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
     }
 
     public static let defaultRepositoryIDs = [
-        "mlx-community/gemma-4-e2b-it-4bit",
+        "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
         "mlx-community/Qwen3.5-2B-OptiQ-4bit",
         "mlx-community/Qwen3.5-4B-OptiQ-4bit",
-        "mlx-community/Qwen3.6-27B-OptiQ-4bit",
-        "mlx-community/gemma-3-text-4b-it-4bit",
-        "mlx-community/gemma-3-text-12b-it-4bit"
+        "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "mlx-community/gemma-4-e2b-it-4bit",
+        "mlx-community/Llama-3.2-1B-Instruct-4bit",
+        "mlx-community/Llama-3.2-3B-Instruct-4bit",
+        "mlx-community/Josiefied-Qwen3-1.7B-abliterated-v1-4bit",
+        "mlx-community/Josiefied-Qwen3-8B-abliterated-v1-4bit",
+        "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit",
+        "mlx-community/Qwen3-4B-Sky-High-Hermes-gabliterated-4bit",
+        "mlx-community/Llama-3.2-3B-Instruct-uncensored-6bit",
+        "mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-4bit"
     ]
 
     private func loadRemoteModels() async -> RemoteModelsLoadResult {
@@ -105,7 +112,7 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
                 return .failure(failures.first ?? "huggingface.co fetch failed.")
             }
 
-            return .success(models.sorted { $0.displayName < $1.displayName })
+            return .success(Self.sortedByPopularity(models))
         }
     }
 
@@ -158,19 +165,27 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
                 artifacts: artifacts
             ),
             license: repository.license,
-            quantization: Quantization(format: "MLX 4-bit", bits: 4),
-            estimatedDownloadSizeBytes: estimatedSize(for: artifacts),
-            tags: repository.tags
+            quantization: quantization(for: repository.repositoryID),
+            estimatedDownloadSizeBytes: estimatedSize(for: artifacts) ?? repository.estimatedDownloadSizeBytes,
+            tags: repository.tags + info.statTags
         )
     }
 
+    private func quantization(for repositoryID: String) -> Quantization {
+        if repositoryID.localizedCaseInsensitiveContains("6bit") ||
+            repositoryID.localizedCaseInsensitiveContains("6-bit") {
+            return Quantization(format: "MLX 6-bit", bits: 6)
+        }
+        return Quantization(format: "MLX 4-bit", bits: 4)
+    }
+
     private func merge(local: [ModelDescriptor], remote: [ModelDescriptor]) -> [ModelDescriptor] {
-        local
+        Self.sortedByPopularity(local
             .reduce(into: Dictionary(uniqueKeysWithValues: remote.map { ($0.id, $0) })) { partialResult, descriptor in
                 partialResult[descriptor.id] = partialResult[descriptor.id] ?? descriptor
             }
             .values
-            .sorted { $0.displayName < $1.displayName }
+            .map { $0 })
     }
 
     private func estimatedSize(for artifacts: [ModelArtifact]) -> Int64? {
@@ -205,6 +220,31 @@ public actor HuggingFaceFeaturedModelCatalog: ModelCatalogProviding, ModelCatalo
             return false
         }
     }
+
+    private static func sortedByPopularity(_ models: [ModelDescriptor]) -> [ModelDescriptor] {
+        models.sorted { lhs, rhs in
+            let lhsDownloads = tagValue("hf-downloads:", in: lhs.tags) ?? 0
+            let rhsDownloads = tagValue("hf-downloads:", in: rhs.tags) ?? 0
+            if lhsDownloads != rhsDownloads {
+                return lhsDownloads > rhsDownloads
+            }
+
+            let lhsLikes = tagValue("hf-likes:", in: lhs.tags) ?? 0
+            let rhsLikes = tagValue("hf-likes:", in: rhs.tags) ?? 0
+            if lhsLikes != rhsLikes {
+                return lhsLikes > rhsLikes
+            }
+
+            return lhs.displayName < rhs.displayName
+        }
+    }
+
+    private static func tagValue(_ prefix: String, in tags: [String]) -> Int? {
+        tags
+            .lazy
+            .first { $0.hasPrefix(prefix) }
+            .flatMap { Int($0.dropFirst(prefix.count)) }
+    }
 }
 
 private enum RemoteFetchResult: Sendable {
@@ -225,6 +265,7 @@ private struct FeaturedRepository: Sendable {
     let minimumRAMGB: Int?
     let minimumFreeDiskGB: Int?
     let contextWindowTokens: Int?
+    let estimatedDownloadSizeBytes: Int64?
     let tags: [String]
     let license: ModelLicense?
     let homepageURL: URL?
@@ -234,32 +275,45 @@ private struct FeaturedRepository: Sendable {
         self.homepageURL = URL(string: "https://huggingface.co/\(repositoryID)")
 
         switch repositoryID {
+        case "mlx-community/Qwen3.5-0.8B-OptiQ-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Qwen3.5 0.8B OptiQ 4-bit"
+            family = .qwen
+            minimumRAMGB = 4
+            minimumFreeDiskGB = 1
+            contextWindowTokens = 32768
+            estimatedDownloadSizeBytes = 650_257_188
+            tags = ["downloadable", "mlx", "remote", "qwen", "starter", "optiq", "latest"]
+            license = Self.apacheTwoLicense(for: repositoryID)
         case "mlx-community/Qwen3.5-2B-OptiQ-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
             displayName = "Qwen3.5 2B OptiQ 4-bit"
             family = .qwen
-            minimumRAMGB = 8
-            minimumFreeDiskGB = 3
+            minimumRAMGB = 6
+            minimumFreeDiskGB = 2
             contextWindowTokens = 32768
-            tags = ["downloadable", "mlx", "remote", "fast", "lightweight", "qwen", "starter"]
+            estimatedDownloadSizeBytes = 1_533_885_748
+            tags = ["downloadable", "mlx", "remote", "balanced", "qwen", "iphone-recommended", "optiq", "latest"]
             license = Self.apacheTwoLicense(for: repositoryID)
         case "mlx-community/Qwen3.5-4B-OptiQ-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
             displayName = "Qwen3.5 4B OptiQ 4-bit"
             family = .qwen
-            minimumRAMGB = 12
-            minimumFreeDiskGB = 5
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 4
             contextWindowTokens = 32768
-            tags = ["downloadable", "mlx", "remote", "balanced", "qwen", "quality"]
+            estimatedDownloadSizeBytes = 3_269_669_552
+            tags = ["downloadable", "mlx", "remote", "quality", "qwen", "iphone-pro", "optiq", "latest"]
             license = Self.apacheTwoLicense(for: repositoryID)
-        case "mlx-community/Qwen3.6-27B-OptiQ-4bit":
+        case "mlx-community/Qwen3-4B-Instruct-2507-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
-            displayName = "Qwen3.6 27B OptiQ 4-bit"
+            displayName = "Qwen3 4B Instruct 2507 4-bit"
             family = .qwen
-            minimumRAMGB = 32
-            minimumFreeDiskGB = 20
-            contextWindowTokens = 131072
-            tags = ["downloadable", "mlx", "remote", "pro", "qwen", "quality"]
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 4
+            contextWindowTokens = 32768
+            estimatedDownloadSizeBytes = 2_263_022_417
+            tags = ["downloadable", "mlx", "remote", "quality", "qwen", "iphone-pro", "instruct"]
             license = Self.apacheTwoLicense(for: repositoryID)
         case "mlx-community/gemma-4-e2b-it-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
@@ -268,26 +322,103 @@ private struct FeaturedRepository: Sendable {
             minimumRAMGB = 8
             minimumFreeDiskGB = 5
             contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 3_843_248_947
             tags = ["downloadable", "mlx", "remote", "gemma", "gemma4", "iphone-pro", "agentic"]
             license = Self.apacheTwoLicense(for: repositoryID)
-        case "mlx-community/gemma-3-text-4b-it-4bit":
+        case "mlx-community/gemma-4-e2b-it-OptiQ-4bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
-            displayName = "Gemma 3 Text 4B Instruct 4-bit"
+            displayName = "Gemma 4 E2B Instruct OptiQ 4-bit"
             family = .gemma
-            minimumRAMGB = 12
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 5
+            contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 4_296_816_768
+            tags = ["downloadable", "mlx", "remote", "gemma", "gemma4", "iphone-pro", "agentic", "optiq"]
+            license = Self.gemmaLicense
+        case "mlx-community/Llama-3.2-1B-Instruct-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Llama 3.2 1B Instruct 4-bit"
+            family = .llama
+            minimumRAMGB = 4
+            minimumFreeDiskGB = 1
+            contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 695_283_921
+            tags = ["downloadable", "mlx", "remote", "llama", "starter", "iphone-entry"]
+            license = Self.llamaLicense(for: repositoryID)
+        case "mlx-community/Llama-3.2-3B-Instruct-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Llama 3.2 3B Instruct 4-bit"
+            family = .llama
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 3
+            contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 1_807_496_278
+            tags = ["downloadable", "mlx", "remote", "llama", "balanced", "iphone-recommended"]
+            license = Self.llamaLicense(for: repositoryID)
+        case "mlx-community/Josiefied-Qwen3-1.7B-abliterated-v1-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Qwen3 1.7B Abliterated 4-bit"
+            family = .qwen
+            minimumRAMGB = 6
+            minimumFreeDiskGB = 2
+            contextWindowTokens = 32768
+            estimatedDownloadSizeBytes = 968_079_703
+            tags = ["downloadable", "mlx", "remote", "qwen", "experimental", "uncensored", "abliterated"]
+            license = Self.apacheTwoLicense(for: repositoryID)
+        case "mlx-community/Josiefied-Qwen3-8B-abliterated-v1-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Qwen3 8B Abliterated 4-bit"
+            family = .qwen
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 5
+            contextWindowTokens = 32768
+            estimatedDownloadSizeBytes = 4_607_835_164
+            tags = ["downloadable", "mlx", "remote", "qwen", "quality", "iphone-pro", "uncensored", "abliterated"]
+            license = Self.apacheTwoLicense(for: repositoryID)
+        case "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Qwen2.5 7B Instruct Uncensored 4-bit"
+            family = .qwen
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 5
+            contextWindowTokens = 32768
+            estimatedDownloadSizeBytes = 4_284_346_187
+            tags = ["downloadable", "mlx", "remote", "qwen", "quality", "iphone-pro", "uncensored", "gpl-3.0"]
+            license = ModelLicense(
+                name: "GNU General Public License v3.0",
+                spdxIdentifier: "GPL-3.0",
+                url: URL(string: "https://huggingface.co/\(repositoryID)/blob/main/LICENSE")
+            )
+        case "mlx-community/Qwen3-4B-Sky-High-Hermes-gabliterated-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Qwen3 4B Sky High Hermes Gabliterated 4-bit"
+            family = .qwen
+            minimumRAMGB = 8
             minimumFreeDiskGB = 4
             contextWindowTokens = 32768
-            tags = ["downloadable", "mlx", "remote", "balanced", "gemma", "recommended"]
-            license = Self.gemmaLicense
-        case "mlx-community/gemma-3-text-12b-it-4bit":
+            estimatedDownloadSizeBytes = 2_262_637_937
+            tags = ["downloadable", "mlx", "remote", "qwen", "experimental", "uncensored", "gabliterated", "hermes"]
+            license = Self.apacheTwoLicense(for: repositoryID)
+        case "mlx-community/Llama-3.2-3B-Instruct-uncensored-6bit":
             modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
-            displayName = "Gemma 3 Text 12B Instruct 4-bit"
-            family = .gemma
-            minimumRAMGB = 24
-            minimumFreeDiskGB = 10
-            contextWindowTokens = 32768
-            tags = ["downloadable", "mlx", "remote", "gemma", "quality", "pro"]
-            license = Self.gemmaLicense
+            displayName = "Llama 3.2 3B Instruct Uncensored 6-bit"
+            family = .llama
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 3
+            contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 2_610_640_196
+            tags = ["downloadable", "mlx", "remote", "llama", "balanced", "iphone-pro", "uncensored"]
+            license = Self.llamaLicense(for: repositoryID)
+        case "mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-4bit":
+            modelID = ModelID(rawValue: repositoryID.replacingOccurrences(of: "/", with: "."))
+            displayName = "Llama 3.1 8B Instruct Abliterated 4-bit"
+            family = .llama
+            minimumRAMGB = 8
+            minimumFreeDiskGB = 5
+            contextWindowTokens = 131072
+            estimatedDownloadSizeBytes = 4_517_489_037
+            tags = ["downloadable", "mlx", "remote", "llama", "quality", "iphone-pro", "uncensored", "abliterated"]
+            license = Self.llamaLicense(for: repositoryID)
         default:
             return nil
         }
@@ -317,11 +448,31 @@ private struct FeaturedRepository: Sendable {
         name: "Gemma License",
         url: URL(string: "https://ai.google.dev/gemma/terms")
     )
+
+    private static func llamaLicense(for repositoryID: String) -> ModelLicense {
+        ModelLicense(
+            name: "Llama Community License",
+            url: URL(string: "https://huggingface.co/\(repositoryID)/blob/main/LICENSE")
+        )
+    }
 }
 
 private struct HuggingFaceModelInfo: Decodable {
     let sha: String?
+    let downloads: Int?
+    let likes: Int?
     let siblings: [HuggingFaceModelSibling]
+
+    var statTags: [String] {
+        var tags: [String] = []
+        if let downloads {
+            tags.append("hf-downloads:\(downloads)")
+        }
+        if let likes {
+            tags.append("hf-likes:\(likes)")
+        }
+        return tags
+    }
 }
 
 private struct HuggingFaceModelSibling: Decodable {

@@ -78,6 +78,23 @@ let package = Package(
             ]
         ),
         .library(
+            name: "LLMKitGGUF",
+            targets: [
+                "LLMCore",
+                "LLMProtocols",
+                "LLMOrchestrator",
+                "LLMSessions",
+                "LLMPrompting",
+                "LLMTools",
+                "LLMSafety",
+                "LLMObservability",
+                "LLMModelLifecycle",
+                "LLMStorage",
+                "LLMDeviceProfiling",
+                "LLMBackendLlamaCpp"
+            ]
+        ),
+        .library(
             name: "LLMKitRemote",
             targets: [
                 "LLMCore",
@@ -120,6 +137,7 @@ let package = Package(
                 "LLMBackendFoundationModels",
                 "LLMBackendCoreML",
                 "LLMBackendMLX",
+                "LLMBackendLlamaCpp",
                 "LLMBackendRemote",
                 "LLMUIChat",
                 "LLMUIDownloads"
@@ -266,6 +284,22 @@ let package = Package(
             exclude: ["Docs"]
         ),
         .target(
+            name: "CLlama",
+            exclude: ["Docs"]
+        ),
+        .target(
+            name: "LLMBackendLlamaCpp",
+            dependencies: [
+                "CLlama",
+                "LLMCore",
+                "LLMProtocols",
+                "LLMModelLifecycle",
+                "LLMObservability",
+                .target(name: "llama")
+            ],
+            exclude: ["Docs"]
+        ),
+        .target(
             name: "LLMBackendRemote",
             dependencies: [
                 "LLMCore",
@@ -358,6 +392,10 @@ let package = Package(
             dependencies: ["LLMBackendMLX"]
         ),
         .testTarget(
+            name: "LLMBackendLlamaCppTests",
+            dependencies: ["LLMBackendLlamaCpp"]
+        ),
+        .testTarget(
             name: "LLMBackendRemoteTests",
             dependencies: ["LLMBackendRemote"]
         ),
@@ -372,6 +410,10 @@ let package = Package(
         .testTarget(
             name: "LLMArchitectureTests",
             dependencies: []
+        ),
+        .binaryTarget(
+            name: "llama",
+            path: "Vendor/llama.cpp/llama.xcframework"
         )
     ]
 )

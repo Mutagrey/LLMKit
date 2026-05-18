@@ -131,6 +131,7 @@ public struct ModelDownloadCardView: View {
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
+                .tint(.red)
             } else {
                 if canDeleteArtifacts, let deleteAction {
                     Button(role: .destructive) {
@@ -200,6 +201,8 @@ public struct ModelDownloadCardView: View {
             return "Core ML"
         case .mlx:
             return "MLX"
+        case .llamaCpp:
+            return "llama.cpp"
         case .remote:
             return "Remote"
         case .executorch:
@@ -376,14 +379,14 @@ public struct ModelInstallProgressView: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule(style: .continuous)
-                        .fill(Color.secondary.opacity(0.16))
+                        .fill(Color.secondary.opacity(0.12))
                     Capsule(style: .continuous)
-                        .fill(statusColor.gradient)
+                        .fill(statusColor.opacity(0.85))
                         .frame(width: filledWidth(in: geometry.size.width))
                         .animation(.easeInOut(duration: 0.25), value: progressValue)
                 }
             }
-            .frame(height: 8)
+            .frame(height: 4)
             .clipShape(Capsule(style: .continuous))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Install progress")
@@ -396,7 +399,7 @@ public struct ModelInstallProgressView: View {
         case .notInstalled:
             return 0
         case .downloading(let progress):
-            return CGFloat(max(0, min(progress, 1)))
+            return CGFloat(DownloadProgressPresentation.normalizedFraction(progress))
         case .downloaded:
             return 1
         case .verifying:
@@ -444,8 +447,10 @@ public struct ModelInstallProgressView: View {
     private var progressTitle: String {
         switch state {
         case .downloading(let progress):
-            let prefix = progressDetail?.isEstimated == true ? "~" : ""
-            return "\(prefix)\(Int((progress * 100).rounded()))%"
+            return DownloadProgressPresentation.percentTitle(
+                for: progress,
+                isEstimated: progressDetail?.isEstimated == true
+            )
         case .notInstalled:
             return "0%"
         case .evicted:
@@ -512,7 +517,7 @@ public struct ModelInstallProgressView: View {
         guard progressValue > 0 else {
             return 0
         }
-        return max(totalWidth * progressValue, 8)
+        return max(totalWidth * progressValue, 4)
     }
 
     private func byteCountTitle(for bytes: Int64) -> String {

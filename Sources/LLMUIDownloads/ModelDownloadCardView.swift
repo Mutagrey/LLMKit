@@ -361,12 +361,16 @@ public struct ModelInstallProgressView: View {
                 Text(progressTitle)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText(value: progressTransitionValue))
+                    .animation(.easeInOut(duration: 0.2), value: progressTransitionValue)
             }
 
             if let transferTitle {
                 Text(transferTitle)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText(value: transferTransitionValue))
+                    .animation(.easeInOut(duration: 0.2), value: transferTransitionValue)
             }
 
             GeometryReader { geometry in
@@ -376,6 +380,7 @@ public struct ModelInstallProgressView: View {
                     Capsule(style: .continuous)
                         .fill(statusColor.gradient)
                         .frame(width: filledWidth(in: geometry.size.width))
+                        .animation(.easeInOut(duration: 0.25), value: progressValue)
                 }
             }
             .frame(height: 8)
@@ -405,6 +410,10 @@ public struct ModelInstallProgressView: View {
         case .evicted:
             return 0
         }
+    }
+
+    private var progressTransitionValue: Double {
+        Double(progressValue)
     }
 
     private var statusTitle: String {
@@ -465,6 +474,23 @@ public struct ModelInstallProgressView: View {
         let progress = progressValue
         let writtenBytes = Int64((Double(progress) * Double(estimatedTotalBytes)).rounded())
         return "Approx. \(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
+    }
+
+    private var transferTransitionValue: Double {
+        Double(transferCompletedBytes ?? 0)
+    }
+
+    private var transferCompletedBytes: Int64? {
+        guard case .downloading = state else {
+            return nil
+        }
+        if let completedBytes = progressDetail?.completedBytes {
+            return completedBytes
+        }
+        guard let estimatedTotalBytes, estimatedTotalBytes > 0 else {
+            return nil
+        }
+        return Int64((Double(progressValue) * Double(estimatedTotalBytes)).rounded())
     }
 
     private var statusColor: Color {

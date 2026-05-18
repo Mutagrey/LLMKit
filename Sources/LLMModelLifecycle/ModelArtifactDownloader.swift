@@ -180,10 +180,20 @@ public struct URLSessionModelArtifactDownloader: ProgressReportingModelArtifactD
         session: URLSession,
         continuationBox: URLSessionDownloadContinuationBox
     ) {
-        taskBox.cancelByProducingResumeData { resumeData in
+        let didCancelTask = taskBox.cancelByProducingResumeData { resumeData in
             if let resumeData, !resumeData.isEmpty {
                 try? cacheResumeData(resumeData, for: destination)
             }
+            session.invalidateAndCancel()
+            continuationBox.resume(with: .failure(CancellationError()))
+        }
+        if !didCancelTask {
+            session.invalidateAndCancel()
+            continuationBox.resume(with: .failure(CancellationError()))
+            return
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
             session.invalidateAndCancel()
             continuationBox.resume(with: .failure(CancellationError()))
         }
@@ -524,16 +534,16 @@ private final class URLSessionDownloadTaskBox: @unchecked Sendable {
         lock.unlock()
     }
 
-    func cancelByProducingResumeData(_ completionHandler: @escaping @Sendable (Data?) -> Void) {
+    func cancelByProducingResumeData(_ completionHandler: @escaping @Sendable (Data?) -> Void) -> Bool {
         lock.lock()
         let task = self.task
         lock.unlock()
 
         guard let task else {
-            completionHandler(nil)
-            return
+            return false
         }
 
         task.cancel(byProducingResumeData: completionHandler)
+        return true
     }
 }

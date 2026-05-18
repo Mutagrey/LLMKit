@@ -239,14 +239,15 @@ public final class ModelDownloadsViewModel {
         }
         cancelingModelIDs.insert(modelID)
         task.cancel()
-        await task.value
-        cancelingModelIDs.remove(modelID)
         installTasks[modelID] = nil
         installingModelIDs.remove(modelID)
         if !isInstalled(modelID) {
             installStates[modelID] = .notInstalled
             installProgress[modelID] = nil
         }
+        try? await refreshStorageUsage()
+        await task.value
+        cancelingModelIDs.remove(modelID)
         try? await refreshStorageUsage()
     }
 

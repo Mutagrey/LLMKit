@@ -35,9 +35,12 @@ enum DemoConfiguration {
     }
 
     private static func fallbackManifest() -> ModelManifest {
-        ModelManifest(
+        CuratedModelManifests.merged(
             id: "llmkit.demo.fallback-catalog",
-            models: CuratedModelManifests.localIPhoneTextModels.models
+            manifests: [
+                CuratedModelManifests.localIPhoneTextModels,
+                CuratedModelManifests.localIPhoneGGUFTextModels
+            ]
         )
     }
 

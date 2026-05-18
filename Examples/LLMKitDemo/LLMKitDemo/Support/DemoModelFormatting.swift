@@ -17,6 +17,8 @@ func demoBackendTitle(_ backend: BackendKind) -> String {
         return "ONNX Runtime"
     case .custom(let name):
         return name
+    case .llamaCpp:
+        return "Llama C++"
     }
 }
 

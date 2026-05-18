@@ -1,5 +1,6 @@
 import Foundation
 import LLMBackendFoundationModels
+import LLMBackendLlamaCpp
 import LLMBackendMLX
 import LLMCore
 import LLMModelLifecycle
@@ -148,6 +149,7 @@ struct DemoRuntimeConfiguration: Sendable {
             backends.append(FoundationModelsBackend())
         }
         backends.append(MLXBackend(runtimeAvailable: runtimeAvailable))
+        backends.append(LlamaCppBackend(runtimeAvailable: runtimeAvailable))
         backends.append(contentsOf: additionalBackends)
         return backends
     }

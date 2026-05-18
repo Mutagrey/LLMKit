@@ -5,6 +5,8 @@ import LLMCore
 private enum LlamaCppNativeError: Error {
     case couldNotInitializeModel(String)
     case couldNotInitializeContext
+    case couldNotInitializeBatch
+    case batchCapacityExceeded(capacity: Int)
     case promptExceedsContext(required: Int, context: Int)
     case decodeFailed
 }
@@ -15,18 +17,34 @@ private func llamaBatchClear(_ batch: inout llama_batch) {
 
 private func llamaBatchAdd(
     _ batch: inout llama_batch,
+    capacity: Int,
     _ id: llama_token,
     _ position: llama_pos,
     _ sequenceIDs: [llama_seq_id],
     _ logits: Bool
-) {
-    batch.token[Int(batch.n_tokens)] = id
-    batch.pos[Int(batch.n_tokens)] = position
-    batch.n_seq_id[Int(batch.n_tokens)] = Int32(sequenceIDs.count)
-    for index in 0..<sequenceIDs.count {
-        batch.seq_id[Int(batch.n_tokens)]![index] = sequenceIDs[index]
+) throws {
+    let batchIndex = Int(batch.n_tokens)
+    guard batchIndex < capacity else {
+        throw LlamaCppNativeError.batchCapacityExceeded(capacity: capacity)
     }
-    batch.logits[Int(batch.n_tokens)] = logits ? 1 : 0
+    guard
+        let tokens = batch.token,
+        let positions = batch.pos,
+        let sequenceIDCounts = batch.n_seq_id,
+        let sequenceIDRows = batch.seq_id,
+        let outputLogits = batch.logits,
+        let sequenceIDRow = sequenceIDRows[batchIndex]
+    else {
+        throw LlamaCppNativeError.couldNotInitializeBatch
+    }
+
+    tokens[batchIndex] = id
+    positions[batchIndex] = position
+    sequenceIDCounts[batchIndex] = Int32(sequenceIDs.count)
+    for index in 0..<sequenceIDs.count {
+        sequenceIDRow[index] = sequenceIDs[index]
+    }
+    outputLogits[batchIndex] = logits ? 1 : 0
     batch.n_tokens += 1
 }
 
@@ -61,6 +79,7 @@ actor LlamaCppNativeContext {
 
     private let storage: LlamaCppNativeStorage
     private var tokens: [llama_token] = []
+    private var stopTokenIDs: Set<llama_token> = []
     private var pendingUTF8Bytes: [CChar] = []
     private var isDone = false
     private var currentPosition: Int32 = 0
@@ -115,7 +134,11 @@ actor LlamaCppNativeContext {
         }
 
         return LlamaCppNativeContext(
-            storage: LlamaCppNativeStorage(model: model, context: context),
+            storage: LlamaCppNativeStorage(
+                model: model,
+                context: context,
+                batchCapacity: configuration.batchSize
+            ),
             generationLimit: Int32(configuration.contextSize)
         )
     }
@@ -153,34 +176,63 @@ actor LlamaCppNativeContext {
     }
 
     private func startCompletion(prompt: String, maxTokens: Int?) throws {
-        tokens = tokenize(text: prompt, addBOS: true)
+        tokens = tokenize(text: prompt, addSpecial: true, parseSpecial: true)
+        stopTokenIDs = chatStopTokenIDs()
         pendingUTF8Bytes = []
         isDone = false
         llama_memory_clear(llama_get_memory(storage.context), true)
         llama_sampler_reset(storage.sampler)
-        let contextSize = llama_n_ctx(storage.context)
-        let requestedTokens = tokens.count + min(maxTokens ?? Int(contextSize), Int(contextSize))
+        let contextSize = Int(llama_n_ctx(storage.context))
+        if tokens.count > contextSize {
+            throw LlamaCppNativeError.promptExceedsContext(required: tokens.count, context: contextSize)
+        }
+        let availableOutputTokens = contextSize - tokens.count
+        let requestedOutputTokens = max(0, maxTokens ?? availableOutputTokens)
+        let requestedTokens = tokens.count + requestedOutputTokens
         if requestedTokens > contextSize {
-            throw LlamaCppNativeError.promptExceedsContext(required: requestedTokens, context: Int(contextSize))
+            throw LlamaCppNativeError.promptExceedsContext(required: requestedTokens, context: contextSize)
         }
-        generationLimit = Int32(min(requestedTokens, Int(contextSize)))
+        generationLimit = Int32(requestedTokens)
 
-        llamaBatchClear(&storage.batch)
-        for index in tokens.indices {
-            llamaBatchAdd(&storage.batch, tokens[index], Int32(index), [0], false)
+        try decodePromptTokens()
+
+        currentPosition = Int32(tokens.count)
+    }
+
+    private func decodePromptTokens() throws {
+        var tokenIndex = 0
+        while tokenIndex < tokens.count {
+            llamaBatchClear(&storage.batch)
+            let chunkEnd = min(tokenIndex + storage.batchCapacity, tokens.count)
+
+            while tokenIndex < chunkEnd {
+                try llamaBatchAdd(
+                    &storage.batch,
+                    capacity: storage.batchCapacity,
+                    tokens[tokenIndex],
+                    Int32(tokenIndex),
+                    [0],
+                    tokenIndex == tokens.count - 1
+                )
+                tokenIndex += 1
+            }
+
+            guard llama_decode(storage.context, storage.batch) == 0 else {
+                throw LlamaCppNativeError.decodeFailed
+            }
         }
-        storage.batch.logits[Int(storage.batch.n_tokens) - 1] = 1
-
-        guard llama_decode(storage.context, storage.batch) == 0 else {
-            throw LlamaCppNativeError.decodeFailed
-        }
-
-        currentPosition = storage.batch.n_tokens
     }
 
     private func nextToken() throws -> String {
+        if currentPosition >= generationLimit {
+            isDone = true
+            let trailingText = decodeUTF8(pendingUTF8Bytes)
+            pendingUTF8Bytes.removeAll()
+            return trailingText
+        }
+
         let tokenID = llama_sampler_sample(storage.sampler, storage.context, storage.batch.n_tokens - 1)
-        if llama_vocab_is_eog(storage.vocab, tokenID) || currentPosition >= generationLimit {
+        if llama_vocab_is_eog(storage.vocab, tokenID) || stopTokenIDs.contains(tokenID) {
             isDone = true
             let trailingText = decodeUTF8(pendingUTF8Bytes)
             pendingUTF8Bytes.removeAll()
@@ -202,7 +254,7 @@ actor LlamaCppNativeContext {
         }
 
         llamaBatchClear(&storage.batch)
-        llamaBatchAdd(&storage.batch, tokenID, currentPosition, [0], true)
+        try llamaBatchAdd(&storage.batch, capacity: storage.batchCapacity, tokenID, currentPosition, [0], true)
         currentPosition += 1
 
         guard llama_decode(storage.context, storage.batch) == 0 else {
@@ -211,9 +263,9 @@ actor LlamaCppNativeContext {
         return text
     }
 
-    private func tokenize(text: String, addBOS: Bool) -> [llama_token] {
+    private func tokenize(text: String, addSpecial: Bool, parseSpecial: Bool) -> [llama_token] {
         let utf8Count = text.utf8.count
-        let tokenCapacity = utf8Count + (addBOS ? 1 : 0) + 1
+        let tokenCapacity = utf8Count + (addSpecial ? 1 : 0) + 1
         let tokenBuffer = UnsafeMutablePointer<llama_token>.allocate(capacity: tokenCapacity)
         defer { tokenBuffer.deallocate() }
 
@@ -223,8 +275,8 @@ actor LlamaCppNativeContext {
             Int32(utf8Count),
             tokenBuffer,
             Int32(tokenCapacity),
-            addBOS,
-            false
+            addSpecial,
+            parseSpecial
         )
 
         guard tokenCount > 0 else {
@@ -232,6 +284,12 @@ actor LlamaCppNativeContext {
         }
 
         return (0..<Int(tokenCount)).map { tokenBuffer[$0] }
+    }
+
+    private func chatStopTokenIDs() -> Set<llama_token> {
+        Set(["<|eot_id|>", "<|end_of_text|>"].flatMap {
+            tokenize(text: $0, addSpecial: false, parseSpecial: true)
+        })
     }
 
     private func tokenToPiece(token: llama_token) -> [CChar] {
@@ -273,13 +331,15 @@ private final class LlamaCppNativeStorage: @unchecked Sendable {
     let vocab: OpaquePointer
     let sampler: UnsafeMutablePointer<llama_sampler>
     var batch: llama_batch
+    let batchCapacity: Int
 
-    init(model: OpaquePointer, context: OpaquePointer) {
+    init(model: OpaquePointer, context: OpaquePointer, batchCapacity: Int) {
         self.model = model
         self.context = context
         self.vocab = llama_model_get_vocab(model)
         self.sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
-        self.batch = llama_batch_init(512, 0, 1)
+        self.batchCapacity = max(1, batchCapacity)
+        self.batch = llama_batch_init(Int32(self.batchCapacity), 0, 1)
         llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.4))
         llama_sampler_chain_add(sampler, llama_sampler_init_dist(UInt32.random(in: 1...UInt32.max)))
     }

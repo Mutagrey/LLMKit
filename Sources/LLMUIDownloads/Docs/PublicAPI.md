@@ -21,5 +21,6 @@ When the lifecycle service also conforms to `ModelLifecycleMaintenanceService`, 
 and delete/clear actions without owning file paths or persistence details. Storage totals include configured descriptors with
 partial artifacts, so failed downloads can still expose cleanup affordances.
 `ModelDownloadsViewModel.beginInstall(_:)` and `cancelInstall(_:)` let hosts drive install lifecycle from UI without
-holding task handles in view code. Cancel waits for lifecycle cancellation cleanup before allowing another install for the same
-model.
+holding task handles in view code. Cancel waits for lifecycle cancellation handling before allowing another install for the
+same model; under the default lifecycle policy, that handling may preserve hidden resume data so retry can continue the
+interrupted transfer without exposing resume files to UI.

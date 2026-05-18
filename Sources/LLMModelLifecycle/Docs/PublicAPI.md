@@ -32,12 +32,13 @@ of only per-file completion updates. The default `URLSessionModelArtifactDownloa
 When only artifact-count progress is available, progress details omit byte totals so UI does not present file counts as bytes.
 The default downloader retries transient URL loading failures with `URLSession` resume data when available, stores resume data
 beside the destination artifact while retrying, preserves partial/resume artifacts after ordinary download failure for retry,
-removes that cache after success, preserves it after cancellation for retry, coalesces high-frequency transfer callbacks before publishing lifecycle progress,
-and maps transport failures
-to short lifecycle errors without exposing presigned URLs or raw `NSError` payloads.
+removes that cache after success, preserves it after cancellation for retry, coalesces high-frequency transfer callbacks before
+publishing lifecycle progress, and maps transport failures to short lifecycle errors without exposing presigned URLs or raw
+`NSError` payloads.
 Task cancellation now propagates into the default downloader so user-requested cancellation can stop an in-flight transfer
 instead of waiting for the current artifact to finish. Downloaders that own sidecar partial state can conform to
-`ModelArtifactDownloadCacheCleaning` so cancellation cleanup can remove incomplete cache without touching verified artifacts.
+`ModelArtifactDownloadCacheCleaning`; the coordinator uses that hook for eager `.removeAllArtifacts` cleanup, while the
+default cancellation policy intentionally leaves resume cache available for retry.
 
 `ModelIntegrityVerifier` validates manifest signatures plus downloaded artifact size and checksum metadata. Artifact checksums are
 streamed from disk instead of loading full model files into memory.
@@ -48,7 +49,7 @@ estimated download bytes, subtracting already verified artifacts so retries do n
 `ModelInstallInterruptionPolicy` defines how cancellation cleanup behaves. The default policy preserves already verified
 artifacts and downloader resume cache so a later install can resume from completed files or the interrupted transfer while
 still deleting invalid completed leftovers from an interrupted attempt. Callers that prefer the previous eager cleanup
-behavior can opt into `.removeAllArtifacts`.
+behavior can opt into `.removeAllArtifacts`, which clears downloader resume cache before removing artifacts.
 When an install is cancelled, the coordinator still returns the install state to `.notInstalled` rather than leaving a
 misleading terminal failure state behind.
 Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk

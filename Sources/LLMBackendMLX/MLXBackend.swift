@@ -15,7 +15,7 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
         supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix(),
         memoryPolicy: MLXMemoryPolicy = .default
     ) {
-        if runtimeAvailable, let modelRootDirectory {
+        if runtimeAvailable, Self.canCreateLocalRuntime, let modelRootDirectory {
             self.runtime = MLXLocalRuntime(
                 modelRootDirectory: modelRootDirectory,
                 memoryPolicy: memoryPolicy
@@ -24,6 +24,14 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
             self.runtime = nil
         }
         self.supportMatrix = supportMatrix
+    }
+
+    private static var canCreateLocalRuntime: Bool {
+        #if targetEnvironment(simulator)
+        false
+        #else
+        true
+        #endif
     }
 
     public func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {

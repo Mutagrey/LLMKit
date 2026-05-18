@@ -125,12 +125,6 @@ let package = Package(
                 "LLMUIDownloads"
             ]
         ),
-        .library(
-            name: "LLMKitExampleUI",
-            targets: [
-                "LLMExampleUI"
-            ]
-        )
     ],
     dependencies: [
         .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMajor(from: "0.31.3")),
@@ -303,23 +297,6 @@ let package = Package(
             ],
             exclude: ["Docs"]
         ),
-        .target(
-            name: "LLMExampleUI",
-            dependencies: [
-                "LLMCore",
-                "LLMProtocols",
-                "LLMOrchestrator",
-                "LLMPrompting",
-                "LLMSessions",
-                "LLMModelLifecycle",
-                "LLMStorage",
-                "LLMBackendFoundationModels",
-                "LLMBackendMLX",
-                "LLMUIChat",
-                "LLMUIDownloads"
-            ],
-            exclude: ["Docs"]
-        ),
         .testTarget(
             name: "LLMCoreTests",
             dependencies: ["LLMCore"]
@@ -391,15 +368,6 @@ let package = Package(
         .testTarget(
             name: "LLMUIDownloadsTests",
             dependencies: ["LLMUIDownloads"]
-        ),
-        .testTarget(
-            name: "LLMExampleUITests",
-            dependencies: [
-                "LLMCore",
-                "LLMExampleUI",
-                "LLMStorage",
-                "LLMSessions"
-            ]
         ),
         .testTarget(
             name: "LLMArchitectureTests",

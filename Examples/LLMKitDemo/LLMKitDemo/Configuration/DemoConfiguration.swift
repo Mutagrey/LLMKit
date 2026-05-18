@@ -1,19 +1,15 @@
 import Foundation
 import LLMCore
-import LLMExampleUI
 import LLMModelLifecycle
 import LLMProtocols
 
 enum DemoConfiguration {
-    static func make() -> LLMKitExampleConfiguration {
-        let fallbackManifest = ModelManifest(
-            id: "llmkit.demo.fallback-catalog",
-            models: LLMKitExampleModels.localIPhoneTextModels
-        )
+    static func make() -> DemoRuntimeConfiguration {
+        let localFallback = fallbackManifest()
         if let remoteSource = remoteCatalogSourceFromEnvironment() {
             return .dynamicRemoteManifest(
                 remoteSource: remoteSource,
-                fallbackManifest: fallbackManifest,
+                fallbackManifest: localFallback,
                 includeAppleIntelligence: true,
                 runtimeAvailable: true,
                 lifecycle: makeLifecycle()
@@ -21,10 +17,27 @@ enum DemoConfiguration {
         }
 
         return .liveHuggingFaceCatalog(
-            fallbackManifest: fallbackManifest,
+            fallbackManifest: localFallback,
             includeAppleIntelligence: true,
             runtimeAvailable: true,
             lifecycle: makeLifecycle()
+        )
+    }
+
+    static func preview() -> DemoRuntimeConfiguration {
+        DemoRuntimeConfiguration.liveHuggingFaceCatalog(
+            fallbackManifest: fallbackManifest(),
+            includeAppleIntelligence: true,
+            runtimeAvailable: false,
+            lifecycle: makeLifecycle(),
+            fetchCatalogData: { _ in throw URLError(.notConnectedToInternet) }
+        )
+    }
+
+    private static func fallbackManifest() -> ModelManifest {
+        ModelManifest(
+            id: "llmkit.demo.fallback-catalog",
+            models: CuratedModelManifests.localIPhoneTextModels.models
         )
     }
 

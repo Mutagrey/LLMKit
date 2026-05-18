@@ -1,15 +1,14 @@
 import BackgroundTasks
 import Foundation
 import LLMCore
-import LLMExampleUI
 
 @MainActor
 final class DemoAutomationBackgroundController {
     static let taskIdentifier = "com.llmkit.demo.automation"
 
-    private let configurationProvider: @Sendable () -> LLMKitExampleConfiguration
+    private let configurationProvider: @Sendable () -> DemoRuntimeConfiguration
 
-    init(configurationProvider: @escaping @Sendable () -> LLMKitExampleConfiguration) {
+    init(configurationProvider: @escaping @Sendable () -> DemoRuntimeConfiguration) {
         self.configurationProvider = configurationProvider
     }
 
@@ -70,7 +69,7 @@ final class DemoAutomationBackgroundController {
         }
     }
 
-    private static func hasBestEffortSessionsNeedingWork(configurationProvider: @escaping @Sendable () -> LLMKitExampleConfiguration) async -> Bool {
+    private static func hasBestEffortSessionsNeedingWork(configurationProvider: @escaping @Sendable () -> DemoRuntimeConfiguration) async -> Bool {
         let configuration = configurationProvider()
         let overviews = (try? await configuration.container.sessions.listSessions()) ?? []
         for overview in overviews where overview.kind == .automatedConversation && overview.automationState?.phase == .running {

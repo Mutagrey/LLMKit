@@ -78,7 +78,7 @@ struct ChatModelToolbarMenu: View {
         guard let selectedModel else {
             return models.isEmpty ? "No ready models" : "No model selected"
         }
-        return "\(exampleBackendTitle(selectedModel.backend)) · \(selectedStatusText)"
+        return "\(demoBackendTitle(selectedModel.backend)) · \(selectedStatusText)"
     }
 
     private var selectedModelIconName: String {
@@ -100,7 +100,7 @@ struct ChatModelToolbarMenu: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(descriptor.displayName)
-                Text("\(exampleBackendTitle(descriptor.backend)) · \(statusText(descriptor))")
+                Text("\(demoBackendTitle(descriptor.backend)) · \(statusText(descriptor))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

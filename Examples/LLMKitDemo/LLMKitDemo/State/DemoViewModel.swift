@@ -5,35 +5,35 @@ import Observation
 
 @MainActor
 @Observable
-public final class LLMKitExampleViewModel {
-    public private(set) var models: [ModelDescriptor]
-    public private(set) var availability: [ModelID: BackendAvailability]
-    public private(set) var installStates: [ModelID: InstallState]
-    public private(set) var sessions: [SessionOverview]
-    public private(set) var catalogStatus: ModelCatalogStatus
-    public private(set) var isRefreshing: Bool
-    public private(set) var lastErrorMessage: String?
-    public var selectedModelID: ModelID? {
+final class DemoViewModel {
+    private(set) var models: [ModelDescriptor]
+    private(set) var availability: [ModelID: BackendAvailability]
+    private(set) var installStates: [ModelID: InstallState]
+    private(set) var sessions: [SessionOverview]
+    private(set) var catalogStatus: ModelCatalogStatus
+    private(set) var isRefreshing: Bool
+    private(set) var lastErrorMessage: String?
+    var selectedModelID: ModelID? {
         didSet {
             persistSelectedModelID()
         }
     }
-    public var executionMode: ExecutionMode {
+    var executionMode: ExecutionMode {
         didSet {
             defaults.set(executionMode.rawValue, forKey: Self.executionModeKey)
         }
     }
-    public var qualityTier: QualityTier {
+    var qualityTier: QualityTier {
         didSet {
             defaults.set(qualityTier.rawValue, forKey: Self.qualityTierKey)
         }
     }
-    public var privacyMode: PrivacyMode {
+    var privacyMode: PrivacyMode {
         didSet {
             defaults.set(privacyMode.rawValue, forKey: Self.privacyModeKey)
         }
     }
-    public var maxOutputTokens: Int {
+    var maxOutputTokens: Int {
         didSet {
             let clampedValue = max(64, min(maxOutputTokens, 4096))
             if clampedValue != maxOutputTokens {
@@ -45,19 +45,19 @@ public final class LLMKitExampleViewModel {
     }
 
     @ObservationIgnored
-    private let configuration: LLMKitExampleConfiguration
+    private let configuration: DemoRuntimeConfiguration
     @ObservationIgnored
     private let defaults: UserDefaults
     @ObservationIgnored
-    private var preflight: ExampleModelPreflight {
-        ExampleModelPreflight(
+    private var preflight: DemoModelPreflight {
+        DemoModelPreflight(
             catalog: configuration.catalog,
             catalogStatusProvider: configuration.catalogStatusProvider,
             backends: configuration.backends
         )
     }
 
-    public init(configuration: LLMKitExampleConfiguration, defaults: UserDefaults = .standard) {
+    init(configuration: DemoRuntimeConfiguration, defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.configuration = configuration
         self.models = []
@@ -74,50 +74,29 @@ public final class LLMKitExampleViewModel {
         self.maxOutputTokens = Self.persistedMaxOutputTokens(from: defaults)
     }
 
-    public var selectedModel: ModelDescriptor? {
+    var selectedModel: ModelDescriptor? {
         guard let selectedModelID else {
             return nil
         }
         return models.first { $0.id == selectedModelID }
     }
 
-    public var selectedModelAvailability: BackendAvailability? {
-        guard let selectedModel else {
-            return nil
-        }
-        return availability[selectedModel.id]
-    }
-
-    public var downloadableModels: [ModelDescriptor] {
+    var downloadableModels: [ModelDescriptor] {
         models.filter { $0.tags.contains("downloadable") }
     }
 
-    public var chatSelectableModels: [ModelDescriptor] {
+    var chatSelectableModels: [ModelDescriptor] {
         models.filter(isReadyForChat)
     }
 
-    public var canChatWithSelectedModel: Bool {
+    var canChatWithSelectedModel: Bool {
         guard let selectedModel else {
             return false
         }
         return isReadyForChat(selectedModel)
     }
 
-    public var chatRequirements: ExecutionRequirements {
-        requirements(for: selectedModel, preferredLatency: .interactive)
-    }
-
-    public var chatIdentity: String {
-        [
-            selectedModel?.id.rawValue ?? "none",
-            executionMode.rawValue,
-            qualityTier.rawValue,
-            privacyMode.rawValue,
-            String(maxOutputTokens)
-        ].joined(separator: ":")
-    }
-
-    public func refresh() async {
+    func refresh() async {
         isRefreshing = true
         lastErrorMessage = nil
         do {
@@ -137,18 +116,18 @@ public final class LLMKitExampleViewModel {
         isRefreshing = false
     }
 
-    public func refreshSessions() async throws {
+    func refreshSessions() async throws {
         sessions = try await configuration.container.sessions.listSessions()
     }
 
-    public func model(for id: ModelID?) -> ModelDescriptor? {
+    func model(for id: ModelID?) -> ModelDescriptor? {
         guard let id else {
             return nil
         }
         return models.first { $0.id == id }
     }
 
-    public func requirements(
+    func requirements(
         for descriptor: ModelDescriptor?,
         preferredLatency: PreferredLatency,
         selectionPolicy: ModelSelectionPolicy? = nil
@@ -169,7 +148,7 @@ public final class LLMKitExampleViewModel {
     }
 
     @discardableResult
-    public func createManualSession() async throws -> SessionSnapshot {
+    func createManualSession() async throws -> SessionSnapshot {
         _ = try await validateSelectedModelForChat()
         let snapshot = try await configuration.container.sessions.createSession(
             title: nil,
@@ -183,7 +162,7 @@ public final class LLMKitExampleViewModel {
     }
 
     @discardableResult
-    public func createAutomatedSession(
+    func createAutomatedSession(
         title: String?,
         definition: AutomatedConversationDefinition,
         executionRequirements: ExecutionRequirements
@@ -203,26 +182,21 @@ public final class LLMKitExampleViewModel {
         return snapshot
     }
 
-    public func loadSession(id: SessionID) async throws -> SessionSnapshot? {
+    func loadSession(id: SessionID) async throws -> SessionSnapshot? {
         try await configuration.container.sessions.loadSession(id: id)
     }
 
-    public func saveSession(_ snapshot: SessionSnapshot) async throws {
-        try await configuration.container.sessions.saveSession(snapshot)
-        try await refreshSessions()
-    }
-
-    public func deleteSession(id: SessionID) async throws {
+    func deleteSession(id: SessionID) async throws {
         try await configuration.container.sessions.deleteSession(id: id)
         try await refreshSessions()
     }
 
-    public func setLastErrorMessage(_ message: String?) {
+    func setLastErrorMessage(_ message: String?) {
         lastErrorMessage = message
     }
 
     @discardableResult
-    public func validateSelectedModelForChat() async throws -> ModelDescriptor {
+    func validateSelectedModelForChat() async throws -> ModelDescriptor {
         guard let selectedModel else {
             throw LLMError.modelSelectionFailed("Manual chat: no ready model is selected. Install or select a ready model from Models.")
         }
@@ -233,14 +207,14 @@ public final class LLMKitExampleViewModel {
     }
 
     @discardableResult
-    public func validateExecutionRequirements(
+    func validateExecutionRequirements(
         _ requirements: ExecutionRequirements,
         context: String
     ) async throws -> ModelDescriptor {
         try await preflight.validate(requirements, context: context)
     }
 
-    public func validateAutomatedConversation(
+    func validateAutomatedConversation(
         definition: AutomatedConversationDefinition,
         executionRequirements: ExecutionRequirements
     ) async throws {
@@ -251,7 +225,7 @@ public final class LLMKitExampleViewModel {
         )
     }
 
-    public func validateAutomatedSession(_ snapshot: SessionSnapshot) async throws {
+    func validateAutomatedSession(_ snapshot: SessionSnapshot) async throws {
         guard let definition = snapshot.automationDefinition else {
             throw LLMError.executionFailed("Automated conversation definition is missing.")
         }
@@ -263,12 +237,12 @@ public final class LLMKitExampleViewModel {
         )
     }
 
-    public func backendDescriptor(for overview: SessionOverview) -> ModelDescriptor? {
+    func backendDescriptor(for overview: SessionOverview) -> ModelDescriptor? {
         model(for: overview.executionRequirements?.preferredModel)
     }
 
-    public func statusText(for descriptor: ModelDescriptor) -> String {
-        if isSystemManaged(descriptor) {
+    func statusText(for descriptor: ModelDescriptor) -> String {
+        if descriptor.tags.contains("system-managed") {
             return availabilityText(for: descriptor)
         }
 
@@ -279,16 +253,8 @@ public final class LLMKitExampleViewModel {
         return availabilityText(for: descriptor)
     }
 
-    public func isSystemManaged(_ descriptor: ModelDescriptor) -> Bool {
-        descriptor.tags.contains("system-managed")
-    }
-
-    public func isAvailable(_ descriptor: ModelDescriptor) -> Bool {
+    func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
         availability[descriptor.id]?.status == .available
-    }
-
-    public func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
-        isAvailable(descriptor)
     }
 
     private func refreshInstallStates() async throws {
@@ -370,11 +336,11 @@ public final class LLMKitExampleViewModel {
         }
     }
 
-    private static let selectedModelIDKey = "llmkit.example.selectedModelID"
-    private static let executionModeKey = "llmkit.example.executionMode"
-    private static let qualityTierKey = "llmkit.example.qualityTier"
-    private static let privacyModeKey = "llmkit.example.privacyMode"
-    private static let maxOutputTokensKey = "llmkit.example.maxOutputTokens"
+    private static let selectedModelIDKey = "llmkit.demo.selectedModelID"
+    private static let executionModeKey = "llmkit.demo.executionMode"
+    private static let qualityTierKey = "llmkit.demo.qualityTier"
+    private static let privacyModeKey = "llmkit.demo.privacyMode"
+    private static let maxOutputTokensKey = "llmkit.demo.maxOutputTokens"
 
     private static func persistedExecutionMode(from defaults: UserDefaults) -> ExecutionMode {
         guard let rawValue = defaults.string(forKey: executionModeKey),

@@ -170,20 +170,7 @@ private struct PackageManifest {
         "LLMBackendMLX": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendRemote": ["LLMCore", "LLMProtocols", "LLMNetworking", "LLMObservability"],
         "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability"],
-        "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
-        "LLMExampleUI": [
-            "LLMBackendFoundationModels",
-            "LLMBackendMLX",
-            "LLMCore",
-            "LLMModelLifecycle",
-            "LLMOrchestrator",
-            "LLMPrompting",
-            "LLMProtocols",
-            "LLMSessions",
-            "LLMStorage",
-            "LLMUIChat",
-            "LLMUIDownloads"
-        ]
+        "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"]
     ]
 
     for (target, imports) in importsByTarget {
@@ -220,8 +207,7 @@ private struct PackageManifest {
 
     let swiftUITargets: Set<String> = [
         "LLMUIChat",
-        "LLMUIDownloads",
-        "LLMExampleUI"
+        "LLMUIDownloads"
     ]
     for target in importsByTarget.keys where !swiftUITargets.contains(target) {
         #expect(

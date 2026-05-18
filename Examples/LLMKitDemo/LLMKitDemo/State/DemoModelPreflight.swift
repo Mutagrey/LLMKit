@@ -2,7 +2,7 @@ import LLMCore
 import LLMOrchestrator
 import LLMProtocols
 
-struct ExampleModelPreflight {
+struct DemoModelPreflight {
     let catalog: any ModelCatalogProviding
     let catalogStatusProvider: (any ModelCatalogStatusProviding)?
     let backends: [any ModelBackend]

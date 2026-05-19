@@ -5,11 +5,13 @@ import SwiftUI
 
 struct ChatSessionsTab: View {
     let viewModel: DemoViewModel
+    let skillStore: DemoPromptSkillStore
     let configuration: DemoRuntimeConfiguration
     let openModels: () -> Void
 
     @State private var path: [SessionID] = []
     @State private var isPresentingAutomationComposer = false
+    @State private var isPresentingManualComposer = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -29,6 +31,7 @@ struct ChatSessionsTab: View {
                 SessionDetailHost(
                     sessionID: sessionID,
                     viewModel: viewModel,
+                    skillStore: skillStore,
                     configuration: configuration
                 )
             }
@@ -73,6 +76,15 @@ struct ChatSessionsTab: View {
                     }
                 )
             }
+            .sheet(isPresented: $isPresentingManualComposer) {
+                NewManualChatSheet(
+                    viewModel: viewModel,
+                    skillStore: skillStore,
+                    onCreate: { sessionID in
+                        path.append(sessionID)
+                    }
+                )
+            }
         }
     }
 
@@ -106,22 +118,16 @@ struct ChatSessionsTab: View {
     }
 
     private func createManualSession() {
-        Task {
-            do {
-                let session = try await viewModel.createManualSession()
-                path.append(session.id)
-            } catch {
-                await MainActor.run {
-                    viewModel.setLastErrorMessage(ChatErrorPresentation(error: error).message)
-                }
-            }
-        }
+        isPresentingManualComposer = true
     }
 
     private func deleteSessions(from sessions: [SessionOverview], at offsets: IndexSet) {
         for sessionID in offsets.compactMap({ sessions.indices.contains($0) ? sessions[$0].id : nil }) {
             Task {
                 try? await viewModel.deleteSession(id: sessionID)
+                await MainActor.run {
+                    skillStore.removeSelection(for: sessionID)
+                }
             }
         }
     }

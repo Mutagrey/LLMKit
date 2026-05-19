@@ -72,11 +72,18 @@ private struct ToolFailureChatService: ChatService {
 private final class RecordingChatService: ChatService, @unchecked Sendable {
     private let lock = NSLock()
     private var recordedRequests: [ChatRequest] = []
+    private var recordedResetSessionIDs: [SessionID] = []
 
     var requests: [ChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return recordedRequests
+    }
+
+    var resetSessionIDs: [SessionID] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedResetSessionIDs
     }
 
     func send(_ request: ChatRequest) -> AsyncThrowingStream<ChatEvent, Error> {
@@ -89,6 +96,26 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
             continuation.yield(.completed(ChatResult(message: message)))
             continuation.finish()
         }
+    }
+
+    func resetSession(_ sessionID: SessionID) async {
+        recordReset(sessionID)
+    }
+
+    private func recordReset(_ sessionID: SessionID) {
+        lock.lock()
+        recordedResetSessionIDs.append(sessionID)
+        lock.unlock()
+    }
+}
+
+private final class SignatureBox: @unchecked Sendable {
+    @MainActor
+    var value: String
+
+    @MainActor
+    init(_ value: String) {
+        self.value = value
     }
 }
 
@@ -175,6 +202,53 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
     #expect(requests.count == 1)
     #expect(requests.first?.messages.map(\.content.text) == ["hi"])
     #expect(requests.first?.requirements == requirements)
+}
+
+@MainActor
+@Test func chatViewModelPrependsTransientMessagesWithoutPersistingThem() async {
+    let service = RecordingChatService()
+    let transientMessage = ChatMessage(
+        role: .system,
+        content: MessageContent(text: "Use the selected demo skills.")
+    )
+    let viewModel = ChatViewModel(
+        chatService: service,
+        transientMessagesProvider: {
+            [transientMessage]
+        },
+        transientContextSignatureProvider: {
+            "skills:v1"
+        }
+    )
+
+    await viewModel.send("hi")
+
+    #expect(service.requests.count == 1)
+    #expect(service.requests.first?.messages.map(\.role) == [.system, .user])
+    #expect(service.requests.first?.messages.map(\.content.text) == ["Use the selected demo skills.", "hi"])
+    #expect(viewModel.messages.map(\.role) == [.user, .assistant])
+    #expect(viewModel.messages.map(\.content.text) == ["hi", "recorded"])
+}
+
+@MainActor
+@Test func chatViewModelResetsRuntimeSessionWhenTransientSignatureChanges() async {
+    let service = RecordingChatService()
+    let sessionID: SessionID = "transient-context-session"
+    let signature = SignatureBox("skills:v1")
+    let viewModel = ChatViewModel(
+        chatService: service,
+        sessionID: sessionID,
+        transientContextSignatureProvider: {
+            signature.value
+        }
+    )
+
+    await viewModel.send("first")
+    signature.value = "skills:v2"
+    await viewModel.send("second")
+
+    #expect(service.requests.count == 2)
+    #expect(service.resetSessionIDs == [sessionID])
 }
 
 @MainActor

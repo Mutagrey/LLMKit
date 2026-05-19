@@ -24,6 +24,12 @@
 		42D000020000000000000009 /* SessionDetailHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000009 /* SessionDetailHost.swift */; };
 		42D00002000000000000000B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000B /* ModelsTab.swift */; };
 		42D00002000000000000000C /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000C /* SettingsTab.swift */; };
+		42E000020000000000000001 /* DemoPromptSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000001 /* DemoPromptSkill.swift */; };
+		42E000020000000000000002 /* DemoPromptSkillComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000002 /* DemoPromptSkillComposer.swift */; };
+		42E000020000000000000003 /* DemoPromptSkillStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000003 /* DemoPromptSkillStore.swift */; };
+		42E000020000000000000004 /* SkillsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000004 /* SkillsTab.swift */; };
+		42E000020000000000000005 /* NewManualChatSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000005 /* NewManualChatSheet.swift */; };
+		42E000020000000000000006 /* ManualChatHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000006 /* ManualChatHeader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +51,12 @@
 		42D000010000000000000009 /* SessionDetailHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailHost.swift; sourceTree = "<group>"; };
 		42D00001000000000000000B /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
 		42D00001000000000000000C /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
+		42E000010000000000000001 /* DemoPromptSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPromptSkill.swift; sourceTree = "<group>"; };
+		42E000010000000000000002 /* DemoPromptSkillComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPromptSkillComposer.swift; sourceTree = "<group>"; };
+		42E000010000000000000003 /* DemoPromptSkillStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPromptSkillStore.swift; sourceTree = "<group>"; };
+		42E000010000000000000004 /* SkillsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsTab.swift; sourceTree = "<group>"; };
+		42E000010000000000000005 /* NewManualChatSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewManualChatSheet.swift; sourceTree = "<group>"; };
+		42E000010000000000000006 /* ManualChatHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualChatHeader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -120,6 +132,9 @@
 		42D000030000000000000004 /* State */ = {
 			isa = PBXGroup;
 			children = (
+				42E000010000000000000001 /* DemoPromptSkill.swift */,
+				42E000010000000000000002 /* DemoPromptSkillComposer.swift */,
+				42E000010000000000000003 /* DemoPromptSkillStore.swift */,
 				42D000010000000000000003 /* DemoModelPreflight.swift */,
 				42D000010000000000000004 /* DemoViewModel.swift */,
 			);
@@ -132,6 +147,7 @@
 				42D000030000000000000006 /* Chats */,
 				42D000030000000000000007 /* Models */,
 				42D000030000000000000008 /* Settings */,
+				42E000030000000000000001 /* Skills */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -142,7 +158,9 @@
 				42D000010000000000000005 /* AutomatedSessionScreen.swift */,
 				42D000010000000000000006 /* AutomationComposerSheet.swift */,
 				42D000010000000000000007 /* ChatSessionsTab.swift */,
+				42E000010000000000000006 /* ManualChatHeader.swift */,
 				42D000010000000000000008 /* ManualSessionScreen.swift */,
+				42E000010000000000000005 /* NewManualChatSheet.swift */,
 				42D000010000000000000009 /* SessionDetailHost.swift */,
 			);
 			path = Chats;
@@ -162,6 +180,14 @@
 				42D00001000000000000000C /* SettingsTab.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		42E000030000000000000001 /* Skills */ = {
+			isa = PBXGroup;
+			children = (
+				42E000010000000000000004 /* SkillsTab.swift */,
+			);
+			path = Skills;
 			sourceTree = "<group>";
 		};
 		42D000030000000000000009 /* Support */ = {
@@ -256,11 +282,17 @@
 				42D000020000000000000005 /* AutomatedSessionScreen.swift in Sources */,
 				42D000020000000000000006 /* AutomationComposerSheet.swift in Sources */,
 				42D000020000000000000007 /* ChatSessionsTab.swift in Sources */,
+				42E000020000000000000006 /* ManualChatHeader.swift in Sources */,
 				42D000020000000000000008 /* ManualSessionScreen.swift in Sources */,
+				42E000020000000000000005 /* NewManualChatSheet.swift in Sources */,
 				42D000020000000000000009 /* SessionDetailHost.swift in Sources */,
 				42D00002000000000000000B /* ModelsTab.swift in Sources */,
+				42E000020000000000000004 /* SkillsTab.swift in Sources */,
 				42D00002000000000000000C /* SettingsTab.swift in Sources */,
 				42D000020000000000000003 /* DemoModelPreflight.swift in Sources */,
+				42E000020000000000000001 /* DemoPromptSkill.swift in Sources */,
+				42E000020000000000000002 /* DemoPromptSkillComposer.swift in Sources */,
+				42E000020000000000000003 /* DemoPromptSkillStore.swift in Sources */,
 				42D000020000000000000004 /* DemoViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

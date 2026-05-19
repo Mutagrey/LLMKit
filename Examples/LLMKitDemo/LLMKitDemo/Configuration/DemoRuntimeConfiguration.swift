@@ -4,6 +4,7 @@ import LLMBackendLlamaCpp
 import LLMBackendMLX
 import LLMCore
 import LLMModelLifecycle
+import LLMObservability
 import LLMPrompting
 import LLMOrchestrator
 import LLMProtocols
@@ -17,6 +18,7 @@ struct DemoRuntimeConfiguration: Sendable {
     let backends: [any ModelBackend]
     let downloadableModels: [ModelDescriptor]
     let sessionStore: (any SessionStore)?
+    let metricsCollector: MetricsCollector
 
     init(
         container: LLMKitContainer,
@@ -24,7 +26,8 @@ struct DemoRuntimeConfiguration: Sendable {
         catalogStatusProvider: (any ModelCatalogStatusProviding)? = nil,
         backends: [any ModelBackend],
         downloadableModels: [ModelDescriptor] = [],
-        sessionStore: (any SessionStore)? = nil
+        sessionStore: (any SessionStore)? = nil,
+        metricsCollector: MetricsCollector = MetricsCollector()
     ) {
         self.container = container
         self.catalog = catalog
@@ -32,6 +35,7 @@ struct DemoRuntimeConfiguration: Sendable {
         self.backends = backends
         self.downloadableModels = downloadableModels
         self.sessionStore = sessionStore
+        self.metricsCollector = metricsCollector
     }
 
     func makeAutomationCoordinator() -> AutomatedConversationCoordinator {
@@ -68,10 +72,12 @@ struct DemoRuntimeConfiguration: Sendable {
             catalog = remoteCatalog
         }
 
+        let metricsCollector = MetricsCollector()
         let resolvedBackends = makeBackends(
             includeAppleIntelligence: includeAppleIntelligence,
             runtimeAvailable: runtimeAvailable,
-            additionalBackends: additionalBackends
+            additionalBackends: additionalBackends,
+            metricsSink: metricsCollector
         )
 
         let container = LLMKitFactory.makeContainer(
@@ -87,7 +93,8 @@ struct DemoRuntimeConfiguration: Sendable {
             catalogStatusProvider: remoteCatalog,
             backends: resolvedBackends,
             downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
-            sessionStore: sessionStore
+            sessionStore: sessionStore,
+            metricsCollector: metricsCollector
         )
     }
 
@@ -112,10 +119,12 @@ struct DemoRuntimeConfiguration: Sendable {
             fetchData: fetchCatalogData
         )
 
+        let metricsCollector = MetricsCollector()
         let resolvedBackends = makeBackends(
             includeAppleIntelligence: includeAppleIntelligence,
             runtimeAvailable: runtimeAvailable,
-            additionalBackends: additionalBackends
+            additionalBackends: additionalBackends,
+            metricsSink: metricsCollector
         )
 
         let container = LLMKitFactory.makeContainer(
@@ -131,7 +140,8 @@ struct DemoRuntimeConfiguration: Sendable {
             catalogStatusProvider: liveCatalog,
             backends: resolvedBackends,
             downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
-            sessionStore: sessionStore
+            sessionStore: sessionStore,
+            metricsCollector: metricsCollector
         )
     }
 
@@ -142,14 +152,15 @@ struct DemoRuntimeConfiguration: Sendable {
     private static func makeBackends(
         includeAppleIntelligence: Bool,
         runtimeAvailable: Bool,
-        additionalBackends: [any ModelBackend]
+        additionalBackends: [any ModelBackend],
+        metricsSink: (any MetricsSink)?
     ) -> [any ModelBackend] {
         var backends: [any ModelBackend] = []
         if includeAppleIntelligence {
-            backends.append(FoundationModelsBackend())
+            backends.append(FoundationModelsBackend(metricsSink: metricsSink))
         }
-        backends.append(MLXBackend(runtimeAvailable: runtimeAvailable))
-        backends.append(LlamaCppBackend(runtimeAvailable: runtimeAvailable))
+        backends.append(MLXBackend(runtimeAvailable: runtimeAvailable, metricsSink: metricsSink))
+        backends.append(LlamaCppBackend(runtimeAvailable: runtimeAvailable, metricsSink: metricsSink))
         backends.append(contentsOf: additionalBackends)
         return backends
     }

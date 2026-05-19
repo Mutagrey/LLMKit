@@ -11,3 +11,7 @@ The demo app owns its tabbed SwiftUI shell and composes:
 - A signed dynamic internet catalog when these scheme environment variables are set:
   `LLMKIT_REMOTE_CATALOG_URL`, `LLMKIT_REMOTE_CATALOG_SIGNATURE`, and `LLMKIT_REMOTE_CATALOG_PUBLIC_KEY`.
 - Model and settings tabs that exercise the same lifecycle and orchestration-facing UI used by package clients.
+- A Skills tab for editing reusable system-prompt skills. New manual chats copy the default skill combination, while each
+  chat can override its main and additional skills from the chat header.
+- A compact manual-chat header with selected model, selected skills, free RAM, and per-response runtime metrics when local
+  backends emit sanitized telemetry.

@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum ModelRowMetrics {
+    static let largeSymbolSize: CGFloat = 30
+    static let largeSymbolFont: Font = .body.weight(.semibold)
+}
+
 struct ModelRowActionButton: View {
     struct Spec {
         enum Style: Equatable {
@@ -26,7 +31,7 @@ struct ModelRowActionButton: View {
             Task { await spec.action() }
         } label: {
             Image(systemName: spec.symbol)
-                .font(.caption.weight(.semibold))
+                .font(symbolFont)
                 .symbolRenderingMode(.hierarchical)
                 .symbolEffect(.bounce, value: effectTrigger)
                 .frame(width: buttonSize, height: buttonSize)
@@ -48,9 +53,18 @@ struct ModelRowActionButton: View {
     private var buttonSize: CGFloat {
         switch spec.style {
         case .plain:
-            return 26
+            return ModelRowMetrics.largeSymbolSize
         case .circle:
             return 28
+        }
+    }
+
+    private var symbolFont: Font {
+        switch spec.style {
+        case .plain:
+            return ModelRowMetrics.largeSymbolFont
+        case .circle:
+            return .caption.weight(.semibold)
         }
     }
 }

@@ -70,9 +70,7 @@ public struct ModelListView: View {
         List {
             if let storageSummary {
                 StorageUsageView(summary: storageSummary)
-                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             ForEach(modelSections) { section in
@@ -88,13 +86,6 @@ public struct ModelListView: View {
         .toolbar {
             filterMenu
             displayMenu
-        }
-        .overlay {
-            if isRefreshing {
-                ProgressView()
-                    .controlSize(.regular)
-                    .accessibilityLabel("Refreshing models")
-            }
         }
         .safeAreaInset(edge: .bottom) {
             if let errorMessage {

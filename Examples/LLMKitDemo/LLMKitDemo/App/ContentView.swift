@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var viewModel: DemoViewModel
     @State private var downloadsViewModel: ModelDownloadsViewModel
+    @State private var skillStore: DemoPromptSkillStore
     @State private var selectedTab = 0
 
     private let configuration: DemoRuntimeConfiguration
@@ -11,6 +12,7 @@ struct ContentView: View {
     init(configuration: DemoRuntimeConfiguration = DemoConfiguration.make()) {
         self.configuration = configuration
         self._viewModel = State(initialValue: DemoViewModel(configuration: configuration))
+        self._skillStore = State(initialValue: DemoPromptSkillStore())
         self._downloadsViewModel = State(
             initialValue: ModelDownloadsViewModel(
                 descriptors: configuration.downloadableModels,
@@ -23,6 +25,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             ChatSessionsTab(
                 viewModel: viewModel,
+                skillStore: skillStore,
                 configuration: configuration,
                 openModels: {
                     selectedTab = 1
@@ -42,11 +45,17 @@ struct ContentView: View {
             }
             .tag(1)
 
+            SkillsTab(store: skillStore)
+                .tabItem {
+                    Label("Skills", systemImage: "sparkles")
+                }
+                .tag(2)
+
             SettingsTab(viewModel: viewModel)
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .tag(2)
+                .tag(3)
         }
         .tint(.blue)
         .task {

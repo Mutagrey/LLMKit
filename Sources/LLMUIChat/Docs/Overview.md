@@ -7,3 +7,5 @@ The view model can consume any `ChatService` and maps core chat stream events in
 Tool lifecycle events are rendered as transcript items alongside regular chat messages, so the UI can show backend-neutral tool requests and completions without knowing provider-specific wire formats.
 The composer owns focus and keyboard-dismiss behavior only; it does not move routing, policy, or model selection into the reusable chat module.
 Assistant bubbles can display a compact runtime metrics line when the host wires sanitized telemetry from a metrics sink.
+Hosts can prepend transient request-only messages, such as a composed system prompt, without adding those messages to the
+visible transcript or persisted chat history.

@@ -72,13 +72,7 @@ public struct StorageUsageView: View {
                 }
             }
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
-        }
     }
 
     private func metric(value: String, label: String, tint: Color) -> some View {

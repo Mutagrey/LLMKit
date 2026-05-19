@@ -5,6 +5,7 @@ import SwiftUI
 struct SessionDetailHost: View {
     let sessionID: SessionID
     let viewModel: DemoViewModel
+    let skillStore: DemoPromptSkillStore
     let configuration: DemoRuntimeConfiguration
 
     @State private var snapshot: SessionSnapshot?
@@ -18,6 +19,7 @@ struct SessionDetailHost: View {
                     ManualSessionScreen(
                         snapshot: snapshot,
                         descriptor: viewModel.backendDescriptor(for: snapshot.overview),
+                        skillStore: skillStore,
                         preflight: {
                             try await viewModel.validateExecutionRequirements(
                                 snapshot.executionRequirements ?? ExecutionRequirements(requiredCapabilities: [.chat]),

@@ -57,6 +57,15 @@ public struct ModelRowView: View {
                 trailingContent
             }
 
+            if let rowErrorMessage {
+                Text(rowErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             if let installState, installState.llmUIModelsShowsProgress {
                 ModelInstallProgressView(
                     state: installState,
@@ -104,36 +113,44 @@ public struct ModelRowView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(descriptor.displayName)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-
-            Text(descriptorSubtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.footnote.weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.82)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 5) {
+                if isReady {
+                    Text("Ready")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+
+                Text(descriptorSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
         }
     }
 
     @ViewBuilder
     private var trailingContent: some View {
         if isReady {
-            HStack(spacing: 6) {
-                Text("Ready")
-                    .font(.caption.weight(.semibold))
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(ModelRowMetrics.largeSymbolFont)
                     .foregroundStyle(.green)
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .symbolEffect(.bounce, value: isSelected)
-                        .accessibilityLabel("Selected")
-                }
+                    .symbolEffect(.bounce, value: isSelected)
+                    .frame(
+                        width: ModelRowMetrics.largeSymbolSize,
+                        height: ModelRowMetrics.largeSymbolSize
+                    )
+                    .accessibilityLabel("Selected")
             }
         } else if let action = actionSpec {
             ModelRowActionButton(spec: action)
-        } else {
+        } else if rowErrorMessage == nil {
             statusBadge
         }
     }
@@ -248,6 +265,16 @@ public struct ModelRowView: View {
             return .orange
         }
         return .secondary
+    }
+
+    private var rowErrorMessage: String? {
+        if case .failed(let message) = installState {
+            return "Failed: \(message)"
+        }
+        guard status.hasPrefix("Failed") else {
+            return nil
+        }
+        return status
     }
 
     private func byteCountTitle(_ bytes: Int64?) -> String {

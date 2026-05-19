@@ -30,7 +30,16 @@ public final class ChatViewModel {
     private let runtimeMetricsProvider: (@Sendable () async -> [TelemetryEvent])?
 
     @ObservationIgnored
+    private let transientMessagesProvider: (@MainActor @Sendable () async -> [ChatMessage])?
+
+    @ObservationIgnored
+    private let transientContextSignatureProvider: (@MainActor @Sendable () async -> String?)?
+
+    @ObservationIgnored
     private var sendTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var lastSentTransientContextSignature: String?
 
     public init(
         messages: [ChatMessage] = [],
@@ -39,7 +48,9 @@ public final class ChatViewModel {
         sessionID: SessionID? = nil,
         onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)? = nil,
         beforeSend: (@MainActor @Sendable () async throws -> Void)? = nil,
-        runtimeMetricsProvider: (@Sendable () async -> [TelemetryEvent])? = nil
+        runtimeMetricsProvider: (@Sendable () async -> [TelemetryEvent])? = nil,
+        transientMessagesProvider: (@MainActor @Sendable () async -> [ChatMessage])? = nil,
+        transientContextSignatureProvider: (@MainActor @Sendable () async -> String?)? = nil
     ) {
         self.messages = messages
         self.transcriptItems = messages.map { ChatTranscriptItem.message($0) }
@@ -49,9 +60,12 @@ public final class ChatViewModel {
         self.onMessageAppended = onMessageAppended
         self.beforeSend = beforeSend
         self.runtimeMetricsProvider = runtimeMetricsProvider
+        self.transientMessagesProvider = transientMessagesProvider
+        self.transientContextSignatureProvider = transientContextSignatureProvider
         self.isStreaming = false
         self.streamingText = ""
         self.lastError = nil
+        self.lastSentTransientContextSignature = nil
     }
 
     public func append(_ message: ChatMessage) {
@@ -110,9 +124,17 @@ public final class ChatViewModel {
             streamingText = ""
             lastError = nil
             let initialRuntimeMetricIDs = await currentRuntimeMetricIDs()
+            let transientMessages = await currentTransientMessages()
+            let transientSignature = await currentTransientContextSignature()
+            await resetRuntimeSessionIfTransientContextChanged(transientSignature)
+            lastSentTransientContextSignature = transientSignature
 
             var accumulator = StreamedTextAccumulator()
-            let request = ChatRequest(messages: messages, requirements: requirements, sessionID: sessionID)
+            let request = ChatRequest(
+                messages: transientMessages + messages,
+                requirements: requirements,
+                sessionID: sessionID
+            )
             for try await event in chatService.send(request) {
                 try Task.checkCancellation()
                 switch event {
@@ -173,6 +195,32 @@ public final class ChatViewModel {
             return []
         }
         return await runtimeMetricsProvider().filter { !initialIDs.contains($0.id) }
+    }
+
+    private func currentTransientMessages() async -> [ChatMessage] {
+        guard let transientMessagesProvider else {
+            return []
+        }
+        return await transientMessagesProvider()
+    }
+
+    private func currentTransientContextSignature() async -> String? {
+        guard let transientContextSignatureProvider else {
+            return nil
+        }
+        return await transientContextSignatureProvider()
+    }
+
+    private func resetRuntimeSessionIfTransientContextChanged(_ signature: String?) async {
+        guard let sessionID, let chatService else {
+            lastSentTransientContextSignature = signature
+            return
+        }
+        guard let previousSignature = lastSentTransientContextSignature,
+              previousSignature != signature else {
+            return
+        }
+        await chatService.resetSession(sessionID)
     }
 
     private func upsertToolCall(_ invocation: ToolInvocation) {

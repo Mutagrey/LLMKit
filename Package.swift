@@ -423,6 +423,21 @@ let package = Package(
             dependencies: ["LLMUIObservability"]
         ),
         .testTarget(
+            name: "LLMKitDemoSkillTests",
+            dependencies: ["LLMCore"],
+            path: "Examples/LLMKitDemo/LLMKitDemo/State",
+            exclude: [
+                "DemoModelPreflight.swift",
+                "DemoViewModel.swift"
+            ],
+            sources: [
+                "DemoPromptSkill.swift",
+                "DemoPromptSkillComposer.swift",
+                "DemoPromptSkillStore.swift",
+                "DemoPromptSkillTests.swift"
+            ]
+        ),
+        .testTarget(
             name: "LLMArchitectureTests",
             dependencies: []
         ),

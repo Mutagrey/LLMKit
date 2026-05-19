@@ -8,15 +8,20 @@ struct ManualSessionScreen: View {
 
     private let title: String
     private let descriptor: ModelDescriptor?
+    private let sessionID: SessionID
+    private let skillStore: DemoPromptSkillStore
 
     init(
         snapshot: SessionSnapshot,
         descriptor: ModelDescriptor?,
+        skillStore: DemoPromptSkillStore,
         preflight: @escaping @MainActor @Sendable () async throws -> Void,
         configuration: DemoRuntimeConfiguration,
         onSessionChanged: @escaping @Sendable () async -> Void
     ) {
         self.descriptor = descriptor
+        self.sessionID = snapshot.id
+        self.skillStore = skillStore
         self.title = snapshot.descriptor.title ?? "New chat"
         self._viewModel = State(initialValue: ChatViewModel(
             messages: snapshot.messages,
@@ -32,15 +37,34 @@ struct ManualSessionScreen: View {
             },
             beforeSend: {
                 try await preflight()
+            },
+            runtimeMetricsProvider: {
+                await configuration.metricsCollector.snapshot()
+            },
+            transientMessagesProvider: {
+                skillStore.transientMessages(for: snapshot.id)
+            },
+            transientContextSignatureProvider: {
+                skillStore.transientSignature(for: snapshot.id)
             }
         ))
     }
 
     var body: some View {
-        ChatScreen(
-            title: titleLine,
-            viewModel: viewModel
-        )
+        VStack(spacing: 0) {
+            ManualChatHeader(
+                sessionID: sessionID,
+                descriptor: descriptor,
+                skillStore: skillStore
+            )
+
+            Divider()
+
+            ChatScreen(
+                title: titleLine,
+                viewModel: viewModel
+            )
+        }
     }
 
     private var titleLine: String {

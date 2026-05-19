@@ -151,7 +151,7 @@ struct AutomationComposerSheet: View {
             preferredLatency: .background,
             qualityTier: viewModel.qualityTier,
             privacyMode: viewModel.privacyMode,
-            budget: ExecutionBudget(maxInputTokens: contextLimit, maxOutputTokens: viewModel.maxOutputTokens)
+            budget: viewModel.executionBudget(selectedModelContextWindowTokens: contextLimit)
         )
     }
 }

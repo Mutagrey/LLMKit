@@ -10,6 +10,8 @@ prompt or generated text. Generation throughput is calculated from native sample
 
 `LlamaCppRuntimeConfiguration` exposes conservative local defaults, explicit mmap preference, explicit Metal/GPU layer
 preference, KV cache policy metadata, thread count, batch size, and the one-active-model limit.
+It can be initialized from shared `LLMRuntimeSettings`, and `LlamaCppBackend.updateConfiguration(_:)` applies changes by
+unloading existing GGUF contexts when the runtime configuration changes.
 `LlamaCppRuntimeReport` reports whether mmap/GPU offload are supported and which settings will be applied. It also reports
 requested/effective KV cache policy and falls back from experimental q8/q4 metadata when quantized KV support is not wired.
 It does not claim actual Metal execution because that requires device runtime diagnostics.

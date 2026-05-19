@@ -1,6 +1,7 @@
 import Foundation
 import LLMCore
 import LLMProtocols
+import LLMSettings
 import Observation
 
 @MainActor
@@ -13,34 +14,17 @@ final class DemoViewModel {
     private(set) var catalogStatus: ModelCatalogStatus
     private(set) var isRefreshing: Bool
     private(set) var lastErrorMessage: String?
-    var selectedModelID: ModelID? {
+    var settings: LLMRuntimeSettings {
         didSet {
-            persistSelectedModelID()
-        }
-    }
-    var executionMode: ExecutionMode {
-        didSet {
-            defaults.set(executionMode.rawValue, forKey: Self.executionModeKey)
-        }
-    }
-    var qualityTier: QualityTier {
-        didSet {
-            defaults.set(qualityTier.rawValue, forKey: Self.qualityTierKey)
-        }
-    }
-    var privacyMode: PrivacyMode {
-        didSet {
-            defaults.set(privacyMode.rawValue, forKey: Self.privacyModeKey)
-        }
-    }
-    var maxOutputTokens: Int {
-        didSet {
-            let clampedValue = max(64, min(maxOutputTokens, 4096))
-            if clampedValue != maxOutputTokens {
-                maxOutputTokens = clampedValue
+            let normalized = Self.normalizer.normalized(
+                settings,
+                selectedModelContextWindowTokens: selectedModel?.contextWindowTokens
+            )
+            if normalized != settings {
+                settings = normalized
                 return
             }
-            defaults.set(maxOutputTokens, forKey: Self.maxOutputTokensKey)
+            LLMRuntimeSettingsPersistence.save(settings, to: defaults, key: Self.settingsKey)
         }
     }
 
@@ -48,6 +32,8 @@ final class DemoViewModel {
     private let configuration: DemoRuntimeConfiguration
     @ObservationIgnored
     private let defaults: UserDefaults
+    @ObservationIgnored
+    private static let normalizer = LLMSettingsNormalizer()
     @ObservationIgnored
     private var preflight: DemoModelPreflight {
         DemoModelPreflight(
@@ -67,11 +53,32 @@ final class DemoViewModel {
         self.catalogStatus = .local
         self.isRefreshing = false
         self.lastErrorMessage = nil
-        self.selectedModelID = defaults.string(forKey: Self.selectedModelIDKey).map(ModelID.init(rawValue:))
-        self.executionMode = Self.persistedExecutionMode(from: defaults)
-        self.qualityTier = Self.persistedQualityTier(from: defaults)
-        self.privacyMode = Self.persistedPrivacyMode(from: defaults)
-        self.maxOutputTokens = Self.persistedMaxOutputTokens(from: defaults)
+        self.settings = DemoRuntimeSettingsMigration.load(from: defaults)
+    }
+
+    var selectedModelID: ModelID? {
+        get { settings.preferredModelID }
+        set { settings.preferredModelID = newValue }
+    }
+
+    var executionMode: ExecutionMode {
+        get { settings.executionMode }
+        set { settings.executionMode = newValue }
+    }
+
+    var qualityTier: QualityTier {
+        get { settings.qualityTier }
+        set { settings.qualityTier = newValue }
+    }
+
+    var privacyMode: PrivacyMode {
+        get { settings.privacyMode }
+        set { settings.privacyMode = newValue }
+    }
+
+    var maxOutputTokens: Int {
+        get { settings.maxOutputTokens }
+        set { settings.maxOutputTokens = newValue }
     }
 
     var selectedModel: ModelDescriptor? {
@@ -140,10 +147,17 @@ final class DemoViewModel {
             preferredLatency: preferredLatency,
             qualityTier: qualityTier,
             privacyMode: privacyMode,
-            budget: ExecutionBudget(
-                maxInputTokens: descriptor?.contextWindowTokens,
-                maxOutputTokens: maxOutputTokens
+            budget: Self.normalizer.executionBudget(
+                for: settings,
+                selectedModelContextWindowTokens: descriptor?.contextWindowTokens
             )
+        )
+    }
+
+    func executionBudget(selectedModelContextWindowTokens: Int?) -> ExecutionBudget {
+        Self.normalizer.executionBudget(
+            for: settings,
+            selectedModelContextWindowTokens: selectedModelContextWindowTokens
         )
     }
 
@@ -303,14 +317,6 @@ final class DemoViewModel {
         }
     }
 
-    private func persistSelectedModelID() {
-        if let selectedModelID {
-            defaults.set(selectedModelID.rawValue, forKey: Self.selectedModelIDKey)
-        } else {
-            defaults.removeObject(forKey: Self.selectedModelIDKey)
-        }
-    }
-
     private func installText(for state: InstallState) -> String {
         switch state {
         case .notInstalled:
@@ -338,38 +344,5 @@ final class DemoViewModel {
         }
     }
 
-    private static let selectedModelIDKey = "llmkit.demo.selectedModelID"
-    private static let executionModeKey = "llmkit.demo.executionMode"
-    private static let qualityTierKey = "llmkit.demo.qualityTier"
-    private static let privacyModeKey = "llmkit.demo.privacyMode"
-    private static let maxOutputTokensKey = "llmkit.demo.maxOutputTokens"
-
-    private static func persistedExecutionMode(from defaults: UserDefaults) -> ExecutionMode {
-        guard let rawValue = defaults.string(forKey: executionModeKey),
-              let mode = ExecutionMode(rawValue: rawValue) else {
-            return .preferOffline
-        }
-        return mode
-    }
-
-    private static func persistedQualityTier(from defaults: UserDefaults) -> QualityTier {
-        guard let rawValue = defaults.string(forKey: qualityTierKey),
-              let tier = QualityTier(rawValue: rawValue) else {
-            return .balanced
-        }
-        return tier
-    }
-
-    private static func persistedPrivacyMode(from defaults: UserDefaults) -> PrivacyMode {
-        guard let rawValue = defaults.string(forKey: privacyModeKey),
-              let mode = PrivacyMode(rawValue: rawValue) else {
-            return .localOnly
-        }
-        return mode
-    }
-
-    private static func persistedMaxOutputTokens(from defaults: UserDefaults) -> Int {
-        let storedValue = defaults.object(forKey: maxOutputTokensKey) as? Int ?? 512
-        return max(64, min(storedValue, 4096))
-    }
+    private static let settingsKey = DemoRuntimeSettingsMigration.settingsKey
 }

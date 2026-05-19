@@ -4,6 +4,7 @@ Public API is limited to `MLXBackend`, `MLXModelSupportMatrix`, and namespace ma
 optional backend reset hook so callers can clear cached native chat sessions through app-facing runtime services.
 The support matrix allows text-generation descriptors for Qwen, Gemma, Llama, and Mistral families.
 `MLXMemoryPolicy.strictForMemoryConstrainedApps` is the recommended policy for iPhone experiments.
+`MLXMemoryPolicy.init(settings:effectiveKVSizeTokens:)` maps shared runtime settings into MLX-native memory policy values.
 Callers may pass an optional `MetricsSink`; emitted load and generation telemetry uses
 `LLMRuntimeMetrics.sanitizedMetadata()` and does not include prompt or generated text. Generation throughput is populated
 only from MLX `Generation.info`, not from text chunks.

@@ -3,6 +3,7 @@
 Allowed dependencies:
 
 - `LLMCore`
+- `LLMSettings`
 - `LLMProtocols`
 - `LLMModelLifecycle`
 - `LLMObservability`

@@ -9,6 +9,7 @@ protocol LlamaCppRuntime: Sendable {
     func loadModel(_ descriptor: ModelDescriptor) async throws
     func unload(modelID: ModelID) async
     func unloadAll() async
+    func updateConfiguration(_ configuration: LlamaCppRuntimeConfiguration) async
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async
     func resetChatSessions(sessionID: SessionID) async
     func stream(prompt: String, model descriptor: ModelDescriptor, maxTokens: Int?) async throws -> AsyncThrowingStream<LlamaCppGeneratedText, Error>
@@ -16,7 +17,7 @@ protocol LlamaCppRuntime: Sendable {
 
 actor LlamaCppLocalRuntime: LlamaCppRuntime {
     private let resolver: ModelArtifactLocationResolver
-    private let configuration: LlamaCppRuntimeConfiguration
+    private var configuration: LlamaCppRuntimeConfiguration
     private var contexts: [ModelID: LlamaCppNativeContext] = [:]
 
     init(modelRootDirectory: URL, configuration: LlamaCppRuntimeConfiguration) {
@@ -68,6 +69,14 @@ actor LlamaCppLocalRuntime: LlamaCppRuntime {
     }
 
     func unloadAll() async {
+        contexts.removeAll()
+    }
+
+    func updateConfiguration(_ configuration: LlamaCppRuntimeConfiguration) async {
+        guard self.configuration != configuration else {
+            return
+        }
+        self.configuration = configuration
         contexts.removeAll()
     }
 

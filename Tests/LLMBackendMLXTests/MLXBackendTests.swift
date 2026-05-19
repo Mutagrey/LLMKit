@@ -3,6 +3,7 @@ import Foundation
 import LLMCore
 import LLMModelLifecycle
 import LLMProtocols
+import LLMSettings
 import Testing
 
 @Test func mlxSupportMatrixIncludesInitialFamilies() {
@@ -52,6 +53,28 @@ import Testing
     #expect(policy.kvGroupSize == 64)
     #expect(policy.quantizedKVStart == 0)
     #expect(policy.prefillStepSize == 256)
+}
+
+@Test func mlxMemoryPolicyMapsSharedRuntimeSettings() {
+    let settings = LLMRuntimeSettings(
+        mlxCacheLimitMB: 192,
+        mlxMaxKVSizeTokens: 12_288,
+        mlxKVBits: 8,
+        mlxPrefillStepSize: 512,
+        mlxRetainChatSessions: false,
+        mlxClearCacheAfterGeneration: true,
+        mlxClearCacheOnUnload: true
+    )
+
+    let policy = MLXMemoryPolicy(settings: settings, effectiveKVSizeTokens: 8_192)
+
+    #expect(policy.cacheLimitBytes == 192 * 1_024 * 1_024)
+    #expect(policy.maxKVSize == 8_192)
+    #expect(policy.kvBits == 8)
+    #expect(policy.prefillStepSize == 512)
+    #expect(!policy.retainChatSessions)
+    #expect(policy.clearCacheAfterGeneration)
+    #expect(policy.clearCacheOnUnload)
 }
 
 @Test func mlxBackendRejectsUnsupportedFamilyAndWrongBackend() async throws {

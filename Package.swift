@@ -115,15 +115,25 @@ let package = Package(
         .library(
             name: "LLMKitUI",
             targets: [
+                "LLMSettings",
                 "LLMUIChat",
                 "LLMUIModels",
-                "LLMUIObservability"
+                "LLMUIObservability",
+                "LLMUISettings"
+            ]
+        ),
+        .library(
+            name: "LLMKitSettings",
+            targets: [
+                "LLMSettings",
+                "LLMUISettings"
             ]
         ),
         .library(
             name: "LLMKitFull",
             targets: [
                 "LLMCore",
+                "LLMSettings",
                 "LLMProtocols",
                 "LLMOrchestrator",
                 "LLMSessions",
@@ -142,7 +152,8 @@ let package = Package(
                 "LLMBackendRemote",
                 "LLMUIChat",
                 "LLMUIModels",
-                "LLMUIObservability"
+                "LLMUIObservability",
+                "LLMUISettings"
             ]
         ),
     ],
@@ -159,6 +170,13 @@ let package = Package(
         ),
         .target(
             name: "LLMProtocols",
+            dependencies: [
+                "LLMCore"
+            ],
+            exclude: ["Docs"]
+        ),
+        .target(
+            name: "LLMSettings",
             dependencies: [
                 "LLMCore"
             ],
@@ -274,6 +292,7 @@ let package = Package(
             name: "LLMBackendMLX",
             dependencies: [
                 "LLMCore",
+                "LLMSettings",
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability",
@@ -294,6 +313,7 @@ let package = Package(
             dependencies: [
                 "CLlama",
                 "LLMCore",
+                "LLMSettings",
                 "LLMProtocols",
                 "LLMModelLifecycle",
                 "LLMObservability",
@@ -342,9 +362,21 @@ let package = Package(
             ],
             exclude: ["Docs"]
         ),
+        .target(
+            name: "LLMUISettings",
+            dependencies: [
+                "LLMCore",
+                "LLMSettings"
+            ],
+            exclude: ["Docs"]
+        ),
         .testTarget(
             name: "LLMCoreTests",
             dependencies: ["LLMCore"]
+        ),
+        .testTarget(
+            name: "LLMSettingsTests",
+            dependencies: ["LLMSettings"]
         ),
         .testTarget(
             name: "LLMProtocolsTests",
@@ -423,8 +455,12 @@ let package = Package(
             dependencies: ["LLMUIObservability"]
         ),
         .testTarget(
+            name: "LLMUISettingsTests",
+            dependencies: ["LLMUISettings"]
+        ),
+        .testTarget(
             name: "LLMKitDemoSkillTests",
-            dependencies: ["LLMCore"],
+            dependencies: ["LLMCore", "LLMSettings"],
             path: "Examples/LLMKitDemo/LLMKitDemo/State",
             exclude: [
                 "DemoModelPreflight.swift",
@@ -434,7 +470,9 @@ let package = Package(
                 "DemoPromptSkill.swift",
                 "DemoPromptSkillComposer.swift",
                 "DemoPromptSkillStore.swift",
-                "DemoPromptSkillTests.swift"
+                "DemoPromptSkillTests.swift",
+                "DemoRuntimeSettingsMigration.swift",
+                "DemoSettingsMigrationTests.swift"
             ]
         ),
         .testTarget(

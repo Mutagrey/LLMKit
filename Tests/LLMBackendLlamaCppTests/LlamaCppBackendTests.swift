@@ -212,11 +212,21 @@ import Testing
 @Test func llamaCppRuntimeConfigurationDefaultsAreIPhoneConservative() {
     let configuration = LlamaCppRuntimeConfiguration.default
 
-    #expect(configuration.contextSize == 2048)
+    #expect(configuration.contextSize == 8192)
     #expect(configuration.batchSize == 256)
     #expect(configuration.maxLoadedModels == 1)
     #expect(configuration.useMMap)
     #expect(configuration.kvCachePolicy == .runtimeDefault)
+}
+
+@Test func llamaCppBackendAppliesUpdatedRuntimeConfiguration() async {
+    let runtime = FakeLlamaCppRuntime(hasFiles: true)
+    let backend = LlamaCppBackend(runtime: runtime)
+    let configuration = LlamaCppRuntimeConfiguration(contextSize: 16_384, batchSize: 512)
+
+    await backend.updateConfiguration(configuration)
+
+    #expect(await runtime.configurationUpdates() == [configuration])
 }
 
 @Test func llamaCppRuntimeReportDoesNotClaimUnsupportedMMapOrGPUOffload() {
@@ -289,6 +299,7 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
     private let streamEvents: [LlamaCppGeneratedText]
     private let streamDelayNanoseconds: UInt64?
     private let report: LlamaCppRuntimeReport
+    private var recordedConfigurationUpdates: [LlamaCppRuntimeConfiguration] = []
 
     init(
         hasFiles: Bool,
@@ -333,6 +344,10 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
 
     func unloadAll() async {}
 
+    func updateConfiguration(_ configuration: LlamaCppRuntimeConfiguration) async {
+        recordedConfigurationUpdates.append(configuration)
+    }
+
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async {}
 
     func resetChatSessions(sessionID: SessionID) async {}
@@ -358,6 +373,10 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
                 continuation.finish()
             }
         }
+    }
+
+    func configurationUpdates() -> [LlamaCppRuntimeConfiguration] {
+        recordedConfigurationUpdates
     }
 }
 

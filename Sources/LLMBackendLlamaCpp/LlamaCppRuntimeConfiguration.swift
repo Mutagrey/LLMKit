@@ -1,5 +1,6 @@
 import Foundation
 import LLMCore
+import LLMSettings
 
 public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
     public let contextSize: Int
@@ -12,7 +13,7 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
     public let batchSize: Int
 
     public init(
-        contextSize: Int = 2048,
+        contextSize: Int = 8192,
         maxLoadedModels: Int = 1,
         useMMap: Bool = true,
         useMetal: Bool = true,
@@ -32,6 +33,24 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
     }
 
     public static let `default` = LlamaCppRuntimeConfiguration()
+
+    public init(settings: LLMRuntimeSettings, effectiveContextWindowTokens: Int? = nil) {
+        let contextSize = effectiveContextWindowTokens ?? (
+            settings.ggufContextFollowsRequest
+                ? settings.contextWindowTokens
+                : settings.ggufContextWindowTokens
+        )
+        self.init(
+            contextSize: contextSize,
+            maxLoadedModels: 1,
+            useMMap: settings.ggufUseMMap,
+            useMetal: settings.ggufGPUOffloadPolicy.usesMetal,
+            gpuLayerCount: settings.ggufGPUOffloadPolicy.requestedLayerCount,
+            kvCachePolicy: settings.ggufKVCachePolicy,
+            threadCount: settings.ggufThreadCount,
+            batchSize: settings.ggufBatchSize
+        )
+    }
 
     func resolvedUseMMap(isSupported: Bool) -> Bool {
         useMMap && isSupported

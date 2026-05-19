@@ -30,6 +30,7 @@
 		42E000020000000000000004 /* SkillsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000004 /* SkillsTab.swift */; };
 		42E000020000000000000005 /* NewManualChatSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000005 /* NewManualChatSheet.swift */; };
 		42E000020000000000000006 /* ManualChatHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000006 /* ManualChatHeader.swift */; };
+		42E000020000000000000007 /* DemoRuntimeSettingsMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E000010000000000000007 /* DemoRuntimeSettingsMigration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +58,7 @@
 		42E000010000000000000004 /* SkillsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsTab.swift; sourceTree = "<group>"; };
 		42E000010000000000000005 /* NewManualChatSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewManualChatSheet.swift; sourceTree = "<group>"; };
 		42E000010000000000000006 /* ManualChatHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualChatHeader.swift; sourceTree = "<group>"; };
+		42E000010000000000000007 /* DemoRuntimeSettingsMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRuntimeSettingsMigration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -135,6 +137,7 @@
 				42E000010000000000000001 /* DemoPromptSkill.swift */,
 				42E000010000000000000002 /* DemoPromptSkillComposer.swift */,
 				42E000010000000000000003 /* DemoPromptSkillStore.swift */,
+				42E000010000000000000007 /* DemoRuntimeSettingsMigration.swift */,
 				42D000010000000000000003 /* DemoModelPreflight.swift */,
 				42D000010000000000000004 /* DemoViewModel.swift */,
 			);
@@ -293,6 +296,7 @@
 				42E000020000000000000001 /* DemoPromptSkill.swift in Sources */,
 				42E000020000000000000002 /* DemoPromptSkillComposer.swift in Sources */,
 				42E000020000000000000003 /* DemoPromptSkillStore.swift in Sources */,
+				42E000020000000000000007 /* DemoRuntimeSettingsMigration.swift in Sources */,
 				42D000020000000000000004 /* DemoViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

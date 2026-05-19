@@ -1,5 +1,7 @@
 import LLMCore
+import LLMSettings
 import LLMUIModels
+import LLMUISettings
 import SwiftUI
 
 struct SettingsTab: View {
@@ -7,101 +9,36 @@ struct SettingsTab: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Generation") {
-                    Picker("Quality", selection: qualityTier) {
-                        ForEach(Self.qualityTiers, id: \.self) { tier in
-                            Text(title(for: tier)).tag(tier)
-                        }
-                    }
-
-                    Stepper(value: maxOutputTokens, in: 64...4096, step: 64) {
-                        LabeledContent("Max Output Tokens", value: "\(viewModel.maxOutputTokens)")
-                    }
-                }
-
-                Section("Routing") {
-                    Picker("Execution", selection: executionMode) {
-                        ForEach(Self.executionModes, id: \.self) { mode in
-                            Text(title(for: mode)).tag(mode)
-                        }
-                    }
-
-                    Picker("Privacy", selection: privacyMode) {
-                        ForEach(Self.privacyModes, id: \.self) { mode in
-                            Text(title(for: mode)).tag(mode)
-                        }
-                    }
-                }
-
-                Section("Selected Model") {
-                    if let descriptor = viewModel.selectedModel {
-                        LabeledContent("Name", value: descriptor.displayName)
-                        LabeledContent("Backend", value: ModelFormatting.backendTitle(descriptor.backend))
-                        LabeledContent("Status", value: viewModel.statusText(for: descriptor))
-                    } else {
-                        Text("No model selected")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Catalog") {
-                    LabeledContent("Source", value: catalogSourceTitle)
-                    if let catalogMessage {
-                        Text(catalogMessage)
-                            .font(.caption)
-                            .foregroundStyle(viewModel.catalogStatus.source == .fallback ? .orange : .secondary)
-                    }
-                }
-            }
-            .navigationTitle("Settings")
+            LLMSettingsScreen(
+                settings: settings,
+                context: settingsContext,
+                configuration: LLMSettingsScreenConfiguration(title: "Settings")
+            )
         }
     }
 
-    private static let executionModes: [ExecutionMode] = [
-        .offlineOnly,
-        .preferOffline,
-        .hybrid,
-        .remoteAllowed
-    ]
-
-    private static let qualityTiers: [QualityTier] = [
-        .fast,
-        .balanced,
-        .best
-    ]
-
-    private static let privacyModes: [PrivacyMode] = [
-        .standard,
-        .localOnly,
-        .redactSensitive
-    ]
-
-    private var executionMode: Binding<ExecutionMode> {
+    private var settings: Binding<LLMRuntimeSettings> {
         Binding(
-            get: { viewModel.executionMode },
-            set: { viewModel.executionMode = $0 }
+            get: { viewModel.settings },
+            set: { newValue in
+                var updated = newValue
+                updated.preferredModelID = updated.preferredModelID ?? viewModel.selectedModelID
+                viewModel.settings = updated
+            }
         )
     }
 
-    private var qualityTier: Binding<QualityTier> {
-        Binding(
-            get: { viewModel.qualityTier },
-            set: { viewModel.qualityTier = $0 }
-        )
-    }
-
-    private var privacyMode: Binding<PrivacyMode> {
-        Binding(
-            get: { viewModel.privacyMode },
-            set: { viewModel.privacyMode = $0 }
-        )
-    }
-
-    private var maxOutputTokens: Binding<Int> {
-        Binding(
-            get: { viewModel.maxOutputTokens },
-            set: { viewModel.maxOutputTokens = $0 }
+    private var settingsContext: LLMSettingsContext {
+        LLMSettingsContext(
+            selectedModelName: viewModel.selectedModel?.displayName,
+            selectedModelBackendTitle: viewModel.selectedModel.map { ModelFormatting.backendTitle($0.backend) },
+            selectedModelStatus: viewModel.selectedModel.map { viewModel.statusText(for: $0) },
+            selectedModelContextWindowTokens: viewModel.selectedModel?.contextWindowTokens,
+            catalogSourceTitle: catalogSourceTitle,
+            catalogMessage: catalogMessage,
+            promptSummary: "Prompt skills are configured in the Skills tab and sent as transient system context for each chat.",
+            safetySummary: "The demo keeps safety policy backend-neutral. App-specific products should add their own domain boundaries.",
+            recommendation: "Use recommended defaults for normal local chat. Lower context, KV, and cache values on memory-constrained devices."
         )
     }
 
@@ -121,40 +58,5 @@ struct SettingsTab: View {
             return nil
         }
         return message
-    }
-
-    private func title(for mode: ExecutionMode) -> String {
-        switch mode {
-        case .offlineOnly:
-            return "Offline Only"
-        case .preferOffline:
-            return "Prefer Offline"
-        case .hybrid:
-            return "Hybrid"
-        case .remoteAllowed:
-            return "Remote Allowed"
-        }
-    }
-
-    private func title(for tier: QualityTier) -> String {
-        switch tier {
-        case .fast:
-            return "Fast"
-        case .balanced:
-            return "Balanced"
-        case .best:
-            return "Best"
-        }
-    }
-
-    private func title(for mode: PrivacyMode) -> String {
-        switch mode {
-        case .standard:
-            return "Standard"
-        case .localOnly:
-            return "Local Only"
-        case .redactSensitive:
-            return "Redact Sensitive"
-        }
     }
 }

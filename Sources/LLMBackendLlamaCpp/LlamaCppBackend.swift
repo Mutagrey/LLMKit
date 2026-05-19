@@ -109,6 +109,10 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting, Backen
         await runtime?.unloadAll()
     }
 
+    public func updateConfiguration(_ configuration: LlamaCppRuntimeConfiguration) async {
+        await runtime?.updateConfiguration(configuration)
+    }
+
     public func resetChatSession(modelID: ModelID, sessionID: SessionID) async {
         await runtime?.resetChatSession(modelID: modelID, sessionID: sessionID)
     }

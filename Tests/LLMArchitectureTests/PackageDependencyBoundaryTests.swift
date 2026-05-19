@@ -106,6 +106,7 @@ private struct PackageManifest {
     let dependencies = manifest.targetDependencies
 
     #expect(dependencies["LLMCore"] == [])
+    #expect(dependencies["LLMSettings"] == ["LLMCore"])
     #expect(dependencies["LLMProtocols"] == ["LLMCore"])
     #expect(dependencies["LLMNetworking"] == ["LLMCore"])
 
@@ -125,7 +126,7 @@ private struct PackageManifest {
         )
     }
 
-    for target in ["LLMUIChat", "LLMUIModels", "LLMUIObservability"] {
+    for target in ["LLMUIChat", "LLMUIModels", "LLMUIObservability", "LLMUISettings"] {
         expectNoForbiddenDependencies(
             dependencies[target, default: []],
             forbiddenPrefixes: ["LLMBackend", "LLMNetworking", "LLMStorage"],
@@ -144,6 +145,7 @@ private struct PackageManifest {
     let importsByTarget = try sourceImportsByTarget()
     let allowedLLMImports: [String: Set<String>] = [
         "LLMCore": [],
+        "LLMSettings": ["LLMCore"],
         "LLMProtocols": ["LLMCore"],
         "LLMSessions": ["LLMCore", "LLMProtocols"],
         "LLMPrompting": ["LLMCore", "LLMProtocols"],
@@ -167,12 +169,13 @@ private struct PackageManifest {
         ],
         "LLMBackendFoundationModels": ["LLMCore", "LLMProtocols", "LLMObservability"],
         "LLMBackendCoreML": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
-        "LLMBackendMLX": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
-        "LLMBackendLlamaCpp": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
+        "LLMBackendMLX": ["LLMCore", "LLMSettings", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
+        "LLMBackendLlamaCpp": ["LLMCore", "LLMSettings", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendRemote": ["LLMCore", "LLMProtocols", "LLMNetworking", "LLMObservability"],
         "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability", "LLMUIObservability"],
         "LLMUIModels": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
-        "LLMUIObservability": ["LLMCore", "LLMObservability"]
+        "LLMUIObservability": ["LLMCore", "LLMObservability"],
+        "LLMUISettings": ["LLMCore", "LLMSettings"]
     ]
 
     for (target, imports) in importsByTarget {
@@ -187,6 +190,7 @@ private struct PackageManifest {
     let backendFrameworks: Set<String> = ["CoreML", "FoundationModels", "MLX", "MLXLLM"]
     let coreAndCoordinationTargets: Set<String> = [
         "LLMCore",
+        "LLMSettings",
         "LLMProtocols",
         "LLMSessions",
         "LLMPrompting",
@@ -210,7 +214,8 @@ private struct PackageManifest {
     let swiftUITargets: Set<String> = [
         "LLMUIChat",
         "LLMUIModels",
-        "LLMUIObservability"
+        "LLMUIObservability",
+        "LLMUISettings"
     ]
     for target in importsByTarget.keys where !swiftUITargets.contains(target) {
         #expect(

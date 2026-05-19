@@ -4,9 +4,11 @@ import LLMModelLifecycle
 
 protocol LlamaCppRuntime: Sendable {
     func nativeRuntimeAvailable() async -> Bool
+    func runtimeReport() async -> LlamaCppRuntimeReport
     func hasLocalFiles(for descriptor: ModelDescriptor) async -> Bool
     func loadModel(_ descriptor: ModelDescriptor) async throws
     func unload(modelID: ModelID) async
+    func unloadAll() async
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async
     func resetChatSessions(sessionID: SessionID) async
     func stream(prompt: String, model descriptor: ModelDescriptor, maxTokens: Int?) async throws -> AsyncThrowingStream<String, Error>
@@ -24,6 +26,10 @@ actor LlamaCppLocalRuntime: LlamaCppRuntime {
 
     func nativeRuntimeAvailable() async -> Bool {
         LlamaCppNativeContext.isAvailable
+    }
+
+    func runtimeReport() async -> LlamaCppRuntimeReport {
+        LlamaCppNativeContext.runtimeReport(configuration: configuration)
     }
 
     func hasLocalFiles(for descriptor: ModelDescriptor) -> Bool {
@@ -59,6 +65,10 @@ actor LlamaCppLocalRuntime: LlamaCppRuntime {
 
     func unload(modelID: ModelID) async {
         contexts[modelID] = nil
+    }
+
+    func unloadAll() async {
+        contexts.removeAll()
     }
 
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async {}

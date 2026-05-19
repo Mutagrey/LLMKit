@@ -4,7 +4,7 @@ import LLMModelLifecycle
 import LLMObservability
 import LLMProtocols
 
-public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
+public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendModelUnloading {
     public let backendKind: BackendKind = .mlx
     private let runtime: MLXLocalRuntime?
     private let supportMatrix: MLXModelSupportMatrix
@@ -70,6 +70,10 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting {
 
     public func unloadModel(_ handle: LoadedModelHandle) async {
         await runtime?.unload(modelID: handle.id)
+    }
+
+    public func unloadAllModels() async {
+        await runtime?.unloadAll()
     }
 
     public func updateMemoryPolicy(_ memoryPolicy: MLXMemoryPolicy) async {

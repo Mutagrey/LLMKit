@@ -77,6 +77,15 @@ private enum LlamaCppBackendLifecycle {
 actor LlamaCppNativeContext {
     static var isAvailable: Bool { true }
 
+    static func runtimeReport(configuration: LlamaCppRuntimeConfiguration) -> LlamaCppRuntimeReport {
+        LlamaCppRuntimeReport.resolved(
+            configuration: configuration,
+            supportsMMap: llama_supports_mmap(),
+            supportsGPUOffload: llama_supports_gpu_offload(),
+            isSimulator: LlamaCppRuntimeConfiguration.isSimulatorEnvironment
+        )
+    }
+
     private let storage: LlamaCppNativeStorage
     private var tokens: [llama_token] = []
     private var stopTokenIDs: Set<llama_token> = []
@@ -136,9 +145,10 @@ actor LlamaCppNativeContext {
     }
 
     static func resolvedModelParameters(for configuration: LlamaCppRuntimeConfiguration) -> llama_model_params {
+        let runtimeReport = runtimeReport(configuration: configuration)
         var modelParameters = llama_model_default_params()
-        modelParameters.use_mmap = configuration.resolvedUseMMap(isSupported: llama_supports_mmap())
-        modelParameters.n_gpu_layers = Int32(configuration.resolvedGPULayerCount())
+        modelParameters.use_mmap = runtimeReport.usesMMap
+        modelParameters.n_gpu_layers = Int32(runtimeReport.effectiveGPULayerCount)
         return modelParameters
     }
 

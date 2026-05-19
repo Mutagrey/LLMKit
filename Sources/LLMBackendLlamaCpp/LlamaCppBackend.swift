@@ -3,7 +3,7 @@ import LLMCore
 import LLMModelLifecycle
 import LLMProtocols
 
-public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting {
+public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting, BackendModelUnloading {
     public let backendKind: BackendKind = .llamaCpp
     private let runtime: (any LlamaCppRuntime)?
     private let supportMatrix: LlamaCppModelSupportMatrix
@@ -59,6 +59,13 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting {
         return .available
     }
 
+    public func runtimeReport() async -> LlamaCppRuntimeReport? {
+        guard let runtime else {
+            return nil
+        }
+        return await runtime.runtimeReport()
+    }
+
     public func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
         model.backend == backendKind &&
             model.capabilities.contains(capability) &&
@@ -78,6 +85,10 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting {
 
     public func unloadModel(_ handle: LoadedModelHandle) async {
         await runtime?.unload(modelID: handle.id)
+    }
+
+    public func unloadAllModels() async {
+        await runtime?.unloadAll()
     }
 
     public func resetChatSession(modelID: ModelID, sessionID: SessionID) async {

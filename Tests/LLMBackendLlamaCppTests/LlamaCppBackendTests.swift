@@ -36,6 +36,26 @@ import Testing
     #expect(availability.status == .available)
 }
 
+@Test func llamaCppBackendExposesRuntimeReportWhenRuntimeIsConfigured() async throws {
+    let report = LlamaCppRuntimeReport(
+        supportsMMap: true,
+        usesMMap: true,
+        supportsGPUOffload: true,
+        requestedGPULayerCount: 32,
+        effectiveGPULayerCount: 32,
+        supportsQuantizedKVCache: false,
+        requestedKVCachePolicy: .runtimeDefault,
+        effectiveKVCachePolicy: .runtimeDefault,
+        kvCacheFallbackReason: nil,
+        metalExecutionVerified: false
+    )
+    let backend = LlamaCppBackend(runtime: FakeLlamaCppRuntime(hasFiles: true, report: report))
+
+    let resolved = await backend.runtimeReport()
+
+    #expect(resolved == report)
+}
+
 @Test func llamaCppBackendReportsAvailableForInstalledGGUFWhenFrameworkIsLinked() async throws {
     let rootDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("LLMKitLlamaCppTests-\(UUID().uuidString)", isDirectory: true)
@@ -110,21 +130,102 @@ import Testing
     #expect(configuration.batchSize == 256)
     #expect(configuration.maxLoadedModels == 1)
     #expect(configuration.useMMap)
+    #expect(configuration.kvCachePolicy == .runtimeDefault)
+}
+
+@Test func llamaCppRuntimeReportDoesNotClaimUnsupportedMMapOrGPUOffload() {
+    let configuration = LlamaCppRuntimeConfiguration(useMMap: true, useMetal: true, gpuLayerCount: 64)
+
+    let report = LlamaCppRuntimeReport.resolved(
+        configuration: configuration,
+        supportsMMap: false,
+        supportsGPUOffload: false,
+        isSimulator: false
+    )
+
+    #expect(!report.usesMMap)
+    #expect(report.requestedGPULayerCount == 64)
+    #expect(report.effectiveGPULayerCount == 0)
+    #expect(!report.metalExecutionVerified)
+}
+
+@Test func llamaCppRuntimeReportFallsBackFromUnsupportedExperimentalKVCachePolicy() {
+    let configuration = LlamaCppRuntimeConfiguration(kvCachePolicy: .q8Experimental)
+
+    let report = LlamaCppRuntimeReport.resolved(
+        configuration: configuration,
+        supportsMMap: true,
+        supportsGPUOffload: true,
+        supportsQuantizedKVCache: false,
+        isSimulator: false
+    )
+
+    #expect(report.requestedKVCachePolicy == .q8Experimental)
+    #expect(report.effectiveKVCachePolicy == .runtimeDefault)
+    #expect(report.kvCacheFallbackReason != nil)
+}
+
+@Test func llamaCppRuntimeReportKeepsExperimentalKVCachePolicyWhenSupported() {
+    let configuration = LlamaCppRuntimeConfiguration(kvCachePolicy: .q4Experimental)
+
+    let report = LlamaCppRuntimeReport.resolved(
+        configuration: configuration,
+        supportsMMap: true,
+        supportsGPUOffload: true,
+        supportsQuantizedKVCache: true,
+        isSimulator: false
+    )
+
+    #expect(report.requestedKVCachePolicy == .q4Experimental)
+    #expect(report.effectiveKVCachePolicy == .q4Experimental)
+    #expect(report.kvCacheFallbackReason == nil)
+}
+
+@Test func llamaCppRuntimeReportDisablesGPUOffloadOnSimulator() {
+    let configuration = LlamaCppRuntimeConfiguration(useMetal: true, gpuLayerCount: 64)
+
+    let report = LlamaCppRuntimeReport.resolved(
+        configuration: configuration,
+        supportsMMap: true,
+        supportsGPUOffload: true,
+        isSimulator: true
+    )
+
+    #expect(report.usesMMap)
+    #expect(report.requestedGPULayerCount == 0)
+    #expect(report.effectiveGPULayerCount == 0)
 }
 
 private actor FakeLlamaCppRuntime: LlamaCppRuntime {
     private let hasFiles: Bool
     private let nativeAvailable: Bool
     private let streamError: LLMError?
+    private let report: LlamaCppRuntimeReport
 
-    init(hasFiles: Bool, nativeAvailable: Bool = true, streamError: LLMError? = nil) {
+    init(
+        hasFiles: Bool,
+        nativeAvailable: Bool = true,
+        streamError: LLMError? = nil,
+        report: LlamaCppRuntimeReport = LlamaCppRuntimeReport.resolved(
+            configuration: .default,
+            supportsMMap: true,
+            supportsGPUOffload: true,
+            supportsQuantizedKVCache: false,
+            isSimulator: false
+        )
+    ) {
         self.hasFiles = hasFiles
         self.nativeAvailable = nativeAvailable
         self.streamError = streamError
+        self.report = report
     }
 
     func nativeRuntimeAvailable() async -> Bool {
         nativeAvailable
+    }
+
+    func runtimeReport() async -> LlamaCppRuntimeReport {
+        report
     }
 
     func hasLocalFiles(for descriptor: ModelDescriptor) -> Bool {
@@ -134,6 +235,8 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
     func loadModel(_ descriptor: ModelDescriptor) async throws {}
 
     func unload(modelID: ModelID) async {}
+
+    func unloadAll() async {}
 
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async {}
 

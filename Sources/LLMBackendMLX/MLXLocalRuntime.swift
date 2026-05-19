@@ -59,6 +59,12 @@ actor MLXLocalRuntime {
         clearCacheAfterUnloadIfNeeded()
     }
 
+    func unloadAll() {
+        containers.removeAll()
+        chatSessions.removeAll()
+        clearCacheAfterUnloadIfNeeded()
+    }
+
     func resetChatSession(modelID: ModelID, sessionID: SessionID) {
         chatSessions[MLXChatSessionKey(modelID: modelID, sessionID: sessionID)] = nil
     }

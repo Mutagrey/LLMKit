@@ -9,3 +9,6 @@ When a backend emits backend-neutral tool requests, orchestration may execute th
 Safety policy evaluation is an orchestration concern: services may modify or deny input before backend selection and may
 modify or deny final output before completion is emitted. Domain-specific persistence, metrics, prompts, and decision logic
 remain outside this module.
+
+For local execution, orchestration may request other local backends to unload cached model state through the optional
+`BackendModelUnloading` hook before the selected candidate starts. The backends still own actual unload mechanics.

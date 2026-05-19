@@ -3,7 +3,7 @@ import LLMModelLifecycle
 import LLMObservability
 import LLMProtocols
 
-public struct CoreMLBackend: ModelBackend {
+public struct CoreMLBackend: ModelBackend, BackendModelUnloading {
     public let backendKind: BackendKind = .coreML
     private let compatibilityChecker: CoreMLModelCompatibilityChecker
 
@@ -30,6 +30,8 @@ public struct CoreMLBackend: ModelBackend {
     }
 
     public func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    public func unloadAllModels() async {}
 
     public func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
         AsyncThrowingStream { continuation in

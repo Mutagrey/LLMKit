@@ -13,6 +13,8 @@ constraints, not inference-time routing gates. For `.fast` quality it prefers lo
 `.best` still prefers higher-capacity candidates that remain eligible.
 When `DeviceProfile.availableProcessMemoryBytes` is present, local runtime candidates with estimated artifact
 sizes are also checked against a backend-neutral process-memory reserve before routing reaches backend load.
+`BackendRegistry.prepareForLocalModelExecution(_:)` is the local-runtime cleanup point used by default services before
+streaming from a selected local model.
 
 `DefaultStructuredGenerationService` forwards stable execution requirements together with the backend-neutral
 `StructuredOutputSchema`. It decodes only strict JSON and performs one prompt-level repair attempt by default, which lets

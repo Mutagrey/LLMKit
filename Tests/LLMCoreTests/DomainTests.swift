@@ -103,6 +103,82 @@ import Testing
     #expect(requirements.budget?.maxInputTokens != requirements.budget?.maxOutputTokens)
 }
 
+@Test func promptCachePolicyDefaultsToDisabled() {
+    #expect(PromptCachePolicy.defaultPolicy == .disabled)
+}
+
+@Test func promptCacheKeyChangesAcrossIncompatibleInputs() {
+    let base = PromptCacheKey(
+        modelId: "model-a",
+        modelFileHash: "hash-a",
+        systemPromptVersion: "system-v1",
+        contextSize: 2048,
+        kvCachePolicy: .runtimeDefault
+    )
+
+    #expect(base != PromptCacheKey(
+        modelId: "model-b",
+        modelFileHash: "hash-a",
+        systemPromptVersion: "system-v1",
+        contextSize: 2048,
+        kvCachePolicy: .runtimeDefault
+    ))
+    #expect(base != PromptCacheKey(
+        modelId: "model-a",
+        modelFileHash: "hash-b",
+        systemPromptVersion: "system-v1",
+        contextSize: 2048,
+        kvCachePolicy: .runtimeDefault
+    ))
+    #expect(base != PromptCacheKey(
+        modelId: "model-a",
+        modelFileHash: "hash-a",
+        systemPromptVersion: "system-v2",
+        contextSize: 2048,
+        kvCachePolicy: .runtimeDefault
+    ))
+    #expect(base != PromptCacheKey(
+        modelId: "model-a",
+        modelFileHash: "hash-a",
+        systemPromptVersion: "system-v1",
+        contextSize: 4096,
+        kvCachePolicy: .runtimeDefault
+    ))
+    #expect(base != PromptCacheKey(
+        modelId: "model-a",
+        modelFileHash: "hash-a",
+        systemPromptVersion: "system-v1",
+        contextSize: 2048,
+        kvCachePolicy: .q8Experimental
+    ))
+}
+
+@Test func promptCacheKeyClampsInvalidContextSize() {
+    let key = PromptCacheKey(
+        modelId: "model",
+        modelFileHash: "hash",
+        systemPromptVersion: "system",
+        contextSize: 0,
+        kvCachePolicy: .runtimeDefault
+    )
+
+    #expect(key.contextSize == 1)
+}
+
+@Test func kvCachePolicyMarksExperimentalQuantizedPolicies() {
+    #expect(!KVCachePolicy.runtimeDefault.isExperimental)
+    #expect(!KVCachePolicy.safeF16.isExperimental)
+    #expect(KVCachePolicy.q8Experimental.isExperimental)
+    #expect(KVCachePolicy.q4Experimental.requiresQuantizedKVCacheSupport)
+}
+
+@Test func kvCachePolicyFallsBackWhenQuantizedCacheIsUnsupported() {
+    #expect(KVCachePolicy.q8Experimental.resolved(supportsQuantizedKVCache: false) == .runtimeDefault)
+    #expect(KVCachePolicy.q4Experimental.resolved(supportsQuantizedKVCache: false) == .runtimeDefault)
+    #expect(KVCachePolicy.q8Experimental.resolved(supportsQuantizedKVCache: true) == .q8Experimental)
+    #expect(KVCachePolicy.safeF16.resolved(supportsQuantizedKVCache: false) == .safeF16)
+}
+
 @Test func lifecycleStatesAreEquatable() {
     #expect(InstallState.downloading(progress: 0.5) == .downloading(progress: 0.5))
     #expect(LLMError.modelNotInstalled("missing") == .modelNotInstalled("missing"))

@@ -13,3 +13,6 @@ it to clear adapter-owned chat state when a host closes a chat surface.
 
 `BackendChatSessionResetting` is an optional backend capability for adapters that cache provider/native chat sessions.
 It supports resetting either one model/session pair or all cached backend sessions for a `SessionID`.
+
+`BackendModelUnloading` is an optional backend capability for adapters that can release all loaded model state. The
+orchestrator uses it to keep local runtime memory bounded when switching between local backends.

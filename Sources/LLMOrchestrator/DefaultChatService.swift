@@ -88,6 +88,7 @@ public struct DefaultChatService: ChatService {
                 continue
             }
 
+            await registry.prepareForLocalModelExecution(model)
             var didResetCurrentAttempt = false
             do {
                 var shouldTryNextCandidate = false

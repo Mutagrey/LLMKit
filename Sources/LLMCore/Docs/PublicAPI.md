@@ -18,6 +18,11 @@ request `.structuredOutput` only when they require a backend with native schema 
 need prompt-level JSON guidance while native structured generation adapters are adopted incrementally.
 `ExecutionRequirements` carries backend-neutral routing constraints, including `allowsFallback` for flows that must stay
 on the explicitly selected model.
+KV cache selection is represented by `KVCachePolicy`. Quantized KV policies are explicit experimental values and resolve
+back to `.runtimeDefault` unless a backend reports quantized KV support.
+Prompt/session cache metadata is represented by `PromptCachePolicy` and `PromptCacheKey`. The default prompt cache policy
+is `.disabled`; cache reuse must be keyed by model identity, model file hash, system prompt version, runtime context size,
+and typed `KVCachePolicy`.
 
 Catalog metadata includes `ModelCatalogStatus` and `ModelCatalogSourceKind`, which let host apps explain whether a
 catalog is local, signed remote, or using a fallback manifest without pulling lifecycle implementation details into UI.

@@ -1,4 +1,5 @@
 import Foundation
+import LLMCore
 
 public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
     public let contextSize: Int
@@ -6,6 +7,7 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
     public let useMMap: Bool
     public let useMetal: Bool
     public let gpuLayerCount: Int
+    public let kvCachePolicy: KVCachePolicy
     public let threadCount: Int?
     public let batchSize: Int
 
@@ -15,6 +17,7 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
         useMMap: Bool = true,
         useMetal: Bool = true,
         gpuLayerCount: Int = 99,
+        kvCachePolicy: KVCachePolicy = .defaultPolicy,
         threadCount: Int? = nil,
         batchSize: Int = 256
     ) {
@@ -23,6 +26,7 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
         self.useMMap = useMMap
         self.useMetal = useMetal
         self.gpuLayerCount = useMetal ? max(0, gpuLayerCount) : 0
+        self.kvCachePolicy = kvCachePolicy
         self.threadCount = threadCount.map { max(1, $0) }
         self.batchSize = max(1, batchSize)
     }
@@ -40,7 +44,7 @@ public struct LlamaCppRuntimeConfiguration: Hashable, Sendable {
         return gpuLayerCount
     }
 
-    private static var isSimulatorEnvironment: Bool {
+    static var isSimulatorEnvironment: Bool {
         #if targetEnvironment(simulator)
         true
         #else

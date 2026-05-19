@@ -19,4 +19,26 @@ public actor BackendRegistry {
     public func allBackends() -> [any ModelBackend] {
         Array(backends.values)
     }
+
+    public func prepareForLocalModelExecution(_ model: ModelDescriptor) async {
+        guard Self.isLocalRuntime(model.backend) else {
+            return
+        }
+
+        for backend in backends.values where backend.backendKind != model.backend && Self.isLocalRuntime(backend.backendKind) {
+            guard let unloading = backend as? any BackendModelUnloading else {
+                continue
+            }
+            await unloading.unloadAllModels()
+        }
+    }
+
+    private static func isLocalRuntime(_ backendKind: BackendKind) -> Bool {
+        switch backendKind {
+        case .coreML, .mlx, .llamaCpp:
+            true
+        case .foundationModels, .remote, .executorch, .onnxRuntime, .custom:
+            false
+        }
+    }
 }

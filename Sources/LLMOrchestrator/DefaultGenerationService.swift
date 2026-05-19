@@ -82,6 +82,7 @@ public struct DefaultLanguageGenerationService: LanguageGenerationService {
                 continue
             }
 
+            await registry.prepareForLocalModelExecution(model)
             let backendRequest = BackendGenerationRequest(request: request, model: model, traceID: .generated())
             do {
                 var shouldTryNextCandidate = false

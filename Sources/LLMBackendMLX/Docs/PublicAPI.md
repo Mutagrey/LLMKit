@@ -6,3 +6,5 @@ The support matrix allows text-generation descriptors for Qwen, Gemma, Llama, an
 `MLXMemoryPolicy.strictForMemoryConstrainedApps` is the recommended policy for iPhone experiments.
 
 Runtime-specific MLX container/session types remain internal to the backend.
+The backend supports `BackendModelUnloading` so orchestration can release MLX containers and native chat sessions before
+another local backend runs.

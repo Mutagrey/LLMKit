@@ -72,12 +72,13 @@ Add:
 - `LocalRuntimeMemoryGuard` and related estimate/decision value types.
 - `LlamaCppRuntimeConfiguration.useMMap`.
 - `LlamaCppRuntimeConfiguration.gpuLayerCount`.
+- `LlamaCppRuntimeReport` for honest mmap/GPU-offload reporting.
+- `BackendModelUnloading` for releasing other local backend caches before local execution.
 - Narrow tests for settings, memory, mmap, and simulator Metal behavior.
 
 Defer:
 
 - Runtime proof that Metal executed a specific graph.
-- Cross-backend one-active-local-model arbiter.
 - Prompt/session cache implementation.
 - KV cache quantization for llama.cpp.
 - MatFormer and LLM-in-Flash extension points. mmap is not LLM-in-Flash.
@@ -107,3 +108,29 @@ What will be deferred:
 - Native prompt cache.
 - Native Metal verification telemetry.
 - Real device GGUF smoke tests with large model fixtures.
+
+## Prompt Cache Policy
+
+This pass adds only backend-neutral cache metadata:
+
+- `PromptCachePolicy.disabled`
+- `PromptCachePolicy.basePromptReadOnly`
+- `PromptCachePolicy.sessionReadWrite`
+- `PromptCacheKey`
+
+The default policy is disabled. A cache key is invalidated by changes to model identity, model file hash, system prompt
+version, context size, or KV-cache policy. This does not claim native prompt cache support in llama.cpp or MLX; backend
+adapters must opt in only when the runtime has real cache behavior to preserve.
+
+## KV Cache Policy
+
+`KVCachePolicy` is the single backend-neutral policy type:
+
+- `.runtimeDefault`
+- `.safeF16`
+- `.q8Experimental`
+- `.q4Experimental`
+
+The default remains `.runtimeDefault`. Quantized q8/q4 policies are explicitly experimental and resolve back to
+`.runtimeDefault` unless a backend reports quantized KV cache support. The llama.cpp backend now includes requested and
+effective KV policy in `LlamaCppRuntimeReport`, but does not set native `type_k`/`type_v` yet.

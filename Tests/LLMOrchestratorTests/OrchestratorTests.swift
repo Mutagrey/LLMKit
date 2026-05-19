@@ -190,6 +190,61 @@ private actor ResetRecordingState {
     }
 }
 
+private struct UnloadRecordingBackend: ModelBackend, BackendModelUnloading {
+    let backendKind: BackendKind
+    let state: UnloadRecordingState
+
+    init(backendKind: BackendKind, state: UnloadRecordingState = UnloadRecordingState()) {
+        self.backendKind = backendKind
+        self.state = state
+    }
+
+    func availability(for descriptor: ModelDescriptor) async -> BackendAvailability {
+        .available
+    }
+
+    func supports(_ capability: ModelCapability, model: ModelDescriptor) -> Bool {
+        model.capabilities.contains(capability)
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws -> LoadedModelHandle {
+        LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
+    }
+
+    func unloadModel(_ handle: LoadedModelHandle) async {}
+
+    func unloadAllModels() async {
+        await state.recordUnloadAll()
+    }
+
+    func generate(_ request: BackendGenerationRequest) -> AsyncThrowingStream<BackendGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(GenerationResult(text: "unload-recorder", model: request.model)))
+            continuation.finish()
+        }
+    }
+
+    func chat(_ request: BackendChatRequest) -> AsyncThrowingStream<BackendChatEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let message = ChatMessage(role: .assistant, content: MessageContent(text: "unload-recorder"))
+            continuation.yield(.completed(ChatResult(message: message, model: request.model)))
+            continuation.finish()
+        }
+    }
+}
+
+private actor UnloadRecordingState {
+    private var unloadAllCount = 0
+
+    func recordUnloadAll() {
+        unloadAllCount += 1
+    }
+
+    func count() -> Int {
+        unloadAllCount
+    }
+}
+
 private struct UnavailableBackend: ModelBackend {
     let backendKind: BackendKind
 
@@ -594,6 +649,40 @@ private actor FailingToolService: ToolService {
     let result = try await service.generate(GenerationRequest(prompt: "hi", requirements: ExecutionRequirements(requiredCapabilities: [.completion])))
 
     #expect(result.text == "hello")
+}
+
+@Test func generationServiceUnloadsOtherLocalBackendsBeforeLocalExecution() async throws {
+    let llama = ModelDescriptor(
+        id: "llama",
+        displayName: "Llama",
+        family: .llama,
+        backend: .llamaCpp,
+        capabilities: [.completion]
+    )
+    let mlx = ModelDescriptor(
+        id: "mlx",
+        displayName: "MLX",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.completion]
+    )
+    let unloadState = UnloadRecordingState()
+    let catalog = DefaultModelCatalog(models: [llama, mlx])
+    let registry = BackendRegistry(backends: [
+        StreamingBackend(backendKind: .llamaCpp, responseText: "local"),
+        UnloadRecordingBackend(backendKind: .mlx, state: unloadState)
+    ])
+    let service = DefaultLanguageGenerationService(router: ModelRouter(catalog: catalog), registry: registry)
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.completion],
+        selectionPolicy: .require("llama"),
+        executionMode: .offlineOnly
+    )
+
+    let result = try await service.generate(GenerationRequest(prompt: "hi", requirements: requirements))
+
+    #expect(result.text == "local")
+    #expect(await unloadState.count() == 1)
 }
 
 @Test func generationServiceFallsBackToNextCandidate() async throws {

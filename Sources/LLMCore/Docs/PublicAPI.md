@@ -24,6 +24,10 @@ Prompt/session cache metadata is represented by `PromptCachePolicy` and `PromptC
 is `.disabled`; cache reuse must be keyed by model identity, model file hash, system prompt version, runtime context size,
 and typed `KVCachePolicy`.
 
+`LLMRuntimeMetrics` carries privacy-safe numeric runtime diagnostics for local execution phases: model load, warmup,
+time-to-first-token, generation duration, throughput, and process memory samples. Its sanitized metadata projection emits
+only numeric values and must not contain prompt text, generated text, or chat content.
+
 Catalog metadata includes `ModelCatalogStatus` and `ModelCatalogSourceKind`, which let host apps explain whether a
 catalog is local, signed remote, or using a fallback manifest without pulling lifecycle implementation details into UI.
 

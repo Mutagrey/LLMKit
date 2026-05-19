@@ -103,6 +103,42 @@ import Testing
     #expect(requirements.budget?.maxInputTokens != requirements.budget?.maxOutputTokens)
 }
 
+@Test func runtimeMetricsRoundTripAndExposeOnlyNumericMetadata() throws {
+    let metrics = LLMRuntimeMetrics(
+        modelLoadTimeMilliseconds: 120,
+        warmupTimeMilliseconds: 30,
+        timeToFirstTokenMilliseconds: 45,
+        generationTimeMilliseconds: 400,
+        tokensPerSecond: 18.5,
+        memoryBeforeLoadBytes: 1_000,
+        memoryAfterLoadBytes: 2_000,
+        memoryAfterGenerationBytes: 2_500
+    )
+
+    let data = try JSONEncoder().encode(metrics)
+    let decoded = try JSONDecoder().decode(LLMRuntimeMetrics.self, from: data)
+    let metadata = decoded.sanitizedMetadata(prefix: "local")
+
+    #expect(decoded == metrics)
+    #expect(metadata["local.model_load_time_ms"] == "120")
+    #expect(metadata["local.time_to_first_token_ms"] == "45")
+    #expect(metadata["local.tokens_per_second"] == "18.5")
+    #expect(metadata["local.memory_after_generation_bytes"] == "2500")
+}
+
+@Test func runtimeMetricsMetadataDoesNotExposePromptOrGeneratedContent() {
+    let metrics = LLMRuntimeMetrics(generationTimeMilliseconds: 250)
+    let metadata = metrics.sanitizedMetadata()
+    let joinedKeys = metadata.keys.joined(separator: " ")
+
+    #expect(!joinedKeys.contains("prompt"))
+    #expect(!joinedKeys.contains("text"))
+    #expect(!joinedKeys.contains("content"))
+    #expect(!joinedKeys.contains("response"))
+    #expect(!joinedKeys.contains("completion"))
+    #expect(metadata.values.allSatisfy { Int($0) != nil || Double($0) != nil })
+}
+
 @Test func promptCachePolicyDefaultsToDisabled() {
     #expect(PromptCachePolicy.defaultPolicy == .disabled)
 }

@@ -134,3 +134,14 @@ adapters must opt in only when the runtime has real cache behavior to preserve.
 The default remains `.runtimeDefault`. Quantized q8/q4 policies are explicitly experimental and resolve back to
 `.runtimeDefault` unless a backend reports quantized KV cache support. The llama.cpp backend now includes requested and
 effective KV policy in `LlamaCppRuntimeReport`, but does not set native `type_k`/`type_v` yet.
+
+## Runtime Metrics
+
+`LLMRuntimeMetrics` is the backend-neutral skeleton for local runtime diagnostics. It is intentionally numeric-only:
+model load time, warmup time, time-to-first-token, generation duration, throughput, and process memory samples. Its
+sanitized metadata projection is safe for `TelemetryEvent.metadata` and must not include prompt text, generated text,
+message content, or tool payloads.
+
+Backends may emit these metrics through existing `MetricsSink`/`TelemetryEvent` plumbing once they can measure the values
+without changing generation semantics. This pass defines the data shape only; it does not claim full runtime coverage for
+GGUF or MLX.

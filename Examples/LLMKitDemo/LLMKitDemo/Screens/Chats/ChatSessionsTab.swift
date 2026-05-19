@@ -1,5 +1,6 @@
 import LLMCore
 import LLMUIChat
+import LLMUIModels
 import SwiftUI
 
 struct ChatSessionsTab: View {
@@ -202,7 +203,7 @@ private struct SessionRow: View {
             guard let descriptor else {
                 return nil
             }
-            return "\(descriptor.displayName) · \(demoBackendTitle(descriptor.backend))"
+            return "\(descriptor.displayName) · \(ModelFormatting.backendTitle(descriptor.backend))"
         case .automatedConversation:
             let phase = overview.automationState?.phase.rawValue.replacingOccurrences(of: "_", with: " ") ?? "idle"
             let modelName = descriptor?.displayName ?? "Multiple models"

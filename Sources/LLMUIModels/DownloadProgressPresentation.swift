@@ -1,5 +1,3 @@
-import LLMCore
-
 enum DownloadProgressPresentation {
     static func normalizedFraction(_ value: Double) -> Double {
         guard value.isFinite else {
@@ -12,11 +10,5 @@ enum DownloadProgressPresentation {
     static func percentTitle(for value: Double, isEstimated: Bool) -> String {
         let percent = Int((normalizedFraction(value) * 100).rounded())
         return "\(percent)%"
-    }
-}
-
-extension ModelDownloadsViewModel {
-    public func installState(for modelID: ModelID) -> InstallState {
-        installStates[modelID] ?? .notInstalled
     }
 }

@@ -1,4 +1,4 @@
-import LLMUIDownloads
+import LLMUIModels
 import SwiftUI
 
 struct ContentView: View {

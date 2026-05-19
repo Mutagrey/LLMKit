@@ -148,7 +148,7 @@ LLMKit/
 │  │  │  ├─ StateOwnership.md
 │  │  │  └─ Theming.md
 │  │  └─ ...
-│  └─ LLMUIDownloads/
+│  └─ LLMUIModels/
 │     ├─ Docs/
 │     │  ├─ Overview.md
 │     │  ├─ InstallProgress.md
@@ -172,7 +172,7 @@ LLMKit/
    ├─ LLMBackendMLXTests/
    ├─ LLMBackendRemoteTests/
    ├─ LLMUIChatTests/
-   └─ LLMUIDownloadsTests/
+   └─ LLMUIModelsTests/
 ```
 
 ---
@@ -564,14 +564,16 @@ Rules:
 - must not own routing logic
 - must not mutate persistence directly except through public service abstractions
 
-### LLMUIDownloads
-Reusable UI for model downloads and installs.
+### LLMUIModels
+Reusable UI for model catalog, installs, progress, and storage usage.
 
 Contains:
-- `ModelDownloadListView`
+- `ModelListView`
+- `ModelRowView`
+- `ModelDetailView`
 - `ModelInstallProgressView`
 - `StorageUsageView`
-- `DownloadErrorView`
+- `ModelStorageSummary`
 
 Rules:
 - consumes lifecycle/status streams only
@@ -687,7 +689,7 @@ let package = Package(
             name: "LLMKitUI",
             targets: [
                 "LLMUIChat",
-                "LLMUIDownloads"
+                "LLMUIModels"
             ]
         ),
         .library(
@@ -710,7 +712,7 @@ let package = Package(
                 "LLMBackendMLX",
                 "LLMBackendRemote",
                 "LLMUIChat",
-                "LLMUIDownloads"
+                "LLMUIModels"
             ]
         )
     ],
@@ -854,7 +856,7 @@ let package = Package(
             ]
         ),
         .target(
-            name: "LLMUIDownloads",
+            name: "LLMUIModels",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols",
@@ -932,8 +934,8 @@ let package = Package(
             dependencies: ["LLMUIChat"]
         ),
         .testTarget(
-            name: "LLMUIDownloadsTests",
-            dependencies: ["LLMUIDownloads"]
+            name: "LLMUIModelsTests",
+            dependencies: ["LLMUIModels"]
         )
     ]
 )
@@ -961,7 +963,7 @@ LLMProtocols
 ├─ LLMBackendMLX
 ├─ LLMBackendRemote
 ├─ LLMUIChat
-└─ LLMUIDownloads
+└─ LLMUIModels
 
 LLMNetworking
 └─ LLMBackendRemote
@@ -1172,7 +1174,7 @@ Suggested UI types:
 - `ChatTheme`
 - `ChatInputPolicy`
 
-For `LLMUIDownloads`:
+For `LLMUIModels`:
 - install state is read-only from the UI perspective
 - actions must go through lifecycle service
 - progress presentation must be independent of a specific downloader implementation

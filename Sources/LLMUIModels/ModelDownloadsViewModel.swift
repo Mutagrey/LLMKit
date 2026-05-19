@@ -1,147 +1,7 @@
 import Foundation
 import LLMCore
-import LLMModelLifecycle
-import LLMObservability
 import LLMProtocols
 import Observation
-import SwiftUI
-
-public struct ModelDownloadListView: View {
-    @State private var viewModel: ModelDownloadsViewModel
-    private let configuredDescriptors: [ModelDescriptor]
-
-    public init(
-        models: [InstalledModelRecord] = [],
-        descriptors: [ModelDescriptor] = [],
-        lifecycleService: (any ModelLifecycleService)? = nil
-    ) {
-        self._viewModel = State(initialValue: ModelDownloadsViewModel(
-            models: models,
-            descriptors: descriptors,
-            lifecycleService: lifecycleService
-        ))
-        self.configuredDescriptors = descriptors
-    }
-
-    public var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                StorageUsageView(
-                    downloadedModelCount: installedDescriptors.count,
-                    totalModelCount: visibleDescriptors.count,
-                    installedBytes: viewModel.installedStorageBytes,
-                    partialBytes: viewModel.partialStorageBytes,
-                    availableBytes: viewModel.storageUsage.availableBytes,
-                    capacityBytes: viewModel.storageUsage.capacityBytes
-                )
-
-                if !installedDescriptors.isEmpty {
-                    section(title: "Installed", descriptors: installedDescriptors)
-                }
-
-                if !availableDescriptors.isEmpty {
-                    section(title: "Available to Download", descriptors: availableDescriptors)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
-        }
-        .overlay {
-            if let lastErrorMessage = viewModel.lastErrorMessage {
-                VStack {
-                    Spacer()
-                    Text(lastErrorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.background)
-                }
-            }
-        }
-        .task {
-            viewModel.updateDescriptors(configuredDescriptors)
-            await viewModel.refresh()
-        }
-    }
-
-    private func section(title: String, descriptors: [ModelDescriptor]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 2)
-
-            VStack(spacing: 0) {
-                ForEach(Array(descriptors.enumerated()), id: \.element.id) { index, descriptor in
-                    card(for: descriptor)
-                        .swipeActions(edge: .trailing) {
-                            if viewModel.canDeleteArtifacts(for: descriptor.id) {
-                                Button(role: .destructive) {
-                                    Task { await viewModel.delete(descriptor.id) }
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .accessibilityLabel("Delete model")
-                            }
-                        }
-                    if index < descriptors.count - 1 {
-                        Divider()
-                            .padding(.horizontal, 16)
-                    }
-                }
-            }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
-            }
-        }
-    }
-
-    private var visibleDescriptors: [ModelDescriptor] {
-        var seen = Set<ModelID>()
-        return (configuredDescriptors + viewModel.models.map(\.descriptor))
-            .filter { descriptor in
-            seen.insert(descriptor.id).inserted
-        }
-        .sorted { lhs, rhs in
-            if viewModel.isInstalled(lhs.id) != viewModel.isInstalled(rhs.id) {
-                return viewModel.isInstalled(lhs.id)
-            }
-            return lhs.displayName < rhs.displayName
-        }
-    }
-
-    private var installedDescriptors: [ModelDescriptor] {
-        visibleDescriptors.filter { viewModel.isInstalled($0.id) }
-    }
-
-    private var availableDescriptors: [ModelDescriptor] {
-        visibleDescriptors.filter { !viewModel.isInstalled($0.id) }
-    }
-
-    private var inProgressDescriptors: [ModelDescriptor] {
-        visibleDescriptors.filter { viewModel.isInstalling($0.id) }
-    }
-
-    private func card(for descriptor: ModelDescriptor) -> some View {
-        ModelDownloadCardView(
-            descriptor: descriptor,
-            state: viewModel.installState(for: descriptor.id),
-            progressDetail: viewModel.progressDetail(for: descriptor.id),
-            installedSizeBytes: viewModel.storageBytes(for: descriptor.id),
-            canDeleteArtifacts: viewModel.canDeleteArtifacts(for: descriptor.id),
-            isInstallButtonDisabled: viewModel.isInstallButtonDisabled(for: descriptor.id)
-        ) {
-            await viewModel.beginInstall(descriptor)
-        } cancelAction: {
-            await viewModel.cancelInstall(descriptor.id)
-        } deleteAction: {
-            await viewModel.delete(descriptor.id)
-        }
-    }
-}
 
 @MainActor
 @Observable
@@ -190,6 +50,10 @@ public final class ModelDownloadsViewModel {
         for descriptor in descriptors where installStates[descriptor.id] == nil {
             installStates[descriptor.id] = .notInstalled
         }
+    }
+
+    public func installState(for modelID: ModelID) -> InstallState {
+        installStates[modelID] ?? .notInstalled
     }
 
     public func refresh() async {
@@ -568,4 +432,4 @@ public final class ModelDownloadsViewModel {
     }
 }
 
-public enum LLMUIDownloadsNamespace {}
+public enum LLMUIModelsNamespace {}

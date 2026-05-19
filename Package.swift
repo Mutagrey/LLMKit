@@ -116,7 +116,7 @@ let package = Package(
             name: "LLMKitUI",
             targets: [
                 "LLMUIChat",
-                "LLMUIDownloads",
+                "LLMUIModels",
                 "LLMUIObservability"
             ]
         ),
@@ -141,7 +141,7 @@ let package = Package(
                 "LLMBackendLlamaCpp",
                 "LLMBackendRemote",
                 "LLMUIChat",
-                "LLMUIDownloads",
+                "LLMUIModels",
                 "LLMUIObservability"
             ]
         ),
@@ -325,7 +325,7 @@ let package = Package(
             exclude: ["Docs"]
         ),
         .target(
-            name: "LLMUIDownloads",
+            name: "LLMUIModels",
             dependencies: [
                 "LLMCore",
                 "LLMProtocols",
@@ -415,8 +415,8 @@ let package = Package(
             dependencies: ["LLMUIChat"]
         ),
         .testTarget(
-            name: "LLMUIDownloadsTests",
-            dependencies: ["LLMUIDownloads"]
+            name: "LLMUIModelsTests",
+            dependencies: ["LLMUIModels"]
         ),
         .testTarget(
             name: "LLMUIObservabilityTests",

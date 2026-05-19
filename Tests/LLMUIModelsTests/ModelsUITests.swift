@@ -2,7 +2,7 @@ import Foundation
 import LLMCore
 import LLMModelLifecycle
 import LLMProtocols
-import LLMUIDownloads
+import LLMUIModels
 import Testing
 
 private struct InstallingLifecycleService: ModelLifecycleService {

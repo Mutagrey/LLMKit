@@ -1,4 +1,5 @@
 import LLMCore
+import LLMUIModels
 import SwiftUI
 
 struct ChatModelToolbarMenu: View {
@@ -78,7 +79,7 @@ struct ChatModelToolbarMenu: View {
         guard let selectedModel else {
             return models.isEmpty ? "No ready models" : "No model selected"
         }
-        return "\(demoBackendTitle(selectedModel.backend)) · \(selectedStatusText)"
+        return "\(ModelFormatting.backendTitle(selectedModel.backend)) · \(selectedStatusText)"
     }
 
     private var selectedModelIconName: String {
@@ -100,7 +101,7 @@ struct ChatModelToolbarMenu: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(descriptor.displayName)
-                Text("\(demoBackendTitle(descriptor.backend)) · \(statusText(descriptor))")
+                Text("\(ModelFormatting.backendTitle(descriptor.backend)) · \(statusText(descriptor))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

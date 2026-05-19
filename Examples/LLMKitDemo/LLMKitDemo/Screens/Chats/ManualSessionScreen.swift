@@ -1,5 +1,6 @@
 import LLMCore
 import LLMUIChat
+import LLMUIModels
 import SwiftUI
 
 struct ManualSessionScreen: View {
@@ -44,7 +45,7 @@ struct ManualSessionScreen: View {
 
     private var titleLine: String {
         if let descriptor {
-            return "\(title) · \(descriptor.displayName) · \(demoBackendTitle(descriptor.backend))"
+            return "\(title) · \(descriptor.displayName) · \(ModelFormatting.backendTitle(descriptor.backend))"
         }
         return title
     }

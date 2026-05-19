@@ -22,10 +22,8 @@
 		42D000020000000000000007 /* ChatSessionsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000007 /* ChatSessionsTab.swift */; };
 		42D000020000000000000008 /* ManualSessionScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000008 /* ManualSessionScreen.swift */; };
 		42D000020000000000000009 /* SessionDetailHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000009 /* SessionDetailHost.swift */; };
-		42D00002000000000000000A /* ModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000A /* ModelDetailView.swift */; };
 		42D00002000000000000000B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000B /* ModelsTab.swift */; };
 		42D00002000000000000000C /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000C /* SettingsTab.swift */; };
-		42D00002000000000000000D /* DemoModelFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D00001000000000000000D /* DemoModelFormatting.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,10 +43,8 @@
 		42D000010000000000000007 /* ChatSessionsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSessionsTab.swift; sourceTree = "<group>"; };
 		42D000010000000000000008 /* ManualSessionScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualSessionScreen.swift; sourceTree = "<group>"; };
 		42D000010000000000000009 /* SessionDetailHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailHost.swift; sourceTree = "<group>"; };
-		42D00001000000000000000A /* ModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailView.swift; sourceTree = "<group>"; };
 		42D00001000000000000000B /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
 		42D00001000000000000000C /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
-		42D00001000000000000000D /* DemoModelFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoModelFormatting.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -155,7 +151,6 @@
 		42D000030000000000000007 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				42D00001000000000000000A /* ModelDetailView.swift */,
 				42D00001000000000000000B /* ModelsTab.swift */,
 			);
 			path = Models;
@@ -172,7 +167,6 @@
 		42D000030000000000000009 /* Support */ = {
 			isa = PBXGroup;
 			children = (
-				42D00001000000000000000D /* DemoModelFormatting.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -264,12 +258,10 @@
 				42D000020000000000000007 /* ChatSessionsTab.swift in Sources */,
 				42D000020000000000000008 /* ManualSessionScreen.swift in Sources */,
 				42D000020000000000000009 /* SessionDetailHost.swift in Sources */,
-				42D00002000000000000000A /* ModelDetailView.swift in Sources */,
 				42D00002000000000000000B /* ModelsTab.swift in Sources */,
 				42D00002000000000000000C /* SettingsTab.swift in Sources */,
 				42D000020000000000000003 /* DemoModelPreflight.swift in Sources */,
 				42D000020000000000000004 /* DemoViewModel.swift in Sources */,
-				42D00002000000000000000D /* DemoModelFormatting.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -25,6 +25,17 @@ public struct StorageUsageView: View {
         self.capacityBytes = capacityBytes
     }
 
+    public init(summary: ModelStorageSummary) {
+        self.init(
+            downloadedModelCount: summary.downloadedModelCount,
+            totalModelCount: summary.totalModelCount,
+            installedBytes: summary.installedBytes,
+            partialBytes: summary.partialBytes,
+            availableBytes: summary.availableBytes,
+            capacityBytes: summary.capacityBytes
+        )
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 14) {

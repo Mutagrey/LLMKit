@@ -275,7 +275,7 @@ LLMKit/
         Docs/
         Public/
         Internal/
-      LLMUIDownloads/
+      LLMUIModels/
         Docs/
         Public/
         Internal/
@@ -550,7 +550,7 @@ Define products approximately like this:
 
 #### `LLMKitUI`
 - LLMUIChat
-- LLMUIDownloads
+- LLMUIModels
 - LLMUIPrompts
 
 ---
@@ -1359,7 +1359,7 @@ Module: `LLMUIChat`
 
 ### 26.2 Downloads UI module
 
-Module: `LLMUIDownloads`
+Module: `LLMUIModels`
 
 #### Required components
 

@@ -1,16 +1,16 @@
-# LLMUIDownloads Public API
+# LLMUIModels Public API
 
-Public API includes download list, install progress presentation, and a lifecycle-backed downloads view model.
+Public API includes a unified model list, install progress presentation, detail view, formatting helpers, reusable storage
+summary, and a lifecycle-backed downloads view model.
 
-`ModelDownloadListView` renders model descriptors with install actions, compact installed/downloadable sections, a top
-`StorageUsageView`, and status text backed by `ModelDownloadsViewModel`.
-`ModelDownloadCardView` renders a single downloadable model row with icon-only download/pause/play controls and a linear
-progress treatment that can be embedded by host apps alongside their own model selection UI. When lifecycle progress includes
-byte totals, the card renders precise transferred bytes and percent without "download" or "approx" labels. Hosts can
-optionally provide a cancel action for in-flight installs and a cleanup action for failed, evicted, or partial local artifacts.
-`ModelCatalogCardView` renders a compact model catalog row/card for model pickers and example catalogs. Hosts provide generic status,
+`ModelListView` renders model descriptors with optional `ModelStorageSummary`, search, backend/state filters, sorting, grouping,
+detail presentation, selection, install, pause/resume, and delete actions.
+`ModelRowView` renders a compact model row/card for model pickers and example catalogs. Hosts provide generic status,
 availability, selection, install, cancel, delete, and details actions; the view does not choose models, route requests, or touch storage.
-`StorageUsageView` renders downloaded count, installed bytes, partial bytes, and optional disk free/capacity with a compact usage bar.
+`ModelDetailView` renders backend-neutral model details for list sheets. `ModelFormatting` provides shared backend, byte-count,
+and capability titles so apps do not need duplicate model-display formatting.
+`ModelStorageSummary` is the view input for downloaded count, installed bytes, partial bytes, and optional disk free/capacity.
+`StorageUsageView` renders that summary with a compact usage bar.
 `ModelInstallProgressView` renders install state as a compact line-style progress component suitable for lists and detail sections.
 Progress presentation is normalized defensively so percent-shaped external inputs do not render inflated percentages.
 

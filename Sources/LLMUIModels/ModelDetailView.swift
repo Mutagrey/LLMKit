@@ -1,22 +1,28 @@
 import LLMCore
 import SwiftUI
 
-struct ModelDetailView: View {
-    let descriptor: ModelDescriptor
-    let status: String
-    let isAvailable: Bool
+public struct ModelDetailView: View {
+    private let descriptor: ModelDescriptor
+    private let status: String
+    private let isAvailable: Bool
 
-    var body: some View {
+    public init(descriptor: ModelDescriptor, status: String, isAvailable: Bool) {
+        self.descriptor = descriptor
+        self.status = status
+        self.isAvailable = isAvailable
+    }
+
+    public var body: some View {
         List {
             Section("Summary") {
                 LabeledContent("Status", value: isAvailable ? "Ready" : status)
-                LabeledContent("Backend", value: demoBackendTitle(descriptor.backend))
+                LabeledContent("Backend", value: ModelFormatting.backendTitle(descriptor.backend))
                 LabeledContent("Family", value: descriptor.family.title)
                 LabeledContent("Model ID", value: descriptor.id.rawValue)
             }
 
             Section("Requirements") {
-                LabeledContent("Download", value: demoByteCountTitle(descriptor.estimatedDownloadSizeBytes))
+                LabeledContent("Download", value: ModelFormatting.byteCountTitle(descriptor.estimatedDownloadSizeBytes))
                 if let minimumRAMGB = descriptor.minimumRAMGB {
                     LabeledContent("Memory", value: "\(minimumRAMGB) GB RAM")
                 }
@@ -33,7 +39,7 @@ struct ModelDetailView: View {
 
             if !descriptor.capabilities.isEmpty {
                 Section("Capabilities") {
-                    ForEach(demoCapabilityTitles(for: descriptor), id: \.self) { capability in
+                    ForEach(ModelFormatting.capabilityTitles(for: descriptor), id: \.self) { capability in
                         Text(capability)
                     }
                 }

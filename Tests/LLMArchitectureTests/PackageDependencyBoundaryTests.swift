@@ -125,7 +125,7 @@ private struct PackageManifest {
         )
     }
 
-    for target in ["LLMUIChat", "LLMUIDownloads"] {
+    for target in ["LLMUIChat", "LLMUIModels", "LLMUIObservability"] {
         expectNoForbiddenDependencies(
             dependencies[target, default: []],
             forbiddenPrefixes: ["LLMBackend", "LLMNetworking", "LLMStorage"],
@@ -170,8 +170,9 @@ private struct PackageManifest {
         "LLMBackendMLX": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendLlamaCpp": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
         "LLMBackendRemote": ["LLMCore", "LLMProtocols", "LLMNetworking", "LLMObservability"],
-        "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability"],
-        "LLMUIDownloads": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"]
+        "LLMUIChat": ["LLMCore", "LLMProtocols", "LLMOrchestrator", "LLMSessions", "LLMTools", "LLMObservability", "LLMUIObservability"],
+        "LLMUIModels": ["LLMCore", "LLMProtocols", "LLMModelLifecycle", "LLMObservability"],
+        "LLMUIObservability": ["LLMCore", "LLMObservability"]
     ]
 
     for (target, imports) in importsByTarget {
@@ -208,7 +209,8 @@ private struct PackageManifest {
 
     let swiftUITargets: Set<String> = [
         "LLMUIChat",
-        "LLMUIDownloads"
+        "LLMUIModels",
+        "LLMUIObservability"
     ]
     for target in importsByTarget.keys where !swiftUITargets.contains(target) {
         #expect(

@@ -1,4 +1,5 @@
 import LLMCore
+import LLMUIModels
 import SwiftUI
 
 struct SettingsTab: View {
@@ -36,7 +37,7 @@ struct SettingsTab: View {
                 Section("Selected Model") {
                     if let descriptor = viewModel.selectedModel {
                         LabeledContent("Name", value: descriptor.displayName)
-                        LabeledContent("Backend", value: demoBackendTitle(descriptor.backend))
+                        LabeledContent("Backend", value: ModelFormatting.backendTitle(descriptor.backend))
                         LabeledContent("Status", value: viewModel.statusText(for: descriptor))
                     } else {
                         Text("No model selected")

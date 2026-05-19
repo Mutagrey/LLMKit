@@ -2,55 +2,6 @@ import Foundation
 import LLMCore
 import SwiftUI
 
-public struct ModelDownloadCardView: View {
-    private let descriptor: ModelDescriptor
-    private let state: InstallState
-    private let progressDetail: ModelInstallProgress?
-    private let installedSizeBytes: Int64?
-    private let isInstallButtonDisabled: Bool
-    private let isSelected: Bool
-    private let installAction: @Sendable () async -> Void
-    private let cancelAction: (@Sendable () async -> Void)?
-
-    public init(
-        descriptor: ModelDescriptor,
-        state: InstallState,
-        progressDetail: ModelInstallProgress? = nil,
-        installedSizeBytes: Int64? = nil,
-        canDeleteArtifacts: Bool = false,
-        isInstallButtonDisabled: Bool,
-        isSelected: Bool = false,
-        installAction: @escaping @Sendable () async -> Void,
-        cancelAction: (@Sendable () async -> Void)? = nil,
-        deleteAction: (@Sendable () async -> Void)? = nil
-    ) {
-        self.descriptor = descriptor
-        self.state = state
-        self.progressDetail = progressDetail
-        self.installedSizeBytes = installedSizeBytes
-        self.isInstallButtonDisabled = isInstallButtonDisabled
-        self.isSelected = isSelected
-        self.installAction = installAction
-        self.cancelAction = cancelAction
-    }
-
-    public var body: some View {
-        ModelDownloadRowContent(
-            descriptor: descriptor,
-            status: state.llmUIDownloadsProgressStatusTitle,
-            isAvailable: state.llmUIDownloadsIsInstalled,
-            isSelected: isSelected,
-            installState: state,
-            progressDetail: progressDetail,
-            installedSizeBytes: installedSizeBytes,
-            isInstallButtonDisabled: isInstallButtonDisabled,
-            selectionAction: nil,
-            installAction: installAction,
-            cancelAction: cancelAction
-        )
-    }
-}
-
 public struct ModelInstallProgressView: View {
     private let state: InstallState
     private let progressDetail: ModelInstallProgress?
@@ -95,7 +46,7 @@ public struct ModelInstallProgressView: View {
     }
 
     private var progressValue: CGFloat {
-        CGFloat(state.llmUIDownloadsProgressFraction)
+        CGFloat(state.llmUIModelsProgressFraction)
     }
 
     private var progressTransitionValue: Double {
@@ -103,7 +54,7 @@ public struct ModelInstallProgressView: View {
     }
 
     private var statusTitle: String {
-        state.llmUIDownloadsProgressStatusTitle
+        state.llmUIModelsProgressStatusTitle
     }
 
     private var progressTitle: String {
@@ -143,7 +94,7 @@ public struct ModelInstallProgressView: View {
     }
 
     private var statusColor: Color {
-        state.llmUIDownloadsProgressColor
+        state.llmUIModelsProgressColor
     }
 
     private func filledWidth(in totalWidth: CGFloat) -> CGFloat {
@@ -154,7 +105,7 @@ public struct ModelInstallProgressView: View {
     }
 
     private var isTransferState: Bool {
-        state.llmUIDownloadsIsTransferState
+        state.llmUIModelsIsTransferState
     }
 
     private func byteCountTitle(for bytes: Int64) -> String {

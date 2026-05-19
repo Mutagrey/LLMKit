@@ -111,7 +111,7 @@ Before adding any external dependency:
 - explain rollback or replacement plan
 
 ### 9. UI must stay backend-agnostic
-`LLMUIChat` and `LLMUIDownloads` must consume public services only.
+`LLMUIChat` and `LLMUIModels` must consume public services only.
 
 UI must not:
 - know backend-specific types
@@ -166,7 +166,7 @@ Unless explicitly instructed otherwise, follow this order:
    - `LLMBackendMLX`
 7. Implement UI modules:
    - `LLMUIChat`
-   - `LLMUIDownloads`
+   - `LLMUIModels`
 8. Expand tests, fixtures, examples
 
 Do not invert this order unless explicitly requested.

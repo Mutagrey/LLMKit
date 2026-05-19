@@ -282,13 +282,13 @@ Read first:
 - Docs/Architecture/LLMKit_Master_Architecture_Blueprint.md
 - Docs/Architecture/LLMKit_Module_File_Map.md
 - Sources/LLMUIChat/Docs/
-- Sources/LLMUIDownloads/Docs/
+- Sources/LLMUIModels/Docs/
 
 Proceed with phase 7 only.
 
 Implement reusable SwiftUI UI modules:
 - LLMUIChat
-- LLMUIDownloads
+- LLMUIModels
 
 Rules:
 - UI must consume public services only

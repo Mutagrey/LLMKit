@@ -639,7 +639,7 @@ Sources/LLMUIChat/
 
 ---
 
-# Sources/LLMUIDownloads
+# Sources/LLMUIModels
 
 ## Purpose
 Reusable UI for model catalog, installs, progress, and storage usage.
@@ -647,17 +647,17 @@ Reusable UI for model catalog, installs, progress, and storage usage.
 ## Initial files
 
 ```text
-Sources/LLMUIDownloads/
+Sources/LLMUIModels/
 ├─ Docs/
-├─ ModelDownloadListView.swift
+├─ ModelListView.swift
+├─ ModelRowView.swift
+├─ ModelDetailView.swift
 ├─ ModelInstallProgressView.swift
 ├─ ModelDownloadsViewModel.swift
 ├─ StorageUsageView.swift
-├─ DownloadErrorView.swift
-├─ InstallActionBar.swift
-├─ InstallProgressState.swift
-├─ DownloadPresentationModel.swift
-└─ LLMUIDownloadsNamespace.swift
+├─ ModelStorageSummary.swift
+├─ ModelFormatting.swift
+└─ LLMUIModelsNamespace.swift
 ```
 
 ---

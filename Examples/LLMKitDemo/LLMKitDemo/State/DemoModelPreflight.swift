@@ -24,8 +24,9 @@ struct DemoModelPreflight {
                 )
             }
             guard plan.candidates.contains(where: { $0.id == modelID }) else {
+                let reason = await plannerRejectionReason(for: requirements)
                 throw LLMError.modelSelectionFailed(
-                    "\(context): required model \(modelID.rawValue) is present in the active catalog but filtered out by the current request or device constraints. Required capabilities: \(capabilityList(requirements.requiredCapabilities)). Model capabilities: \(capabilityList(descriptor.capabilities)). Active catalog: \(catalogDescription(status))."
+                    "\(context): required model \(modelID.rawValue) is present in the active catalog but filtered out by the current request or device constraints. \(plannerReasonClause(reason))Required capabilities: \(capabilityList(requirements.requiredCapabilities)). Model capabilities: \(capabilityList(descriptor.capabilities)). Active catalog: \(catalogDescription(status))."
                 )
             }
             let availability = await availability(for: descriptor)
@@ -96,6 +97,23 @@ struct DemoModelPreflight {
             return BackendAvailability(status: .unavailable(reason: "Backend adapter is not configured."))
         }
         return await backend.availability(for: descriptor)
+    }
+
+    private func plannerRejectionReason(for requirements: ExecutionRequirements) async -> String {
+        let router = ModelRouter(catalog: catalog, planner: planner)
+        do {
+            _ = try await router.plan(requirements: requirements)
+            return ""
+        } catch let error as LLMError {
+            if case .modelSelectionFailed(let message) = error {
+                return "Planner reason: \(message)"
+            }
+        } catch {}
+        return ""
+    }
+
+    private func plannerReasonClause(_ reason: String) -> String {
+        reason.isEmpty ? "" : "\(reason) "
     }
 
     private func availabilityDescription(_ availability: BackendAvailability) -> String {

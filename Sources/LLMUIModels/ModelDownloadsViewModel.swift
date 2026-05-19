@@ -176,6 +176,22 @@ public final class ModelDownloadsViewModel {
         }
     }
 
+    public func clearPartialArtifacts() async {
+        let partialModelIDs = storageUsage.modelBytes.keys.filter { !isInstalled($0) }
+        for modelID in partialModelIDs {
+            await delete(modelID)
+        }
+    }
+
+    public func clearInstalledModels() async {
+        let installedModelIDs = Set(models.map(\.descriptor.id))
+            .union(storageUsage.modelBytes.keys)
+            .filter { isInstalled($0) }
+        for modelID in installedModelIDs {
+            await delete(modelID)
+        }
+    }
+
     public func statusText(for modelID: ModelID) -> String {
         switch installStates[modelID] ?? .notInstalled {
         case .notInstalled:

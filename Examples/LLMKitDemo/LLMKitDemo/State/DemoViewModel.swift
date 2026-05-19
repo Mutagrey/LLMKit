@@ -205,6 +205,14 @@ final class DemoViewModel {
         try await refreshSessions()
     }
 
+    func deleteAllSessions() async throws {
+        let sessionIDs = sessions.map(\.id)
+        for sessionID in sessionIDs {
+            try await configuration.container.sessions.deleteSession(id: sessionID)
+        }
+        try await refreshSessions()
+    }
+
     func setLastErrorMessage(_ message: String?) {
         lastErrorMessage = message
     }

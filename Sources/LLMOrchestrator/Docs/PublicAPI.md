@@ -8,11 +8,15 @@ When `ModelSelectionPolicy.require` is used, router failures distinguish missing
 RAM, and offline/remote constraint mismatches so host apps can present actionable setup errors.
 
 `ExecutionPlanner` consumes `DeviceProfile` and `RuntimeConstraints` snapshots to filter descriptors whose
-declared minimum RAM exceeds the current device budget. Free-disk requirements are install-time lifecycle
-constraints, not inference-time routing gates. For `.fast` quality it prefers lower-footprint models, while
-`.best` still prefers higher-capacity candidates that remain eligible.
-When `DeviceProfile.availableProcessMemoryBytes` is present, local runtime candidates with estimated artifact
-sizes are also checked against a backend-neutral process-memory reserve before routing reaches backend load.
+declared minimum RAM class clearly exceeds the current device budget. The RAM class check has tolerance for devices
+that report slightly less physical memory than their marketed class, and GGUF/llama.cpp descriptors are not rejected
+by declared RAM class. Free-disk requirements are install-time lifecycle constraints, not inference-time routing
+gates. For `.fast` quality it prefers lower-footprint models, while `.best` still prefers higher-capacity candidates
+that remain eligible.
+Callers that want a strict pre-load memory gate can construct `ExecutionPlanner` with
+`enforcesProcessMemoryBudget: true`. In that mode, local runtime candidates with estimated resident memory are checked
+against a backend-neutral process-memory reserve before routing reaches backend load. For GGUF models, the planner does
+not treat the full mmap-backed artifact size as process-resident memory.
 `BackendRegistry.prepareForLocalModelExecution(_:)` is the local-runtime cleanup point used by default services before
 streaming from a selected local model.
 

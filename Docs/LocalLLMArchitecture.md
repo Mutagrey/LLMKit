@@ -96,6 +96,11 @@ What will be changed:
 - Harden llama.cpp mmap and GPU-layer settings.
 - Update module docs and focused tests.
 
+The process-memory guard must estimate resident memory, not download size. It is opt-in for routing because
+process-available memory is volatile and too strict for chat/session creation. GGUF/llama.cpp descriptors should not
+be rejected by declared RAM class; mmap-backed model artifacts remain disk-backed for routing preflight, and only
+request context and working memory are treated as process resident before backend load.
+
 What will be preserved:
 
 - `ModelBackend` as the runtime boundary.

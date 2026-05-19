@@ -51,7 +51,11 @@ struct ContentView: View {
                 }
                 .tag(2)
 
-            SettingsTab(viewModel: viewModel)
+            SettingsTab(
+                viewModel: viewModel,
+                downloadsViewModel: downloadsViewModel,
+                skillStore: skillStore
+            )
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }

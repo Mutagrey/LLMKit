@@ -547,20 +547,67 @@ private actor FailingToolService: ToolService {
     #expect(plan.candidates.map(\.id) == ["installed-large"])
 }
 
+@Test func executionPlannerAllowsDeclaredEightGBModelsOnNearEightGBDevices() {
+    let descriptor = ModelDescriptor(
+        id: "near-eight",
+        displayName: "Near Eight",
+        family: .gemma,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 8
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 7_600_000_000,
+            processorCount: 6
+        )
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
+
+    let plan = planner.plan(models: [descriptor], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["near-eight"])
+}
+
+@Test func executionPlannerDoesNotRejectGGUFByDeclaredRAMClass() {
+    let descriptor = ModelDescriptor(
+        id: "gguf-large",
+        displayName: "GGUF Large",
+        family: .llama,
+        backend: .llamaCpp,
+        capabilities: [.chat],
+        minimumRAMGB: 16,
+        estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(5_120))
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: 6_000_000_000,
+            processorCount: 6
+        )
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
+
+    let plan = planner.plan(models: [descriptor], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["gguf-large"])
+}
+
 @Test func executionPlannerFiltersLocalModelsWhenProcessMemoryIsTooLow() {
     let compact = ModelDescriptor(
         id: "compact",
         displayName: "Compact",
-        family: .llama,
-        backend: .llamaCpp,
+        family: .qwen,
+        backend: .mlx,
         capabilities: [.chat],
         estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(128))
     )
     let oversized = ModelDescriptor(
         id: "oversized",
         displayName: "Oversized",
-        family: .llama,
-        backend: .llamaCpp,
+        family: .qwen,
+        backend: .mlx,
         capabilities: [.chat],
         estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(800))
     )
@@ -570,13 +617,74 @@ private actor FailingToolService: ToolService {
             physicalMemoryBytes: LocalRuntimeMemoryGuard.megabytes(4096),
             processorCount: 6,
             availableProcessMemoryBytes: LocalRuntimeMemoryGuard.megabytes(1024)
-        )
+        ),
+        enforcesProcessMemoryBudget: true
     )
     let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
 
     let plan = planner.plan(models: [oversized, compact], requirements: requirements)
 
     #expect(plan.candidates.map(\.id) == ["compact"])
+}
+
+@Test func executionPlannerDoesNotFilterMLXByProcessMemoryUnlessEnabled() {
+    let descriptor = ModelDescriptor(
+        id: "mlx",
+        displayName: "MLX",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        minimumRAMGB: 4,
+        contextWindowTokens: 32_768,
+        estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(1_536))
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: LocalRuntimeMemoryGuard.megabytes(8_192),
+            processorCount: 6,
+            availableProcessMemoryBytes: LocalRuntimeMemoryGuard.megabytes(1_024)
+        )
+    )
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.chat],
+        executionMode: .offlineOnly,
+        budget: ExecutionBudget(maxInputTokens: 8_192, maxOutputTokens: 512)
+    )
+
+    let plan = planner.plan(models: [descriptor], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["mlx"])
+}
+
+@Test func executionPlannerDoesNotTreatGGUFArtifactSizeAsResidentMemory() {
+    let descriptor = ModelDescriptor(
+        id: "gguf",
+        displayName: "GGUF",
+        family: .llama,
+        backend: .llamaCpp,
+        capabilities: [.chat],
+        contextWindowTokens: 8_192,
+        estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(5_120))
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: LocalRuntimeMemoryGuard.megabytes(8_192),
+            processorCount: 6,
+            availableProcessMemoryBytes: LocalRuntimeMemoryGuard.megabytes(1_024)
+        ),
+        enforcesProcessMemoryBudget: true
+    )
+    let requirements = ExecutionRequirements(
+        requiredCapabilities: [.chat],
+        executionMode: .offlineOnly,
+        budget: ExecutionBudget(maxInputTokens: 4_096, maxOutputTokens: 512)
+    )
+
+    let plan = planner.plan(models: [descriptor], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["gguf"])
 }
 
 @Test func executionPlannerPrefersLowerFootprintForFastTier() {

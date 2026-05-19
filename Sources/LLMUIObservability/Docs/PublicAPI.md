@@ -9,4 +9,6 @@ Public API includes `RuntimeMetricsInlineSummaryView`, `RuntimeMetricsSummaryVie
 `RuntimeMetricsListView` renders a supplied `[TelemetryEvent]`.
 `RuntimeMetricsCollectorView` snapshots a `MetricsCollector`, shows the summary and list, and exposes a refresh toolbar action.
 `RuntimeMetricsPresentation` filters metadata to known numeric runtime keys before values reach SwiftUI.
+Metric values are formatted with bounded precision, compact seconds for long millisecond spans, compact throughput, and
+byte-count titles for memory.
 `FreeMemoryIndicatorView` renders a compact backend-neutral free-memory label from host-supplied byte counts.

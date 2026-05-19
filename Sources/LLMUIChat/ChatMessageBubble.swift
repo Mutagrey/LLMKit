@@ -25,6 +25,10 @@ struct ChatMessageBubble: View {
             .padding(.horizontal, 13)
             .padding(.vertical, 10)
             .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(bubbleBorder, lineWidth: 1)
+            }
 
             if message.role != .user {
                 Spacer(minLength: 44)
@@ -42,6 +46,10 @@ struct ChatMessageBubble: View {
     }
 
     private var bubbleBackground: Color {
-        message.role == .user ? .accentColor.opacity(0.14) : .secondary.opacity(0.10)
+        message.role == .user ? .accentColor.opacity(0.24) : .secondary.opacity(0.16)
+    }
+
+    private var bubbleBorder: Color {
+        message.role == .user ? .accentColor.opacity(0.30) : .secondary.opacity(0.22)
     }
 }

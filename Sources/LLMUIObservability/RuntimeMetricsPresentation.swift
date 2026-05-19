@@ -92,14 +92,43 @@ private enum RuntimeMetricDescriptor: String, CaseIterable {
     func formatted(_ rawValue: String) -> String {
         switch self {
         case .modelLoadTime, .warmupTime, .timeToFirstToken, .generationTime:
-            return "\(rawValue) ms"
-        case .tokensPerSecond:
-            return "\(rawValue) tok/s"
-        case .memoryBeforeLoad, .memoryAfterLoad, .memoryAfterGeneration:
-            guard let bytes = Int64(rawValue) else {
+            guard let milliseconds = Double(rawValue) else {
                 return rawValue
             }
+            return Self.formattedMilliseconds(milliseconds)
+        case .tokensPerSecond:
+            guard let tokensPerSecond = Double(rawValue) else {
+                return rawValue
+            }
+            return "\(Self.formattedNumber(tokensPerSecond, maximumFractionDigits: tokensPerSecond < 10 ? 2 : 1)) tok/s"
+        case .memoryBeforeLoad, .memoryAfterLoad, .memoryAfterGeneration:
+            guard let bytesValue = Double(rawValue) else {
+                return rawValue
+            }
+            let bytes = Int64(bytesValue)
             return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .memory)
         }
+    }
+
+    private static func formattedMilliseconds(_ milliseconds: Double) -> String {
+        if milliseconds >= 1_000 {
+            let seconds = milliseconds / 1_000
+            return "\(formattedNumber(seconds, maximumFractionDigits: seconds < 10 ? 2 : 1)) s"
+        }
+
+        let maximumFractionDigits: Int
+        switch milliseconds {
+        case ..<10:
+            maximumFractionDigits = 2
+        case ..<100:
+            maximumFractionDigits = 1
+        default:
+            maximumFractionDigits = 0
+        }
+        return "\(formattedNumber(milliseconds, maximumFractionDigits: maximumFractionDigits)) ms"
+    }
+
+    private static func formattedNumber(_ value: Double, maximumFractionDigits: Int) -> String {
+        value.formatted(.number.precision(.fractionLength(0...maximumFractionDigits)))
     }
 }

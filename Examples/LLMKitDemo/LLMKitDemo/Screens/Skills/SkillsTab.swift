@@ -8,138 +8,48 @@ struct SkillsTab: View {
 
     var body: some View {
         NavigationStack {
-            List(selection: $selectedSkillIDs) {
-                Section("Default Combination") {
-                    LabeledContent("Main", value: defaultMainTitle)
-                    Text(store.selectedSkillTitles(for: store.defaultSelection))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                Section("Skills") {
-                    ForEach(store.skills) { skill in
-                        SkillRow(
-                            skill: skill,
-                            isMain: store.defaultSelection.mainSkillID == skill.id,
-                            isIncluded: store.defaultSelection.includedSkillIDs.contains(skill.id),
-                            edit: {
-                                presentedEditor = .edit(skill.id)
-                            }
-                        )
-                        .tag(skill.id)
-                        .contextMenu {
-                            skillActions(for: skill)
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                            Button {
-                                useAsMain(skill)
-                            } label: {
-                                Label("Main", systemImage: "star.fill")
-                            }
-                            .tint(.blue)
-
-                            Button {
-                                toggleDefaultInclusion(skill)
-                            } label: {
-                                Label(
-                                    store.defaultSelection.includedSkillIDs.contains(skill.id) ? "Remove" : "Include",
-                                    systemImage: "checkmark.circle"
-                                )
-                            }
-                            .tint(.green)
-                            .disabled(store.defaultSelection.mainSkillID == skill.id)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                delete(skill)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                            .disabled(skill.isRequiredSystemSkill)
-
-                            Button {
-                                duplicate(skill)
-                            } label: {
-                                Label("Duplicate", systemImage: "doc.on.doc")
-                            }
-                            .tint(.orange)
-                        }
-                    }
-                }
+            VStack(spacing: 0) {
+                SkillsList(
+                    store: store,
+                    selectedSkillIDs: $selectedSkillIDs,
+                    editSkill: { presentedEditor = .edit($0.id) },
+                    useAsMain: { useAsMain($0) },
+                    toggleDefaultInclusion: { toggleDefaultInclusion($0) },
+                    duplicate: { duplicate($0) },
+                    delete: { delete($0) }
+                )
             }
-            .navigationTitle("Skills")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
-                }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Skills")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        EditButton()
+                    }
 
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if selectedSkillIDs.count > 1 {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if selectedSkillIDs.count > 1 {
+                            Button {
+                                mergeSelectedSkills()
+                            } label: {
+                                Image(systemName: "arrow.triangle.merge")
+                            }
+                            .accessibilityLabel("Merge selected skills")
+                        }
+
                         Button {
-                            mergeSelectedSkills()
+                            presentedEditor = .new
                         } label: {
-                            Image(systemName: "arrow.triangle.merge")
+                            Image(systemName: "plus")
                         }
-                        .accessibilityLabel("Merge selected skills")
+                        .accessibilityLabel("New skill")
                     }
-
-                    Button {
-                        presentedEditor = .new
-                    } label: {
-                        Image(systemName: "plus")
+                }
+                .sheet(item: $presentedEditor) { route in
+                    NavigationStack {
+                        SkillEditorView(store: store, route: route)
                     }
-                    .accessibilityLabel("New skill")
                 }
-            }
-            .sheet(item: $presentedEditor) { route in
-                NavigationStack {
-                    SkillEditorView(store: store, route: route)
-                }
-            }
         }
-    }
-
-    @ViewBuilder
-    private func skillActions(for skill: DemoPromptSkill) -> some View {
-        Button {
-            presentedEditor = .edit(skill.id)
-        } label: {
-            Label("Edit", systemImage: "square.and.pencil")
-        }
-
-        Button {
-            useAsMain(skill)
-        } label: {
-            Label("Use as Main", systemImage: "star.fill")
-        }
-
-        Button {
-            toggleDefaultInclusion(skill)
-        } label: {
-            Label(
-                store.defaultSelection.includedSkillIDs.contains(skill.id) ? "Remove from Default" : "Include in Default",
-                systemImage: "checkmark.circle"
-            )
-        }
-        .disabled(store.defaultSelection.mainSkillID == skill.id)
-
-        Button {
-            duplicate(skill)
-        } label: {
-            Label("Duplicate", systemImage: "doc.on.doc")
-        }
-
-        Button(role: .destructive) {
-            delete(skill)
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-        .disabled(skill.isRequiredSystemSkill)
-    }
-
-    private var defaultMainTitle: String {
-        store.skill(id: store.defaultSelection.mainSkillID)?.title ?? "Missing"
     }
 
     private func useAsMain(_ skill: DemoPromptSkill) {
@@ -175,48 +85,235 @@ struct SkillsTab: View {
     }
 }
 
+private struct SkillsList: View {
+    let store: DemoPromptSkillStore
+    @Binding var selectedSkillIDs: Set<UUID>
+    let editSkill: (DemoPromptSkill) -> Void
+    let useAsMain: (DemoPromptSkill) -> Void
+    let toggleDefaultInclusion: (DemoPromptSkill) -> Void
+    let duplicate: (DemoPromptSkill) -> Void
+    let delete: (DemoPromptSkill) -> Void
+
+    @Environment(\.editMode) private var editMode
+
+    var body: some View {
+        Group {
+            if isEditing {
+                List(selection: $selectedSkillIDs) {
+                    defaultCombinationSection
+                    skillsSection
+                }
+            } else {
+                List {
+                    defaultCombinationSection
+                    skillsSection
+                }
+            }
+        }
+        .id(isEditing)
+        .onChange(of: isEditing) { _, isEditing in
+            if !isEditing {
+                selectedSkillIDs.removeAll()
+            }
+        }
+    }
+
+    private var defaultCombinationSection: some View {
+        Section("Default Combination") {
+            LabeledContent("Main", value: defaultMainTitle)
+            Text(store.selectedSkillTitles(for: store.defaultSelection))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+        }
+    }
+
+    private var skillsSection: some View {
+        Section("Skills") {
+            ForEach(store.skills) { skill in
+                skillListRow(for: skill)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func skillListRow(for skill: DemoPromptSkill) -> some View {
+        if isEditing {
+            SkillRow(
+                skill: skill,
+                isMain: store.defaultSelection.mainSkillID == skill.id,
+                isIncluded: store.defaultSelection.includedSkillIDs.contains(skill.id),
+                isEditing: true,
+                edit: {}
+            )
+            .tag(skill.id)
+            .contextMenu {
+                skillActions(for: skill)
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                leadingSwipeActions(for: skill)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                trailingSwipeActions(for: skill)
+            }
+        } else {
+            SkillRow(
+                skill: skill,
+                isMain: store.defaultSelection.mainSkillID == skill.id,
+                isIncluded: store.defaultSelection.includedSkillIDs.contains(skill.id),
+                isEditing: false,
+                edit: {
+                    editSkill(skill)
+                }
+            )
+            .contextMenu {
+                skillActions(for: skill)
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                leadingSwipeActions(for: skill)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                trailingSwipeActions(for: skill)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func skillActions(for skill: DemoPromptSkill) -> some View {
+        Button {
+            editSkill(skill)
+        } label: {
+            Label("Edit", systemImage: "square.and.pencil")
+        }
+
+        Button {
+            useAsMain(skill)
+        } label: {
+            Label("Use as Main", systemImage: "star.fill")
+        }
+
+        Button {
+            toggleDefaultInclusion(skill)
+        } label: {
+            Label(
+                store.defaultSelection.includedSkillIDs.contains(skill.id) ? "Remove from Default" : "Include in Default",
+                systemImage: "checkmark.circle"
+            )
+        }
+        .disabled(store.defaultSelection.mainSkillID == skill.id)
+
+        Button {
+            duplicate(skill)
+        } label: {
+            Label("Duplicate", systemImage: "doc.on.doc")
+        }
+
+        Button(role: .destructive) {
+            delete(skill)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(skill.isRequiredSystemSkill)
+    }
+
+    @ViewBuilder
+    private func leadingSwipeActions(for skill: DemoPromptSkill) -> some View {
+        Button {
+            useAsMain(skill)
+        } label: {
+            Label("Main", systemImage: "star.fill")
+        }
+        .tint(.blue)
+
+        Button {
+            toggleDefaultInclusion(skill)
+        } label: {
+            Label(
+                store.defaultSelection.includedSkillIDs.contains(skill.id) ? "Remove" : "Include",
+                systemImage: "checkmark.circle"
+            )
+        }
+        .tint(.green)
+        .disabled(store.defaultSelection.mainSkillID == skill.id)
+    }
+
+    @ViewBuilder
+    private func trailingSwipeActions(for skill: DemoPromptSkill) -> some View {
+        Button(role: .destructive) {
+            delete(skill)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(skill.isRequiredSystemSkill)
+
+        Button {
+            duplicate(skill)
+        } label: {
+            Label("Duplicate", systemImage: "doc.on.doc")
+        }
+        .tint(.orange)
+    }
+
+    private var defaultMainTitle: String {
+        store.skill(id: store.defaultSelection.mainSkillID)?.title ?? "Missing"
+    }
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue.isEditing == true
+    }
+}
+
 private struct SkillRow: View {
     let skill: DemoPromptSkill
     let isMain: Bool
     let isIncluded: Bool
+    let isEditing: Bool
     let edit: () -> Void
 
     var body: some View {
-        Button(action: edit) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text(skill.title)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        if isMain {
-                            Label("Main", systemImage: "star.fill")
-                                .labelStyle(.iconOnly)
-                                .foregroundStyle(.blue)
-                        } else if isIncluded {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        }
-                    }
-
-                    Text(skill.prompt)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                if skill.isRequiredSystemSkill {
-                    Text("Required")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
+        if isEditing {
+            content
+        } else {
+            Button(action: edit) {
+                content
             }
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+    }
+
+    private var content: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(skill.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    if isMain {
+                        Label("Main", systemImage: "star.fill")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(.blue)
+                    } else if isIncluded {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Text(skill.prompt)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            if skill.isRequiredSystemSkill {
+                Text("Required")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

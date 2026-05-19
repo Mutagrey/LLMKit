@@ -6,13 +6,16 @@ import SwiftUI
 
 struct SettingsTab: View {
     let viewModel: DemoViewModel
+    let downloadsViewModel: ModelDownloadsViewModel
+    let skillStore: DemoPromptSkillStore
 
     var body: some View {
         NavigationStack {
             LLMSettingsScreen(
                 settings: settings,
                 context: settingsContext,
-                configuration: LLMSettingsScreenConfiguration(title: "Settings")
+                configuration: LLMSettingsScreenConfiguration(title: "Settings"),
+                actions: settingsActions
             )
         }
     }
@@ -38,7 +41,38 @@ struct SettingsTab: View {
             catalogMessage: catalogMessage,
             promptSummary: "Prompt skills are configured in the Skills tab and sent as transient system context for each chat.",
             safetySummary: "The demo keeps safety policy backend-neutral. App-specific products should add their own domain boundaries.",
+            storageSummary: storageSummary,
             recommendation: "Use recommended defaults for normal local chat. Lower context, KV, and cache values on memory-constrained devices."
+        )
+    }
+
+    private var settingsActions: LLMSettingsActions {
+        LLMSettingsActions(
+            clearModelArtifacts: {
+                await downloadsViewModel.refresh()
+                await downloadsViewModel.clearPartialArtifacts()
+                await refreshStorageState()
+            },
+            clearChatSessions: {
+                await clearChatSessions()
+            },
+            clearInstalledModels: {
+                await downloadsViewModel.refresh()
+                await downloadsViewModel.clearInstalledModels()
+                await refreshStorageState()
+            }
+        )
+    }
+
+    private var storageSummary: LLMSettingsStorageSummary {
+        LLMSettingsStorageSummary(
+            installedModelCount: viewModel.downloadableModels.filter { downloadsViewModel.isInstalled($0.id) }.count,
+            totalModelCount: viewModel.models.count,
+            chatCount: viewModel.sessions.count,
+            installedModelBytes: downloadsViewModel.installedStorageBytes,
+            partialArtifactBytes: downloadsViewModel.partialStorageBytes,
+            availableBytes: downloadsViewModel.storageUsage.availableBytes,
+            capacityBytes: downloadsViewModel.storageUsage.capacityBytes
         )
     }
 
@@ -58,5 +92,23 @@ struct SettingsTab: View {
             return nil
         }
         return message
+    }
+
+    @MainActor
+    private func clearChatSessions() async {
+        let sessionIDs = viewModel.sessions.map(\.id)
+        do {
+            try await viewModel.deleteAllSessions()
+            sessionIDs.forEach { skillStore.removeSelection(for: $0) }
+        } catch {
+            viewModel.setLastErrorMessage(String(describing: error))
+        }
+    }
+
+    @MainActor
+    private func refreshStorageState() async {
+        await viewModel.refresh()
+        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.refresh()
     }
 }

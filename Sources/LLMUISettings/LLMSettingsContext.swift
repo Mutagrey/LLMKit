@@ -9,6 +9,7 @@ public struct LLMSettingsContext: Hashable, Sendable {
     public var catalogMessage: String?
     public var promptSummary: String?
     public var safetySummary: String?
+    public var storageSummary: LLMSettingsStorageSummary?
     public var storageRows: [LLMSettingsInfoRow]
     public var isLowMemoryConstrained: Bool
     public var recommendation: String?
@@ -22,6 +23,7 @@ public struct LLMSettingsContext: Hashable, Sendable {
         catalogMessage: String? = nil,
         promptSummary: String? = nil,
         safetySummary: String? = nil,
+        storageSummary: LLMSettingsStorageSummary? = nil,
         storageRows: [LLMSettingsInfoRow] = [],
         isLowMemoryConstrained: Bool = false,
         recommendation: String? = nil
@@ -34,6 +36,7 @@ public struct LLMSettingsContext: Hashable, Sendable {
         self.catalogMessage = catalogMessage
         self.promptSummary = promptSummary
         self.safetySummary = safetySummary
+        self.storageSummary = storageSummary
         self.storageRows = storageRows
         self.isLowMemoryConstrained = isLowMemoryConstrained
         self.recommendation = recommendation

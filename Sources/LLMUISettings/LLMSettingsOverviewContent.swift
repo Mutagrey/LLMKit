@@ -9,31 +9,31 @@ struct LLMSettingsOverviewContent: View {
     let isLowMemoryConstrained: Bool
     let recommendation: String?
 
+    private let columns = [
+        GridItem(.adaptive(minimum: 94), spacing: 8)
+    ]
+
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 12) {
             modelSummary
 
-            Divider()
-
-            VStack(alignment: .leading) {
-                Text("Effective limits")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 metricRow(
-                    systemImage: "rectangle.stack",
-                    title: "Context",
                     value: LLMSettingsFormatting.tokenCount(effectiveInputTokens),
-                    subtitle: "Prompt and chat history after model and memory caps",
+                    label: "Context",
                     tint: .blue
                 )
 
                 metricRow(
-                    systemImage: "text.bubble",
-                    title: "Output",
                     value: LLMSettingsFormatting.tokenCount(effectiveOutputTokens),
-                    subtitle: "Maximum answer length for one response",
+                    label: "Output",
                     tint: .green
+                )
+
+                metricRow(
+                    value: isLowMemoryConstrained ? "Limited" : "Normal",
+                    label: "Memory",
+                    tint: isLowMemoryConstrained ? .orange : .green
                 )
             }
 
@@ -53,6 +53,7 @@ struct LLMSettingsOverviewContent: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var modelSummary: some View {
@@ -74,33 +75,18 @@ struct LLMSettingsOverviewContent: View {
         }
     }
 
-    private func metricRow(systemImage: String, title: String, value: String, subtitle: String, tint: Color) -> some View {
-        HStack(alignment: .top) {
-            Image(systemName: systemImage)
+    private func metricRow(value: String, label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(tint)
-
-            VStack(alignment: .leading) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-
-                    Spacer()
-
-                    Text(value)
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .foregroundStyle(tint)
-                }
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func noteRow(systemImage: String, text: String, tint: Color) -> some View {

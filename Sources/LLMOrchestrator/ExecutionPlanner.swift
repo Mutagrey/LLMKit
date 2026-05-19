@@ -16,17 +16,20 @@ public struct ExecutionPlanner: Sendable {
     private let deviceProfile: DeviceProfile?
     private let runtimeConstraints: RuntimeConstraints
     private let memoryGuard: LocalRuntimeMemoryGuard
+    private let enforcesProcessMemoryBudget: Bool
 
     public init(
         matcher: CapabilityMatcher = CapabilityMatcher(),
         deviceProfile: DeviceProfile? = DeviceProfileCollector().currentProfile(),
         runtimeConstraints: RuntimeConstraints = RuntimeConstraintsCollector().currentConstraints(),
-        memoryGuard: LocalRuntimeMemoryGuard = LocalRuntimeMemoryGuard()
+        memoryGuard: LocalRuntimeMemoryGuard = LocalRuntimeMemoryGuard(),
+        enforcesProcessMemoryBudget: Bool = false
     ) {
         self.matcher = matcher
         self.deviceProfile = deviceProfile
         self.runtimeConstraints = runtimeConstraints
         self.memoryGuard = memoryGuard
+        self.enforcesProcessMemoryBudget = enforcesProcessMemoryBudget
     }
 
     public func plan(models: [ModelDescriptor], requirements: ExecutionRequirements) -> ExecutionPlan {
@@ -63,10 +66,11 @@ public struct ExecutionPlanner: Sendable {
             reasons.append("missing capabilities: \(names)")
         }
 
-        if let minimumRAMGB = descriptor.minimumRAMGB,
+        if shouldEvaluateDeclaredRAM(for: descriptor),
+           let minimumRAMGB = descriptor.minimumRAMGB,
            let deviceProfile,
-           deviceProfile.physicalMemoryBytes < UInt64(minimumRAMGB) * 1_073_741_824 {
-            let currentRAMGB = deviceProfile.physicalMemoryBytes / 1_073_741_824
+           deviceProfile.physicalMemoryBytes < minimumRAMRejectionThresholdBytes(gigabytes: minimumRAMGB) {
+            let currentRAMGB = deviceProfile.physicalMemoryBytes / Self.bytesPerDeclaredGigabyte
             reasons.append("requires \(minimumRAMGB) GB RAM, current device has \(currentRAMGB) GB")
         }
 
@@ -74,9 +78,10 @@ public struct ExecutionPlanner: Sendable {
             reasons.append("offline-only requests cannot use remote models")
         }
 
-        if let deviceProfile,
+        if enforcesProcessMemoryBudget,
+           let deviceProfile,
            shouldEvaluateLocalRuntimeMemory(for: descriptor),
-           let estimate = localRuntimeMemoryEstimate(for: descriptor) {
+           let estimate = localRuntimeMemoryEstimate(for: descriptor, requirements: requirements) {
             let decision = memoryGuard.evaluate(estimate: estimate, profile: deviceProfile)
             if !decision.canLoad {
                 reasons.append(decision.reason ?? "insufficient process memory for local runtime")
@@ -107,21 +112,80 @@ public struct ExecutionPlanner: Sendable {
         }
     }
 
-    private func localRuntimeMemoryEstimate(for descriptor: ModelDescriptor) -> LocalRuntimeMemoryEstimate? {
-        guard let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes,
-              estimatedDownloadSizeBytes > 0 else {
+    private func shouldEvaluateDeclaredRAM(for descriptor: ModelDescriptor) -> Bool {
+        descriptor.backend != .llamaCpp
+    }
+
+    private func localRuntimeMemoryEstimate(
+        for descriptor: ModelDescriptor,
+        requirements: ExecutionRequirements
+    ) -> LocalRuntimeMemoryEstimate? {
+        let modelMemoryBytes = estimatedModelResidentBytes(for: descriptor)
+        let contextMemoryBytes = estimatedContextMemoryBytes(for: descriptor, requirements: requirements)
+        guard modelMemoryBytes > 0 || contextMemoryBytes > 0 else {
             return nil
         }
         return LocalRuntimeMemoryEstimate(
-            modelMemoryBytes: UInt64(estimatedDownloadSizeBytes),
-            contextMemoryBytes: estimatedContextMemoryBytes(for: descriptor)
+            modelMemoryBytes: modelMemoryBytes,
+            contextMemoryBytes: contextMemoryBytes
         )
     }
 
-    private func estimatedContextMemoryBytes(for descriptor: ModelDescriptor) -> UInt64 {
-        guard let contextWindowTokens = descriptor.contextWindowTokens, contextWindowTokens > 0 else {
+    private func estimatedModelResidentBytes(for descriptor: ModelDescriptor) -> UInt64 {
+        if descriptor.backend == .llamaCpp {
             return 0
         }
-        return UInt64(contextWindowTokens) * 1024
+        guard let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes,
+              estimatedDownloadSizeBytes > 0 else {
+            return 0
+        }
+        return UInt64(estimatedDownloadSizeBytes)
     }
+
+    private func estimatedContextMemoryBytes(
+        for descriptor: ModelDescriptor,
+        requirements: ExecutionRequirements
+    ) -> UInt64 {
+        let contextWindowTokens = estimatedContextWindowTokens(for: descriptor, requirements: requirements)
+        guard contextWindowTokens > 0 else {
+            return 0
+        }
+        let result = UInt64(contextWindowTokens).multipliedReportingOverflow(by: 1024)
+        return result.overflow ? UInt64.max : result.partialValue
+    }
+
+    private func estimatedContextWindowTokens(
+        for descriptor: ModelDescriptor,
+        requirements: ExecutionRequirements
+    ) -> Int {
+        let requestedTokens = [
+            requirements.budget?.maxInputTokens,
+            requirements.budget?.maxOutputTokens
+        ]
+            .compactMap { $0 }
+            .filter { $0 > 0 }
+            .reduce(0, +)
+
+        let fallbackTokens = descriptor.contextWindowTokens ?? 0
+        let estimatedTokens = requestedTokens > 0 ? requestedTokens : fallbackTokens
+        guard let descriptorLimit = descriptor.contextWindowTokens, descriptorLimit > 0 else {
+            return estimatedTokens
+        }
+        return min(estimatedTokens, descriptorLimit)
+    }
+
+    private func declaredRAMBytes(gigabytes: Int) -> UInt64 {
+        guard gigabytes > 0 else {
+            return 0
+        }
+        let result = UInt64(gigabytes).multipliedReportingOverflow(by: Self.bytesPerDeclaredGigabyte)
+        return result.overflow ? UInt64.max : result.partialValue
+    }
+
+    private func minimumRAMRejectionThresholdBytes(gigabytes: Int) -> UInt64 {
+        let bytes = declaredRAMBytes(gigabytes: gigabytes)
+        return bytes - (bytes / 10)
+    }
+
+    private static let bytesPerDeclaredGigabyte: UInt64 = 1_000_000_000
 }

@@ -8,3 +8,5 @@ presentation context.
 
 `LLMSettingsHubScreen` and `LLMSettingsNavigationLink` provide the same navigation shell for host apps that need to
 mix shared runtime settings with app-specific settings such as prompts, safety text, model policy, or session management.
+The storage section can render a host-provided usage summary and host-owned cleanup actions without importing storage,
+lifecycle, or backend modules.

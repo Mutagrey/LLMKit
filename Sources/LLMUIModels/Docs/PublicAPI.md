@@ -25,3 +25,5 @@ partial artifacts, so failed downloads can still expose cleanup affordances.
 holding task handles in view code. Cancel waits for lifecycle cancellation handling before allowing another install for the
 same model; under the default lifecycle policy, cancellation surfaces as `.paused(progress:)` while preserving hidden resume
 data so retry can continue the interrupted transfer without exposing resume files to UI.
+`clearPartialArtifacts()` and `clearInstalledModels()` provide host-triggered bulk cleanup affordances while still routing
+all deletion through `ModelLifecycleMaintenanceService`.

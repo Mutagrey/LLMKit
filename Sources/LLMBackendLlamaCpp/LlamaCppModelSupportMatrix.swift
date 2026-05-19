@@ -5,7 +5,7 @@ public struct LlamaCppModelSupportMatrix: Sendable {
 
     public func supports(_ family: ModelFamily) -> Bool {
         switch family {
-        case .llama:
+        case .gemma, .llama, .qwen:
             true
         default:
             false

@@ -198,6 +198,8 @@ struct ModelsTab: View {
             return "notInstalled"
         case .downloading:
             return "downloading"
+        case .paused:
+            return "paused"
         case .downloaded:
             return "downloaded"
         case .verifying:
@@ -359,7 +361,7 @@ private enum ModelInstallFilter: CaseIterable, Hashable {
         switch state {
         case .ready, .warming, .active:
             return true
-        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+        case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .failed, .evicted:
             return false
         }
     }

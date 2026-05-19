@@ -53,7 +53,7 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting, Backen
             return .unsupported
         }
         guard supportMatrix.supports(descriptor) else {
-            return BackendAvailability(status: .unavailable(reason: "llama.cpp v1 supports Llama text GGUF models only."))
+            return BackendAvailability(status: .unavailable(reason: "llama.cpp v1 supports Llama, Qwen, and Gemma text GGUF models only."))
         }
         guard let runtime else {
             return BackendAvailability(status: .unavailable(reason: "llama.cpp native runtime is not configured."))
@@ -144,7 +144,7 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting, Backen
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let prompt = try promptFormatter.prompt(from: request.request.messages)
+                    let prompt = try promptFormatter.prompt(from: request.request.messages, model: request.model)
                     continuation.yield(.started(request.model))
                     let output = try await collectStreamedText(
                         prompt: prompt,

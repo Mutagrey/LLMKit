@@ -9,6 +9,7 @@ public struct ModelDownloadCardView: View {
     private let installedSizeBytes: Int64?
     private let canDeleteArtifacts: Bool
     private let isInstallButtonDisabled: Bool
+    private let isSelected: Bool
     private let installAction: @Sendable () async -> Void
     private let cancelAction: (@Sendable () async -> Void)?
     private let deleteAction: (@Sendable () async -> Void)?
@@ -20,6 +21,7 @@ public struct ModelDownloadCardView: View {
         installedSizeBytes: Int64? = nil,
         canDeleteArtifacts: Bool = false,
         isInstallButtonDisabled: Bool,
+        isSelected: Bool = false,
         installAction: @escaping @Sendable () async -> Void,
         cancelAction: (@Sendable () async -> Void)? = nil,
         deleteAction: (@Sendable () async -> Void)? = nil
@@ -30,167 +32,96 @@ public struct ModelDownloadCardView: View {
         self.installedSizeBytes = installedSizeBytes
         self.canDeleteArtifacts = canDeleteArtifacts
         self.isInstallButtonDisabled = isInstallButtonDisabled
+        self.isSelected = isSelected
         self.installAction = installAction
         self.cancelAction = cancelAction
         self.deleteAction = deleteAction
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-            primaryFacts
-            metadata
-            ModelInstallProgressView(
-                state: state,
-                progressDetail: progressDetail,
-                estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
-            )
-            actionRow
+            if shouldShowProgress {
+                ModelInstallProgressView(
+                    state: state,
+                    progressDetail: progressDetail,
+                    estimatedTotalBytes: descriptor.estimatedDownloadSizeBytes
+                )
+            }
         }
-        .padding(18)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(descriptor.displayName)
-                    .font(.title3.weight(.bold))
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
-                Spacer(minLength: 12)
-                DownloadPill(title: installBadgeTitle, tint: installBadgeTint)
-            }
 
-            if let repository = descriptor.source?.repository {
-                Text(repository)
+                Text(descriptorSubtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                    .lineLimit(1)
             }
-        }
-    }
 
-    private var primaryFacts: some View {
-        HStack(spacing: 8) {
-            fact(backendTitle)
-            fact(familyTitle)
-            if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes {
-                fact(byteCountTitle(for: estimatedDownloadSizeBytes))
-            }
-        }
-    }
+            Spacer(minLength: 8)
 
-    private func fact(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
-    }
-
-    private var metadata: some View {
-        DisclosureGroup("Details") {
-            VStack(alignment: .leading, spacing: 8) {
-                metadataRow(title: "Quantization", value: descriptor.quantization?.format ?? "Standard")
-                metadataRow(title: "Size", value: byteCountTitle(for: descriptor.estimatedDownloadSizeBytes))
-                if let installedSizeBytes {
-                    metadataRow(title: "Installed Size", value: byteCountTitle(for: installedSizeBytes))
-                }
-                metadataRow(title: "License", value: descriptor.license?.spdxIdentifier ?? descriptor.license?.name ?? "Unspecified")
-                metadataRow(title: "Context", value: contextTitle)
-                metadataRow(title: "Provider", value: sourceProviderTitle)
-                if let revision = descriptor.source?.revision {
-                    metadataRow(title: "Revision", value: String(revision.prefix(10)))
-                }
-                if let minimumRAMGB = descriptor.minimumRAMGB {
-                    metadataRow(title: "Memory", value: "\(minimumRAMGB) GB RAM")
-                }
-                if let minimumFreeDiskGB = descriptor.minimumFreeDiskGB {
-                    metadataRow(title: "Disk", value: "\(minimumFreeDiskGB) GB free")
-                }
-            }
-        }
-        .font(.caption)
-    }
-
-    private func metadataRow(title: String, value: String) -> some View {
-        LabeledContent(title, value: value)
-            .font(.caption)
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 12) {
-            if isInstalling, let cancelAction {
-                Button(role: .cancel) {
-                    Task { await cancelAction() }
-                } label: {
-                    Label("Cancel", systemImage: "xmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .tint(.red)
-            } else {
-                if canDeleteArtifacts, let deleteAction {
-                    Button(role: .destructive) {
-                        Task { await deleteAction() }
-                    } label: {
-                        Label(deleteTitle, systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                }
-
-                if !isInstalled {
-                    Button {
-                        Task { await installAction() }
-                    } label: {
-                        Label(actionTitle, systemImage: actionSymbol)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .disabled(isInstallButtonDisabled)
-                }
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Selected")
             }
 
             if isInstalled {
-                Label("Installed", systemImage: "checkmark.circle.fill")
+                Text("Ready")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.green)
-            } else if isInstalling {
-                Label("In progress", systemImage: "arrow.down.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            } else {
+                controls
             }
         }
     }
 
-    private var deleteTitle: String {
-        if isInstalled {
-            return "Delete"
+    @ViewBuilder
+    private var controls: some View {
+        if isInstalling, let cancelAction {
+            iconButton(systemName: "pause.fill", tint: .red, label: "Pause download") {
+                await cancelAction()
+            }
+        } else if isPaused {
+            iconButton(systemName: "play.fill", tint: .accentColor, label: "Resume download") {
+                await installAction()
+            }
+            .disabled(isInstallButtonDisabled)
+        } else if !isInstalled {
+            iconButton(systemName: actionSymbol, tint: .accentColor, label: actionTitle) {
+                await installAction()
+            }
+            .disabled(isInstallButtonDisabled)
         }
-        return "Clear"
     }
 
-    private var familyTitle: String {
-        switch descriptor.family {
-        case .appleFoundation:
-            return "Apple Foundation"
-        case .qwen:
-            return "Qwen"
-        case .gemma:
-            return "Gemma"
-        case .llama:
-            return "Llama"
-        case .mistral:
-            return "Mistral"
-        case .custom(let value):
-            return value
+    private func iconButton(
+        systemName: String,
+        tint: Color,
+        label: String,
+        action: @escaping @Sendable () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Image(systemName: systemName)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 34, height: 34)
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .tint(tint)
+        .accessibilityLabel(label)
     }
 
     private var backendTitle: String {
@@ -214,61 +145,36 @@ public struct ModelDownloadCardView: View {
         }
     }
 
-    private var sourceProviderTitle: String {
-        guard let provider = descriptor.source?.provider else {
-            return "Unknown"
-        }
-
-        switch provider {
-        case .huggingFace:
-            return "Hugging Face"
-        case .remoteURL:
-            return "Remote URL"
-        case .bundled:
-            return "Bundled"
-        case .custom(let value):
-            return value
-        }
-    }
-
-    private var contextTitle: String {
-        if let contextWindowTokens = descriptor.contextWindowTokens {
-            return "\(contextWindowTokens) tokens"
-        }
-        return "Unknown"
+    private var descriptorSubtitle: String {
+        [
+            byteCountTitle(for: installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes),
+            runtimeTitle,
+            memoryTitle
+        ].joined(separator: " · ")
     }
 
     private var actionTitle: String {
-        if isInstalled {
-            return "Installed"
-        }
-        if isInstalling {
-            return "Downloading"
-        }
         if isFailed {
             return "Retry"
         }
-        return "Download"
+        if case .evicted = state {
+            return "Restore model"
+        }
+        return "Download model"
     }
 
     private var actionSymbol: String {
-        if isInstalled {
-            return "checkmark.circle.fill"
-        }
-        if isInstalling {
-            return "arrow.down.circle.fill"
-        }
         if isFailed {
             return "arrow.clockwise"
         }
-        return "arrow.down.circle"
+        return "cloud.arrow.down"
     }
 
     private var isInstalled: Bool {
         switch state {
         case .ready, .warming, .active:
             return true
-        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+        case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .failed, .evicted:
             return false
         }
     }
@@ -277,9 +183,16 @@ public struct ModelDownloadCardView: View {
         switch state {
         case .downloading, .downloaded, .verifying, .compiling:
             return true
-        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+        case .notInstalled, .paused, .ready, .warming, .active, .failed, .evicted:
             return false
         }
+    }
+
+    private var isPaused: Bool {
+        if case .paused = state {
+            return true
+        }
+        return false
     }
 
     private var isFailed: Bool {
@@ -289,36 +202,30 @@ public struct ModelDownloadCardView: View {
         return false
     }
 
-    private var installBadgeTitle: String {
-        if isInstalled {
-            return "Installed"
+    private var shouldShowProgress: Bool {
+        switch state {
+        case .downloading, .paused, .downloaded, .verifying, .compiling:
+            return true
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return false
         }
-        if isInstalling {
-            return "In Progress"
-        }
-        if isFailed {
-            return "Failed"
-        }
-        if case .evicted = state {
-            return "Evicted"
-        }
-        return "Not Installed"
     }
 
-    private var installBadgeTint: Color {
-        if isInstalled {
-            return .green
+    private var runtimeTitle: String {
+        guard let quantization = descriptor.quantization else {
+            return backendTitle
         }
-        if isInstalling {
-            return .blue
+        if let bits = quantization.bits {
+            return "\(backendTitle) \(bits)-bit"
         }
-        if isFailed {
-            return .red
+        return "\(backendTitle) \(quantization.format)"
+    }
+
+    private var memoryTitle: String {
+        guard let minimumRAMGB = descriptor.minimumRAMGB else {
+            return "RAM varies"
         }
-        if case .evicted = state {
-            return .secondary
-        }
-        return .orange
+        return "\(minimumRAMGB) GB RAM"
     }
 
     private func byteCountTitle(for bytes: Int64?) -> String {
@@ -357,23 +264,15 @@ public struct ModelInstallProgressView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(statusTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor)
+                Text(transferTitle ?? statusTitle)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Text(progressTitle)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText(value: progressTransitionValue))
                     .animation(.easeInOut(duration: 0.2), value: progressTransitionValue)
-            }
-
-            if let transferTitle {
-                Text(transferTitle)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.numericText(value: transferTransitionValue))
-                    .animation(.easeInOut(duration: 0.2), value: transferTransitionValue)
             }
 
             GeometryReader { geometry in
@@ -398,7 +297,7 @@ public struct ModelInstallProgressView: View {
         switch state {
         case .notInstalled:
             return 0
-        case .downloading(let progress):
+        case .downloading(let progress), .paused(let progress):
             return CGFloat(DownloadProgressPresentation.normalizedFraction(progress))
         case .downloaded:
             return 1
@@ -425,6 +324,8 @@ public struct ModelInstallProgressView: View {
             return "Ready to download"
         case .downloading:
             return "Downloading"
+        case .paused:
+            return "Paused"
         case .downloaded:
             return "Downloaded"
         case .verifying:
@@ -446,7 +347,7 @@ public struct ModelInstallProgressView: View {
 
     private var progressTitle: String {
         switch state {
-        case .downloading(let progress):
+        case .downloading(let progress), .paused(let progress):
             return DownloadProgressPresentation.percentTitle(
                 for: progress,
                 isEstimated: progressDetail?.isEstimated == true
@@ -463,22 +364,21 @@ public struct ModelInstallProgressView: View {
     }
 
     private var transferTitle: String? {
-        guard case .downloading = state else {
+        guard isTransferState else {
             return nil
         }
         if let progressDetail,
            let completedBytes = progressDetail.completedBytes,
            let totalBytes = progressDetail.totalBytes,
            totalBytes > 0 {
-            let prefix = progressDetail.isEstimated ? "Approx. " : ""
-            return "\(prefix)\(byteCountTitle(for: completedBytes)) of \(byteCountTitle(for: totalBytes))"
+            return "\(byteCountTitle(for: completedBytes)) of \(byteCountTitle(for: totalBytes))"
         }
         guard let estimatedTotalBytes, estimatedTotalBytes > 0 else {
             return nil
         }
         let progress = progressValue
         let writtenBytes = Int64((Double(progress) * Double(estimatedTotalBytes)).rounded())
-        return "Approx. \(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
+        return "\(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
     }
 
     private var transferTransitionValue: Double {
@@ -486,7 +386,7 @@ public struct ModelInstallProgressView: View {
     }
 
     private var transferCompletedBytes: Int64? {
-        guard case .downloading = state else {
+        guard isTransferState else {
             return nil
         }
         if let completedBytes = progressDetail?.completedBytes {
@@ -504,6 +404,8 @@ public struct ModelInstallProgressView: View {
             return .accentColor
         case .downloading, .downloaded, .verifying, .compiling:
             return .blue
+        case .paused:
+            return .red
         case .ready, .warming, .active:
             return .green
         case .failed:
@@ -518,6 +420,15 @@ public struct ModelInstallProgressView: View {
             return 0
         }
         return max(totalWidth * progressValue, 4)
+    }
+
+    private var isTransferState: Bool {
+        switch state {
+        case .downloading, .paused:
+            return true
+        case .notInstalled, .downloaded, .verifying, .compiling, .ready, .warming, .active, .failed, .evicted:
+            return false
+        }
     }
 
     private func byteCountTitle(for bytes: Int64) -> String {

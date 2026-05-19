@@ -26,11 +26,13 @@ public struct ModelDownloadListView: View {
     public var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                DownloadsOverviewCard(
-                    totalModels: visibleDescriptors.count,
-                    installedModels: installedDescriptors.count,
-                    inProgressModels: inProgressDescriptors.count,
-                    installedSize: viewModel.installedStorageTitle
+                StorageUsageView(
+                    downloadedModelCount: installedDescriptors.count,
+                    totalModelCount: visibleDescriptors.count,
+                    installedBytes: viewModel.installedStorageBytes,
+                    partialBytes: viewModel.partialStorageBytes,
+                    availableBytes: viewModel.storageUsage.availableBytes,
+                    capacityBytes: viewModel.storageUsage.capacityBytes
                 )
 
                 if !installedDescriptors.isEmpty {
@@ -73,15 +75,25 @@ public struct ModelDownloadListView: View {
             VStack(spacing: 0) {
                 ForEach(Array(descriptors.enumerated()), id: \.element.id) { index, descriptor in
                     card(for: descriptor)
+                        .swipeActions(edge: .trailing) {
+                            if viewModel.canDeleteArtifacts(for: descriptor.id) {
+                                Button(role: .destructive) {
+                                    Task { await viewModel.delete(descriptor.id) }
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .accessibilityLabel("Delete model")
+                            }
+                        }
                     if index < descriptors.count - 1 {
                         Divider()
-                            .padding(.horizontal, 18)
+                            .padding(.horizontal, 16)
                     }
                 }
             }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
             }
         }
@@ -241,14 +253,40 @@ public final class ModelDownloadsViewModel {
         task.cancel()
         installTasks[modelID] = nil
         installingModelIDs.remove(modelID)
-        if !isInstalled(modelID) {
-            installStates[modelID] = .notInstalled
-            installProgress[modelID] = nil
-        }
         try? await refreshStorageUsage()
         await task.value
+        if let state = await postCancellationState(for: modelID) {
+            installStates[modelID] = state
+            switch state {
+            case .paused:
+                break
+            case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .ready, .warming, .active, .failed, .evicted:
+                installProgress[modelID] = nil
+            }
+        }
         cancelingModelIDs.remove(modelID)
         try? await refreshStorageUsage()
+    }
+
+    private func postCancellationState(for modelID: ModelID) async -> InstallState? {
+        guard let lifecycleService else {
+            return nil
+        }
+
+        var lastState: InstallState?
+        for _ in 0..<20 {
+            guard let state = try? await lifecycleService.state(for: modelID) else {
+                return lastState
+            }
+            lastState = state
+            switch state {
+            case .downloading, .downloaded, .verifying, .compiling:
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            case .notInstalled, .paused, .ready, .warming, .active, .failed, .evicted:
+                return state
+            }
+        }
+        return lastState
     }
 
     public func delete(_ modelID: ModelID) async {
@@ -284,6 +322,12 @@ public final class ModelDownloadsViewModel {
                 isEstimated: installProgress[modelID]?.isEstimated == true
             )
             return "Downloading \(percentTitle)"
+        case .paused(let progress):
+            let percentTitle = DownloadProgressPresentation.percentTitle(
+                for: progress,
+                isEstimated: installProgress[modelID]?.isEstimated == true
+            )
+            return "Paused \(percentTitle)"
         case .downloaded:
             return "Downloaded"
         case .verifying:
@@ -304,10 +348,12 @@ public final class ModelDownloadsViewModel {
     }
 
     public func progress(for modelID: ModelID) -> Double? {
-        guard case .downloading(let progress) = installStates[modelID] else {
+        switch installStates[modelID] {
+        case .downloading(let progress), .paused(let progress):
+            return DownloadProgressPresentation.normalizedFraction(progress)
+        case .notInstalled, .downloaded, .verifying, .compiling, .ready, .warming, .active, .failed, .evicted, nil:
             return nil
         }
-        return DownloadProgressPresentation.normalizedFraction(progress)
     }
 
     public func progressDetail(for modelID: ModelID) -> ModelInstallProgress? {
@@ -328,20 +374,31 @@ public final class ModelDownloadsViewModel {
         switch installStates[modelID] {
         case .failed, .evicted:
             return true
-        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .ready, .warming, .active, nil:
+        case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .ready, .warming, .active, nil:
             return (storageBytes(for: modelID) ?? 0) > 0
         }
     }
 
     public var installedStorageTitle: String {
-        ByteCountFormatter.string(fromByteCount: storageUsage.totalBytes, countStyle: .file)
+        ByteCountFormatter.string(fromByteCount: installedStorageBytes, countStyle: .file)
+    }
+
+    public var installedStorageBytes: Int64 {
+        storageUsage.modelBytes
+            .filter { isInstalled($0.key) }
+            .values
+            .reduce(0, +)
+    }
+
+    public var partialStorageBytes: Int64 {
+        max(storageUsage.totalBytes - installedStorageBytes, 0)
     }
 
     public func isInstalled(_ modelID: ModelID) -> Bool {
         switch installStates[modelID] {
         case .ready, .warming, .active:
             return true
-        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted, nil:
+        case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .failed, .evicted, nil:
             return false
         }
     }
@@ -354,7 +411,7 @@ public final class ModelDownloadsViewModel {
         switch installStates[modelID] {
         case .downloading, .downloaded, .verifying, .compiling:
             return true
-        case .notInstalled, .ready, .warming, .active, .failed, .evicted, nil:
+        case .notInstalled, .paused, .ready, .warming, .active, .failed, .evicted, nil:
             return false
         }
     }
@@ -394,8 +451,11 @@ public final class ModelDownloadsViewModel {
 
     private func handleInstallError(_ error: Error, descriptor: ModelDescriptor) async {
         if let llmError = error as? LLMError, llmError == .cancelled {
-            installStates[descriptor.id] = .notInstalled
-            installProgress[descriptor.id] = nil
+            if installStates[descriptor.id] != .notInstalled {
+                installStates[descriptor.id] = .paused(progress: progress(for: descriptor.id) ?? 0)
+            } else {
+                installProgress[descriptor.id] = nil
+            }
             try? await refreshStorageUsage()
         } else {
             let message = Self.presentationMessage(for: error)
@@ -426,6 +486,9 @@ public final class ModelDownloadsViewModel {
             if case .downloading = state {
                 continue
             }
+            if case .paused = state {
+                continue
+            }
             installProgress[modelID] = nil
         }
         installStates = resolvedStates
@@ -449,7 +512,9 @@ public final class ModelDownloadsViewModel {
         }
         storageUsage = ModelStorageUsage(
             totalBytes: modelBytes.values.reduce(0, +),
-            modelBytes: modelBytes
+            modelBytes: modelBytes,
+            availableBytes: baseUsage.availableBytes,
+            capacityBytes: baseUsage.capacityBytes
         )
     }
 
@@ -500,47 +565,6 @@ public final class ModelDownloadsViewModel {
         case .cancelled:
             return "Cancelled."
         }
-    }
-}
-
-private struct DownloadsOverviewCard: View {
-    let totalModels: Int
-    let installedModels: Int
-    let inProgressModels: Int
-    let installedSize: String
-
-    var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
-            GridRow {
-                stat(title: "Catalog", value: "\(totalModels)", tint: .secondary)
-                stat(title: "Installed", value: "\(installedModels)", tint: .green)
-            }
-            GridRow {
-                stat(title: "In Progress", value: "\(inProgressModels)", tint: .blue)
-                stat(title: "Storage", value: installedSize, tint: .orange)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
-        }
-    }
-
-    private func stat(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.headline.monospacedDigit())
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

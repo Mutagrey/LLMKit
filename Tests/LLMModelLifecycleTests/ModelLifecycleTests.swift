@@ -785,6 +785,20 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(FileManager.default.fileExists(atPath: weightsURL.path))
     #expect(!FileManager.default.fileExists(atPath: tokenizerURL.path))
 
+    var cancelledState = try await firstCoordinator.state(for: descriptor.id)
+    for _ in 0..<20 {
+        if case .paused = cancelledState {
+            break
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+        cancelledState = try await firstCoordinator.state(for: descriptor.id)
+    }
+    guard case .paused(let progress) = cancelledState else {
+        Issue.record("Expected cancelled install to pause.")
+        return
+    }
+    #expect(progress > 0)
+
     let secondLog = DownloadedArtifactLog()
     let secondCoordinator = ModelInstallCoordinator(
         artifactRootDirectory: rootDirectory,
@@ -925,6 +939,14 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(!FileManager.default.fileExists(atPath: artifactURL.path))
     #expect(try Data(contentsOf: resumeDataURL) == Data("resume".utf8))
     #expect(await log.cleanedSnapshot().isEmpty)
+
+    let usage = try await coordinator.storageUsage()
+    #expect(usage.totalBytes == Int64(Data("resume".utf8).count))
+
+    try await coordinator.deleteInstalledModel(descriptor.id)
+
+    #expect(!FileManager.default.fileExists(atPath: resumeDataURL.path))
+    #expect(try await coordinator.storageUsage().totalBytes == 0)
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {
@@ -1580,6 +1602,13 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
 @Test func curatedIPhoneCatalogIsCappedToEightGBRAM() {
     let descriptors = CuratedModelManifests.localIPhoneTextModels.models
 
+    #expect(descriptors.map(\.id.rawValue) == [
+        "mlx-community.Qwen3.5-0.8B-OptiQ-4bit",
+        "mlx-community.Qwen3.5-2B-OptiQ-4bit",
+        "mlx-community.Josiefied-Qwen3-1.7B-abliterated-v1-4bit",
+        "mlx-community.gemma-4-e2b-it-4bit",
+        "mlx-community.Llama-3.2-3B-Instruct-uncensored-6bit"
+    ])
     #expect(descriptors.allSatisfy { $0.backend == .mlx })
     #expect(descriptors.allSatisfy { ($0.minimumRAMGB ?? 0) <= 8 })
     #expect(descriptors.allSatisfy { $0.tags.contains("iphone") })
@@ -1587,13 +1616,8 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
 
 @Test func curatedCatalogIncludesRunnableUncensoredIPhoneModels() {
     let descriptors = [
-        CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit,
         CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit,
-        CuratedModelManifests.josiefiedQwen38BAbliteratedMLX4Bit,
-        CuratedModelManifests.qwen25SevenBInstructUncensoredMLX4Bit,
-        CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit,
-        CuratedModelManifests.llama32ThreeBInstructUncensoredMLX6Bit,
-        CuratedModelManifests.metaLlama31EightBInstructAbliteratedMLX4Bit
+        CuratedModelManifests.llama32ThreeBInstructUncensoredMLX6Bit
     ]
     let manifestIDs = Set(CuratedModelManifests.localIPhoneTextModels.models.map(\.id))
 
@@ -1602,19 +1626,15 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(descriptors.allSatisfy { $0.tags.contains("uncensored") })
     #expect(descriptors.allSatisfy { ($0.minimumRAMGB ?? 0) <= 8 })
 
-    let gabliteratedArtifacts = CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
     let abliteratedArtifacts = CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
-    let skyHighHermesArtifacts = CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit.source?.artifacts.map(\.relativePath) ?? []
+    let llamaArtifacts = CuratedModelManifests.llama32ThreeBInstructUncensoredMLX6Bit.source?.artifacts.map(\.relativePath) ?? []
 
-    #expect(CuratedModelManifests.qwen30Point6BGabliteratedMLX4Bit.id == "mlx-community.Qwen3-0.6B-gabliterated-4bit")
     #expect(CuratedModelManifests.qwen31Point7BAbliteratedMLX4Bit.id == "mlx-community.Josiefied-Qwen3-1.7B-abliterated-v1-4bit")
-    #expect(CuratedModelManifests.qwen34BSkyHighHermesGabliteratedMLX4Bit.id == "mlx-community.Qwen3-4B-Sky-High-Hermes-gabliterated-4bit")
-    #expect(gabliteratedArtifacts.contains("chat_template.jinja"))
-    #expect(gabliteratedArtifacts.contains("generation_config.json"))
+    #expect(CuratedModelManifests.llama32ThreeBInstructUncensoredMLX6Bit.id == "mlx-community.Llama-3.2-3B-Instruct-uncensored-6bit")
     #expect(abliteratedArtifacts.contains("added_tokens.json"))
     #expect(abliteratedArtifacts.contains("merges.txt"))
-    #expect(skyHighHermesArtifacts.contains("chat_template.jinja"))
-    #expect(skyHighHermesArtifacts.contains("generation_config.json"))
+    #expect(llamaArtifacts.contains("tokenizer.json"))
+    #expect(llamaArtifacts.contains("special_tokens_map.json"))
 }
 
 @Test func huggingFaceFeaturedCatalogBuildsGemma4E2BDescriptorWithStats() async throws {

@@ -317,6 +317,8 @@ final class DemoViewModel {
             return "Not installed"
         case .downloading(let progress):
             return "Downloading \(Int((progress * 100).rounded()))%"
+        case .paused(let progress):
+            return "Paused \(Int((progress * 100).rounded()))%"
         case .downloaded:
             return "Downloaded"
         case .verifying:

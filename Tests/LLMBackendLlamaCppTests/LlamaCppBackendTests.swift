@@ -5,13 +5,15 @@ import LLMModelLifecycle
 import LLMProtocols
 import Testing
 
-@Test func llamaCppSupportMatrixAcceptsOnlyLlamaGGUFTextDescriptors() {
+@Test func llamaCppSupportMatrixAcceptsLlamaQwenAndGemmaGGUFTextDescriptors() {
     let matrix = LlamaCppModelSupportMatrix()
 
     #expect(matrix.supports(.llama))
-    #expect(!matrix.supports(.qwen))
+    #expect(matrix.supports(.qwen))
+    #expect(matrix.supports(.gemma))
     #expect(matrix.supports(ggufDescriptor()))
-    #expect(!matrix.supports(ggufDescriptor(family: .qwen)))
+    #expect(matrix.supports(ggufDescriptor(family: .qwen)))
+    #expect(matrix.supports(ggufDescriptor(family: .gemma)))
     #expect(!matrix.supports(ggufDescriptor(capabilities: [.chat, .completion, .structuredOutput])))
     #expect(!matrix.supports(ggufDescriptor(artifactPath: "model.safetensors", quantization: Quantization(format: "MLX 4-bit", bits: 4))))
     #expect(!matrix.supports(ggufDescriptor(artifactPath: "model.safetensors")))
@@ -80,7 +82,7 @@ import Testing
     let backend = LlamaCppBackend(runtimeAvailable: true)
 
     #expect(await backend.availability(for: wrongBackend).status == .unsupported)
-    #expect(await backend.availability(for: nonGGUF).status == .unavailable(reason: "llama.cpp v1 supports Llama text GGUF models only."))
+    #expect(await backend.availability(for: nonGGUF).status == .unavailable(reason: "llama.cpp v1 supports Llama, Qwen, and Gemma text GGUF models only."))
 }
 
 @Test func llamaCppBackendStreamsUnavailableWhenNativeBridgeIsMissing() async throws {
@@ -156,6 +158,38 @@ import Testing
     #expect(prompt.contains("<|start_header_id|>system<|end_header_id|>"))
     #expect(prompt.contains("<|start_header_id|>user<|end_header_id|>"))
     #expect(prompt.hasSuffix("<|start_header_id|>assistant<|end_header_id|>\n\n"))
+}
+
+@Test func llamaCppPromptFormatterUsesQwenChatTemplate() throws {
+    let prompt = try LlamaCppPromptFormatter().prompt(from: [
+        ChatMessage(role: .system, content: MessageContent(text: "system")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ], model: ggufDescriptor(id: "qwen", family: .qwen))
+
+    #expect(prompt.contains("<|im_start|>system\nsystem<|im_end|>"))
+    #expect(prompt.contains("<|im_start|>user\nhello<|im_end|>"))
+    #expect(prompt.hasSuffix("<|im_start|>assistant\n"))
+}
+
+@Test func llamaCppPromptFormatterUsesGemma3Turns() throws {
+    let prompt = try LlamaCppPromptFormatter().prompt(from: [
+        ChatMessage(role: .system, content: MessageContent(text: "system")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ], model: ggufDescriptor(id: "gemma-3", family: .gemma))
+
+    #expect(prompt.contains("<start_of_turn>user\nsystem\n\nhello<end_of_turn>"))
+    #expect(prompt.hasSuffix("<start_of_turn>model\n"))
+}
+
+@Test func llamaCppPromptFormatterUsesGemma4Turns() throws {
+    let prompt = try LlamaCppPromptFormatter().prompt(from: [
+        ChatMessage(role: .system, content: MessageContent(text: "system")),
+        ChatMessage(role: .user, content: MessageContent(text: "hello"))
+    ], model: ggufDescriptor(id: "bartowski.google_gemma-4-E2B-it-GGUF.Q4_K_M", family: .gemma))
+
+    #expect(prompt.hasPrefix("<bos><|turn>system\nsystem<turn|>"))
+    #expect(prompt.contains("<|turn>user\nhello<turn|>"))
+    #expect(prompt.hasSuffix("<|turn>model\n"))
 }
 
 @Test func llamaCppRuntimeConfigurationResolvesMMapOnlyWhenSupported() {

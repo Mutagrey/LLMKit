@@ -100,6 +100,35 @@ private struct RefreshingLifecycleService: ModelLifecycleService {
     }
 }
 
+private struct StorageSummaryLifecycleService: ModelLifecycleMaintenanceService {
+    let records: [InstalledModelRecord]
+    let usage: ModelStorageUsage
+
+    func installedModels() async throws -> [InstalledModelRecord] {
+        records
+    }
+
+    func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func state(for modelID: ModelID) async throws -> InstallState {
+        records.first { $0.descriptor.id == modelID }?.installState ?? .notInstalled
+    }
+
+    func deleteInstalledModel(_ modelID: ModelID) async throws {}
+
+    func storageUsage() async throws -> ModelStorageUsage {
+        usage
+    }
+
+    func storageUsage(for modelID: ModelID) async throws -> Int64 {
+        usage.modelBytes[modelID] ?? 0
+    }
+}
+
 private actor ViewModelDownloadLog {
     private(set) var started = false
 
@@ -202,6 +231,20 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
 
     #expect(viewModel.statusText(for: descriptor.id) == "Downloading 50%")
     #expect(viewModel.progress(for: descriptor.id) == 0.5)
+    #expect(!viewModel.isInstalled(descriptor.id))
+    #expect(!viewModel.isInstallButtonDisabled(for: descriptor.id))
+}
+
+@MainActor
+@Test func downloadsViewModelReportsPausedStateAsResumable() {
+    let descriptor = ModelDescriptor(id: "model", displayName: "Model", family: .custom("test"), backend: .coreML, capabilities: [])
+    let viewModel = ModelDownloadsViewModel(models: [
+        InstalledModelRecord(descriptor: descriptor, installState: .paused(progress: 0.25))
+    ])
+
+    #expect(viewModel.statusText(for: descriptor.id) == "Paused 25%")
+    #expect(viewModel.progress(for: descriptor.id) == 0.25)
+    #expect(!viewModel.isInstalling(descriptor.id))
     #expect(!viewModel.isInstalled(descriptor.id))
     #expect(!viewModel.isInstallButtonDisabled(for: descriptor.id))
 }
@@ -326,6 +369,32 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
     ])
 
     #expect(viewModel.isInstalling(modelID))
+}
+
+@MainActor
+@Test func downloadsViewModelSplitsInstalledAndPartialStorageSummary() async {
+    let ready = ModelDescriptor(id: "ready", displayName: "Ready", family: .custom("test"), backend: .coreML, capabilities: [])
+    let paused = ModelDescriptor(id: "paused", displayName: "Paused", family: .custom("test"), backend: .coreML, capabilities: [])
+    let service = StorageSummaryLifecycleService(
+        records: [
+            InstalledModelRecord(descriptor: ready, installState: .ready),
+            InstalledModelRecord(descriptor: paused, installState: .paused(progress: 0.4))
+        ],
+        usage: ModelStorageUsage(
+            totalBytes: 1_500,
+            modelBytes: [ready.id: 1_000, paused.id: 500],
+            availableBytes: 2_000,
+            capacityBytes: 4_000
+        )
+    )
+    let viewModel = ModelDownloadsViewModel(descriptors: [ready, paused], lifecycleService: service)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.installedStorageBytes == 1_000)
+    #expect(viewModel.partialStorageBytes == 500)
+    #expect(viewModel.storageUsage.availableBytes == 2_000)
+    #expect(viewModel.storageUsage.capacityBytes == 4_000)
 }
 
 @MainActor

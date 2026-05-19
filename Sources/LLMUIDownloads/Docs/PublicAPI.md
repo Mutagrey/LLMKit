@@ -2,15 +2,15 @@
 
 Public API includes download list, install progress presentation, and a lifecycle-backed downloads view model.
 
-`ModelDownloadListView` renders model descriptors with install actions, rounded installed/downloadable sections, and status text
-backed by `ModelDownloadsViewModel`.
-`ModelDownloadCardView` renders a single downloadable model with richer metadata, install action, and a linear progress treatment that
-can be embedded by host apps alongside their own model selection UI. When lifecycle progress includes byte totals, the card renders
-precise transferred bytes; otherwise it falls back to explicitly approximate progress text instead of implying exact byte tracking.
-Hosts can optionally provide a cancel action for in-flight installs and a cleanup action for failed, evicted, or partial
-local artifacts.
+`ModelDownloadListView` renders model descriptors with install actions, compact installed/downloadable sections, a top
+`StorageUsageView`, and status text backed by `ModelDownloadsViewModel`.
+`ModelDownloadCardView` renders a single downloadable model row with icon-only download/pause/play controls and a linear
+progress treatment that can be embedded by host apps alongside their own model selection UI. When lifecycle progress includes
+byte totals, the card renders precise transferred bytes and percent without "download" or "approx" labels. Hosts can
+optionally provide a cancel action for in-flight installs and a cleanup action for failed, evicted, or partial local artifacts.
 `ModelCatalogCardView` renders a compact model catalog row/card for model pickers and example catalogs. Hosts provide generic status,
 availability, selection, install, cancel, delete, and details actions; the view does not choose models, route requests, or touch storage.
+`StorageUsageView` renders downloaded count, installed bytes, partial bytes, and optional disk free/capacity with a compact usage bar.
 `ModelInstallProgressView` renders install state as a compact line-style progress component suitable for lists and detail sections.
 Progress presentation is normalized defensively so percent-shaped external inputs do not render inflated percentages.
 
@@ -23,5 +23,5 @@ and delete/clear actions without owning file paths or persistence details. Stora
 partial artifacts, so failed downloads can still expose cleanup affordances.
 `ModelDownloadsViewModel.beginInstall(_:)` and `cancelInstall(_:)` let hosts drive install lifecycle from UI without
 holding task handles in view code. Cancel waits for lifecycle cancellation handling before allowing another install for the
-same model; under the default lifecycle policy, that handling may preserve hidden resume data so retry can continue the
-interrupted transfer without exposing resume files to UI.
+same model; under the default lifecycle policy, cancellation surfaces as `.paused(progress:)` while preserving hidden resume
+data so retry can continue the interrupted transfer without exposing resume files to UI.

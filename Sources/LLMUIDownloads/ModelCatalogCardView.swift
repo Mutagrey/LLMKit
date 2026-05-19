@@ -61,13 +61,15 @@ public struct ModelCatalogCardView: View {
             selectionAction?()
         }
         .swipeActions(edge: .trailing) {
-            Button {
-                Task { await deleteAction?() }
-            } label: {
-                Image(systemName: "trash")
+            if let deleteAction {
+                Button(role: .destructive) {
+                    Task { await deleteAction() }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .tint(.red)
+                .accessibilityLabel("Delete model")
             }
-            .tint(.red)
-            .accessibilityLabel("Delete model")
         }
         .swipeActions(edge: .leading) {
             Button {
@@ -99,9 +101,15 @@ public struct ModelCatalogCardView: View {
 
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.green)
                     .accessibilityLabel("Selected")
+            }
+
+            if isReady {
+                Text("Ready")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
             } else {
                 controls
             }
@@ -110,7 +118,7 @@ public struct ModelCatalogCardView: View {
 
     @ViewBuilder
     private var progressSection: some View {
-        if let installState, isInstalling(state: installState) {
+        if let installState, shouldShowProgress(state: installState) {
             ModelInstallProgressView(
                 state: installState,
                 progressDetail: progressDetail,
@@ -126,22 +134,38 @@ public struct ModelCatalogCardView: View {
             Button {
                 Task { await cancelAction() }
             } label: {
-                Text("Cancel")
+                Image(systemName: "pause.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 34, height: 34)
             }
             .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .font(.caption2.weight(.semibold))
+            .buttonBorderShape(.circle)
             .tint(.red)
+            .accessibilityLabel("Pause download")
+        } else if let installState, isPaused(state: installState), let installAction {
+            Button {
+                Task { await installAction() }
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+            .disabled(isInstallButtonDisabled)
+            .accessibilityLabel("Resume download")
         } else if shouldShowInstallButton, let installAction {
             Button {
                 Task { await installAction() }
             } label: {
-                Text(installButtonTitle)
+                Image(systemName: installButtonSymbol)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 34, height: 34)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .font(.caption2.weight(.semibold))
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
             .disabled(isInstallButtonDisabled)
+            .accessibilityLabel(installButtonTitle)
         } else if isAvailable, let selectionAction {
             Button {
                 selectionAction()
@@ -211,14 +235,24 @@ public struct ModelCatalogCardView: View {
         if case .evicted = installState {
             return "Restore"
         }
-        return "Download"
+        return "Download model"
+    }
+
+    private var installButtonSymbol: String {
+        guard let installState else {
+            return "cloud.arrow.down"
+        }
+        if case .failed = installState {
+            return "arrow.clockwise"
+        }
+        return "cloud.arrow.down"
     }
 
     private var statusColor: Color {
         if isAvailable || status == "Ready" || status == "Active" {
             return .green
         }
-        if status.hasPrefix("Downloading") || status == "Downloaded" || status == "Verifying" || status == "Compiling" {
+        if status.hasPrefix("Downloading") || status == "Paused" || status == "Downloaded" || status == "Verifying" || status == "Compiling" {
             return .blue
         }
         if status.hasPrefix("Failed") {
@@ -268,7 +302,7 @@ public struct ModelCatalogCardView: View {
         switch state {
         case .ready, .warming, .active:
             return true
-        case .notInstalled, .downloading, .downloaded, .verifying, .compiling, .failed, .evicted:
+        case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .failed, .evicted:
             return false
         }
     }
@@ -277,9 +311,32 @@ public struct ModelCatalogCardView: View {
         switch state {
         case .downloading, .downloaded, .verifying, .compiling:
             return true
+        case .notInstalled, .paused, .ready, .warming, .active, .failed, .evicted:
+            return false
+        }
+    }
+
+    private func isPaused(state: InstallState) -> Bool {
+        if case .paused = state {
+            return true
+        }
+        return false
+    }
+
+    private func shouldShowProgress(state: InstallState) -> Bool {
+        switch state {
+        case .downloading, .paused, .downloaded, .verifying, .compiling:
+            return true
         case .notInstalled, .ready, .warming, .active, .failed, .evicted:
             return false
         }
+    }
+
+    private var isReady: Bool {
+        guard let installState else {
+            return isAvailable
+        }
+        return isInstalled(state: installState)
     }
 
     private func byteCountTitle(_ bytes: Int64?) -> String {

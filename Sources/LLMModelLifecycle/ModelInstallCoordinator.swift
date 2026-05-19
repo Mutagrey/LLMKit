@@ -76,12 +76,26 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     public func storageUsage() async throws -> ModelStorageUsage {
         try await ensureLoadedPersistedRecords()
         var modelBytes: [ModelID: Int64] = [:]
+        var knownDirectoryNames = Set<String>()
         for modelID in records.keys {
             modelBytes[modelID] = try storageUsageWithoutLoading(for: modelID)
+            knownDirectoryNames.insert(Self.safeDirectoryName(for: modelID))
         }
+
+        for partialDirectory in try partialModelDirectories(excluding: knownDirectoryNames) {
+            let modelID = ModelID(rawValue: partialDirectory.lastPathComponent)
+            let bytes = try storageUsage(in: partialDirectory)
+            if bytes > 0 {
+                modelBytes[modelID] = bytes
+            }
+        }
+
+        let diskUsage = try diskUsageSnapshot()
         return ModelStorageUsage(
             totalBytes: modelBytes.values.reduce(0, +),
-            modelBytes: modelBytes
+            modelBytes: modelBytes,
+            availableBytes: diskUsage.availableBytes,
+            capacityBytes: diskUsage.capacityBytes
         )
     }
 
@@ -104,13 +118,14 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     continuation.finish()
                 } catch {
                     let llmError = Self.mapInstallError(error)
-                    if llmError == .cancelled {
-                        try? await handleCancellation(for: descriptor)
-                        await stateMachine.transition(modelID: descriptor.id, to: .notInstalled)
-                        continuation.yield(.stateChanged(descriptor.id, .notInstalled))
-                    } else {
-                        await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
-                        continuation.yield(.failed(descriptor.id, llmError))
+                if llmError == .cancelled {
+                    try? await handleCancellation(for: descriptor)
+                    let cancellationState = await installStateAfterCancellation(for: descriptor.id)
+                    await stateMachine.transition(modelID: descriptor.id, to: cancellationState)
+                    continuation.yield(.stateChanged(descriptor.id, cancellationState))
+                } else {
+                    await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
+                    continuation.yield(.failed(descriptor.id, llmError))
                     }
                     continuation.finish(throwing: llmError)
                 }
@@ -339,6 +354,28 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         }
     }
 
+    private func installStateAfterCancellation(for modelID: ModelID) async -> InstallState {
+        switch interruptionPolicy.cancellationBehavior {
+        case .preserveVerifiedArtifactsForResume:
+            let state = await stateMachine.state(for: modelID)
+            let progress = progressFraction(for: state)
+            return .paused(progress: progress)
+        case .removeAllArtifacts:
+            return .notInstalled
+        }
+    }
+
+    private func progressFraction(for state: InstallState) -> Double {
+        switch state {
+        case .downloading(let progress), .paused(let progress):
+            return DownloadProgressPresentation.normalizedFraction(progress)
+        case .downloaded, .verifying, .compiling:
+            return 1
+        case .notInstalled, .ready, .warming, .active, .failed, .evicted:
+            return 0
+        }
+    }
+
     private func cleanupInterruptedArtifactsForResume(_ descriptor: ModelDescriptor) async throws {
         guard
             let artifactRootDirectory,
@@ -547,10 +584,14 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             return 0
         }
 
+        return try storageUsage(in: directory)
+    }
+
+    private func storageUsage(in directory: URL) throws -> Int64 {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return 0
         }
@@ -564,6 +605,60 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             total += Int64(values.fileSize ?? 0)
         }
         return total
+    }
+
+    private func partialModelDirectories(excluding knownDirectoryNames: Set<String>) throws -> [URL] {
+        guard let artifactRootDirectory,
+              FileManager.default.fileExists(atPath: artifactRootDirectory.path) else {
+            return []
+        }
+
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: artifactRootDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        return contents.filter { url in
+            guard !knownDirectoryNames.contains(url.lastPathComponent) else {
+                return false
+            }
+            return (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+    }
+
+    private func diskUsageSnapshot() throws -> (availableBytes: Int64?, capacityBytes: Int64?) {
+        guard let artifactRootDirectory else {
+            return (nil, nil)
+        }
+        let probeURL = Self.existingVolumeProbeURL(for: artifactRootDirectory)
+        let values = try probeURL.resourceValues(forKeys: [
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey,
+            .volumeTotalCapacityKey
+        ])
+        return (
+            values.volumeAvailableCapacityForImportantUsage ?? values.volumeAvailableCapacity.map(Int64.init),
+            values.volumeTotalCapacity.map(Int64.init)
+        )
+    }
+
+    private static func existingVolumeProbeURL(for url: URL) -> URL {
+        var probeURL = url
+        while !FileManager.default.fileExists(atPath: probeURL.path) {
+            let parent = probeURL.deletingLastPathComponent()
+            guard parent.path != probeURL.path else {
+                return FileManager.default.temporaryDirectory
+            }
+            probeURL = parent
+        }
+        return probeURL
+    }
+
+    private static func safeDirectoryName(for modelID: ModelID) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return modelID.rawValue.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? String(scalar) : "_"
+        }.joined()
     }
 
     private static func mapInstallError(_ error: Error) -> LLMError {
@@ -679,5 +774,15 @@ private final class InstallTaskHolder: @unchecked Sendable {
         let task = self.task
         lock.unlock()
         task?.cancel()
+    }
+}
+
+private enum DownloadProgressPresentation {
+    static func normalizedFraction(_ value: Double) -> Double {
+        guard value.isFinite else {
+            return 0
+        }
+        let fraction = value >= 2 && value <= 100 ? value / 100 : value
+        return min(max(fraction, 0), 1)
     }
 }

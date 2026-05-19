@@ -12,32 +12,23 @@ public enum CuratedModelManifests {
         models: [
             qwen35Point8BOptiQMLX4Bit,
             qwen35TwoBOptiQMLX4Bit,
-            qwen35FourBOptiQMLX4Bit,
-            qwen30Point6BMLX4Bit,
-            qwen30Point6BGabliteratedMLX4Bit,
-            qwen31Point7BMLX4Bit,
             qwen31Point7BAbliteratedMLX4Bit,
-            qwen34BInstruct2507MLX4Bit,
-            gemma31BInstructionMLX4Bit,
             gemma4E2BInstructionMLX4Bit,
-            llama32OneBInstructMLX4Bit,
-            llama32ThreeBInstructMLX4Bit,
-            llama32ThreeBInstructUncensoredMLX6Bit,
-            josiefiedQwen38BAbliteratedMLX4Bit,
-            qwen25SevenBInstructUncensoredMLX4Bit,
-            qwen34BSkyHighHermesGabliteratedMLX4Bit,
-            metaLlama31EightBInstructAbliteratedMLX4Bit
+            llama32ThreeBInstructUncensoredMLX6Bit
         ]
     )
 
     public static let localIPhoneGGUFTextModels = ModelManifest(
         id: "llmkit.local.iphone-gguf-text-models",
         models: [
+            gemma31BInstructionGGUFQ4KM,
             llama32OneBInstructGGUFQ4KM,
-            llama32OneBInstructGGUFQ5KM,
-            llama32ThreeBInstructGGUFQ4KM,
-            llama32ThreeBInstructGGUFQ5KM,
-            metaLlama31EightBInstructGGUFQ4KM
+            gemma34BInstructionGGUFQ4KM,
+            gemma4E2BInstructionGGUFQ4KM,
+            qwen34BInstruct2507GGUFQ4KM,
+            qwen38BGGUFQ4KM,
+            qwen34BHereticGGUFQ4KM,
+            metaLlama31EightBInstructAbliteratedGGUFQ4KM
         ]
     )
 
@@ -338,58 +329,95 @@ public enum CuratedModelManifests {
         tags: ["starter", "iphone-entry"]
     )
 
-    public static let llama32ThreeBInstructGGUFQ4KM = llamaGGUFModel(
-        id: "bartowski.Llama-3.2-3B-Instruct-GGUF.Q4_K_M",
-        displayName: "Llama 3.2 3B Instruct GGUF Q4_K_M",
-        repository: "bartowski/Llama-3.2-3B-Instruct-GGUF",
-        revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
-        fileName: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        byteCount: 2_019_377_696,
-        minimumRAMGB: 6,
-        minimumFreeDiskGB: 3,
-        contextWindowTokens: 131_072,
-        tags: ["balanced", "iphone-recommended"]
-    )
-
-    public static let llama32OneBInstructGGUFQ5KM = llamaGGUFModel(
-        id: "bartowski.Llama-3.2-1B-Instruct-GGUF.Q5_K_M",
-        displayName: "Llama 3.2 1B Instruct GGUF Q5_K_M",
-        repository: "bartowski/Llama-3.2-1B-Instruct-GGUF",
-        revision: "067b946cf014b7c697f3654f621d577a3e3afd1c",
-        fileName: "Llama-3.2-1B-Instruct-Q5_K_M.gguf",
-        byteCount: 911_503_488,
+    public static let gemma31BInstructionGGUFQ4KM = gemmaGGUFModel(
+        id: "bartowski.google_gemma-3-1b-it-GGUF.Q4_K_M",
+        displayName: "Gemma 3 1B Instruct GGUF Q4_K_M",
+        repository: "bartowski/google_gemma-3-1b-it-GGUF",
+        revision: "116f76234503685a98f572982177b11d44ec8ff1",
+        fileName: "google_gemma-3-1b-it-Q4_K_M.gguf",
+        byteCount: 806_058_496,
         minimumRAMGB: 4,
         minimumFreeDiskGB: 1,
-        contextWindowTokens: 131_072,
-        quantization: Quantization(format: "GGUF Q5_K_M", bits: 5),
-        tags: ["starter", "iphone-entry", "quality"]
+        contextWindowTokens: 32_768,
+        tags: ["starter", "iphone-entry", "gemma3"]
     )
 
-    public static let llama32ThreeBInstructGGUFQ5KM = llamaGGUFModel(
-        id: "bartowski.Llama-3.2-3B-Instruct-GGUF.Q5_K_M",
-        displayName: "Llama 3.2 3B Instruct GGUF Q5_K_M",
-        repository: "bartowski/Llama-3.2-3B-Instruct-GGUF",
-        revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
-        fileName: "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
-        byteCount: 2_322_154_016,
+    public static let gemma34BInstructionGGUFQ4KM = gemmaGGUFModel(
+        id: "bartowski.google_gemma-3-4b-it-GGUF.Q4_K_M",
+        displayName: "Gemma 3 4B Instruct GGUF Q4_K_M",
+        repository: "bartowski/google_gemma-3-4b-it-GGUF",
+        revision: "71506238f970075ca85125cd749c28b1b0eee84e",
+        fileName: "google_gemma-3-4b-it-Q4_K_M.gguf",
+        byteCount: 2_489_758_112,
         minimumRAMGB: 8,
         minimumFreeDiskGB: 3,
         contextWindowTokens: 131_072,
-        quantization: Quantization(format: "GGUF Q5_K_M", bits: 5),
-        tags: ["balanced", "iphone-pro", "quality"]
+        tags: ["balanced", "iphone-recommended", "gemma3", "vision-capable-model-text-only"]
     )
 
-    public static let metaLlama31EightBInstructGGUFQ4KM = llamaGGUFModel(
-        id: "bartowski.Meta-Llama-3.1-8B-Instruct-GGUF.Q4_K_M",
-        displayName: "Llama 3.1 8B Instruct GGUF Q4_K_M",
-        repository: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
-        revision: "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
-        fileName: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-        byteCount: 4_920_739_232,
+    public static let gemma4E2BInstructionGGUFQ4KM = gemmaGGUFModel(
+        id: "bartowski.google_gemma-4-E2B-it-GGUF.Q4_K_M",
+        displayName: "Gemma 4 E2B Instruct GGUF Q4_K_M",
+        repository: "bartowski/google_gemma-4-E2B-it-GGUF",
+        revision: "b5e99bd964eaacc27ba484bb2eb3e9f6160b9143",
+        fileName: "google_gemma-4-E2B-it-Q4_K_M.gguf",
+        byteCount: 3_462_678_272,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 4,
+        contextWindowTokens: 131_072,
+        tags: ["quality", "iphone-pro", "gemma4", "agentic", "vision-capable-model-text-only"]
+    )
+
+    public static let qwen34BInstruct2507GGUFQ4KM = qwenGGUFModel(
+        id: "bartowski.Qwen_Qwen3-4B-Instruct-2507-GGUF.Q4_K_M",
+        displayName: "Qwen3 4B Instruct 2507 GGUF Q4_K_M",
+        repository: "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+        revision: "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+        fileName: "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        byteCount: 2_497_280_736,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 32_768,
+        tags: ["balanced", "iphone-recommended", "instruct"]
+    )
+
+    public static let qwen38BGGUFQ4KM = qwenGGUFModel(
+        id: "bartowski.Qwen_Qwen3-8B-GGUF.Q4_K_M",
+        displayName: "Qwen3 8B GGUF Q4_K_M",
+        repository: "bartowski/Qwen_Qwen3-8B-GGUF",
+        revision: "0b69f75b7472688e6808490aa2b85efdb81b5ce7",
+        fileName: "Qwen_Qwen3-8B-Q4_K_M.gguf",
+        byteCount: 5_027_784_224,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 6,
+        contextWindowTokens: 32_768,
+        tags: ["large", "iphone-pro"]
+    )
+
+    public static let qwen34BHereticGGUFQ4KM = qwenGGUFModel(
+        id: "bartowski.p-e-w_Qwen3-4B-Instruct-2507-heretic-GGUF.Q4_K_M",
+        displayName: "Qwen3 4B Heretic GGUF Q4_K_M",
+        repository: "bartowski/p-e-w_Qwen3-4B-Instruct-2507-heretic-GGUF",
+        revision: "374467f099f99156987afeeea6df5bc1f090ff4b",
+        fileName: "p-e-w_Qwen3-4B-Instruct-2507-heretic-Q4_K_M.gguf",
+        byteCount: 2_497_279_424,
+        minimumRAMGB: 8,
+        minimumFreeDiskGB: 3,
+        contextWindowTokens: 32_768,
+        tags: ["experimental", "uncensored", "heretic"]
+    )
+
+    public static let metaLlama31EightBInstructAbliteratedGGUFQ4KM = llamaGGUFModel(
+        id: "bartowski.Meta-Llama-3.1-8B-Instruct-abliterated-GGUF.Q4_K_M",
+        displayName: "Llama 3.1 8B Instruct Abliterated GGUF Q4_K_M",
+        repository: "bartowski/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF",
+        revision: "c20a902bc96dd611ea0ea396d3ffc290f88c5864",
+        fileName: "Meta-Llama-3.1-8B-Instruct-abliterated-Q4_K_M.gguf",
+        byteCount: 4_920_734_720,
         minimumRAMGB: 8,
         minimumFreeDiskGB: 5,
         contextWindowTokens: 131_072,
-        tags: ["quality", "iphone-pro"]
+        tags: ["large", "iphone-pro", "uncensored", "abliterated"]
     )
 
     public static func merged(id: String, manifests: [ModelManifest]) -> ModelManifest {
@@ -601,6 +629,110 @@ public enum CuratedModelManifests {
             quantization: quantization,
             estimatedDownloadSizeBytes: byteCount,
             tags: baseGGUFLocalTags + ["llama"] + tags
+        )
+    }
+
+    private static func qwenGGUFModel(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        fileName: String,
+        byteCount: Int64,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        quantization: Quantization = Quantization(format: "GGUF Q4_K_M", bits: 4),
+        tags: [String]
+    ) -> ModelDescriptor {
+        ggufModel(
+            id: id,
+            displayName: displayName,
+            family: .qwen,
+            repository: repository,
+            revision: revision,
+            fileName: fileName,
+            byteCount: byteCount,
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            license: apacheTwoLicense(repositoryOwner: repository),
+            quantization: quantization,
+            tags: baseGGUFLocalTags + ["qwen"] + tags
+        )
+    }
+
+    private static func gemmaGGUFModel(
+        id: ModelID,
+        displayName: String,
+        repository: String,
+        revision: String,
+        fileName: String,
+        byteCount: Int64,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        quantization: Quantization = Quantization(format: "GGUF Q4_K_M", bits: 4),
+        tags: [String]
+    ) -> ModelDescriptor {
+        ggufModel(
+            id: id,
+            displayName: displayName,
+            family: .gemma,
+            repository: repository,
+            revision: revision,
+            fileName: fileName,
+            byteCount: byteCount,
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            license: gemmaLicense,
+            quantization: quantization,
+            tags: baseGGUFLocalTags + ["gemma"] + tags
+        )
+    }
+
+    private static func ggufModel(
+        id: ModelID,
+        displayName: String,
+        family: ModelFamily,
+        repository: String,
+        revision: String,
+        fileName: String,
+        byteCount: Int64,
+        minimumRAMGB: Int,
+        minimumFreeDiskGB: Int,
+        contextWindowTokens: Int,
+        license: ModelLicense,
+        quantization: Quantization,
+        tags: [String]
+    ) -> ModelDescriptor {
+        ModelDescriptor(
+            id: id,
+            displayName: displayName,
+            family: family,
+            backend: .llamaCpp,
+            capabilities: [
+                .chat,
+                .completion,
+                .streaming,
+                .offline,
+                .longContext
+            ],
+            minimumRAMGB: minimumRAMGB,
+            minimumFreeDiskGB: minimumFreeDiskGB,
+            contextWindowTokens: contextWindowTokens,
+            supportsStreaming: true,
+            source: ggufSource(
+                repository: repository,
+                revision: revision,
+                fileName: fileName,
+                byteCount: byteCount
+            ),
+            license: license,
+            quantization: quantization,
+            estimatedDownloadSizeBytes: byteCount,
+            tags: tags
         )
     }
 

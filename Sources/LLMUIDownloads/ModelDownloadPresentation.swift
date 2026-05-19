@@ -10,9 +10,8 @@ enum DownloadProgressPresentation {
     }
 
     static func percentTitle(for value: Double, isEstimated: Bool) -> String {
-        let prefix = isEstimated ? "~" : ""
         let percent = Int((normalizedFraction(value) * 100).rounded())
-        return "\(prefix)\(percent)%"
+        return "\(percent)%"
     }
 }
 

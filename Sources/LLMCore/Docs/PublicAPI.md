@@ -36,5 +36,6 @@ Streaming helpers include `StreamedTextAccumulator`, a small value type for accu
 Tool calling is described through backend-neutral `ToolDefinition`, `ToolArguments`, `ToolInvocation`, `ToolResult`, `ToolCallID`, `ToolCallReference`, and `ToolValue`.
 `ToolArguments` keeps structured values as the source of truth while preserving a string projection for simple executors. `ChatRequest` can carry available tool definitions, and `ChatMessage` can reference a prior tool call when a provider needs an explicit tool result turn.
 
-Lifecycle state includes `ModelStorageUsage`, which reports total installed bytes and per-model byte counts without exposing
+Lifecycle state includes `InstallState.paused(progress:)` for resumable user-paused installs. `ModelStorageUsage` reports
+installed plus partial/resume bytes, per-model byte counts, and optional disk available/capacity byte totals without exposing
 filesystem paths to UI modules.

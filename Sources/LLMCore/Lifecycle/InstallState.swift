@@ -10,6 +10,7 @@ public enum DownloadState: Hashable, Codable, Sendable {
 public enum InstallState: Hashable, Codable, Sendable {
     case notInstalled
     case downloading(progress: Double)
+    case paused(progress: Double)
     case downloaded
     case verifying
     case compiling
@@ -70,10 +71,19 @@ public struct InstalledModelRecord: Hashable, Codable, Sendable, Identifiable {
 public struct ModelStorageUsage: Hashable, Codable, Sendable {
     public let totalBytes: Int64
     public let modelBytes: [ModelID: Int64]
+    public let availableBytes: Int64?
+    public let capacityBytes: Int64?
 
-    public init(totalBytes: Int64, modelBytes: [ModelID: Int64] = [:]) {
+    public init(
+        totalBytes: Int64,
+        modelBytes: [ModelID: Int64] = [:],
+        availableBytes: Int64? = nil,
+        capacityBytes: Int64? = nil
+    ) {
         self.totalBytes = totalBytes
         self.modelBytes = modelBytes
+        self.availableBytes = availableBytes
+        self.capacityBytes = capacityBytes
     }
 
     public static let empty = ModelStorageUsage(totalBytes: 0)

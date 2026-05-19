@@ -15,3 +15,4 @@ requested/effective KV cache policy and falls back from experimental q8/q4 metad
 It does not claim actual Metal execution because that requires device runtime diagnostics.
 The backend also supports `BackendModelUnloading` so orchestration can release GGUF contexts before another local backend
 runs.
+`LlamaCppModelSupportMatrix` accepts backend-local text-only `.gguf` descriptors for Llama, Qwen, and Gemma families.

@@ -3,11 +3,12 @@
 Public API includes manifests, catalog, installer, installed record persistence, and install state machine support.
 
 `CuratedModelManifests` exposes lifecycle-owned `ModelManifest` values for Apple system models and iPhone-oriented local MLX text
-models capped at 8 GB RAM requirements. The curated iPhone list includes current Qwen3.5 OptiQ, Qwen3 Instruct,
-Gemma 4 E2B, Llama 3.2, and selected uncensored/abliterated Qwen and Llama variants so host apps can build catalogs
-without hardcoding descriptors in UI modules.
-`localIPhoneGGUFTextModels` separately exposes Llama GGUF descriptors for the llama.cpp backend, with single `.gguf`
-artifacts represented through the same backend-neutral download metadata.
+models capped at 8 GB RAM requirements. The curated iPhone MLX list is limited to Qwen3.5 OptiQ, Gemma 4 E2B, Qwen3 1.7B
+Abliterated, and Llama 3.2 3B Uncensored entries so host apps can build a compact MLX catalog without hardcoding
+descriptors in UI modules.
+`localIPhoneGGUFTextModels` separately exposes the primary GGUF catalog for the llama.cpp backend, including Llama, Qwen,
+Gemma, and selected uncensored/experimental Q4_K_M descriptors with single `.gguf` artifacts represented through the same
+backend-neutral download metadata.
 
 `ManifestLoader` decodes and encodes `ModelManifest` values from files, `ManifestStore`, and remote URLs using ISO 8601 dates,
 keeping manifest loading in the lifecycle layer instead of pushing it into backends or UI. It can optionally
@@ -56,8 +57,8 @@ estimated download bytes, subtracting already verified artifacts so retries do n
 artifacts and downloader resume cache so a later install can resume from completed files or the interrupted transfer while
 still deleting invalid completed leftovers from an interrupted attempt. Callers that prefer the previous eager cleanup
 behavior can opt into `.removeAllArtifacts`, which clears downloader resume cache before removing artifacts.
-When an install is cancelled, the coordinator still returns the install state to `.notInstalled` rather than leaving a
-misleading terminal failure state behind.
+When an install is cancelled under the default policy, the coordinator transitions to `.paused(progress:)`; callers that
+select `.removeAllArtifacts` still get `.notInstalled` after cleanup.
 Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk
 and reuses it when size and checksum validation pass, so repeated installs after restart can resume from completed files
 instead of always downloading the full manifest again.
@@ -66,3 +67,5 @@ instead of always downloading the full manifest again.
 `ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage
 summaries. When initialized with a `recordStore`, it lazily restores records before answering state, install, delete, or storage
 queries so app startup does not require async container construction.
+Storage summaries include installed bytes, partial/resume bytes left in model artifact directories, and optional disk
+available/capacity totals for compact host UI summaries.

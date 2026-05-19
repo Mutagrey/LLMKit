@@ -100,18 +100,19 @@ public struct StorageUsageView: View {
                         .contentTransition(.numericText(value: Double(diskUsage.usedBytes)))
                         .animation(.easeInOut(duration: 0.2), value: diskUsage.usedBytes)
                     Spacer(minLength: 8)
-                    Text(diskPercentTitle)
+                    Text(diskFreeTitle)
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(diskTint)
-                        .contentTransition(.numericText(value: diskFreeFraction))
-                        .animation(.easeInOut(duration: 0.2), value: diskFreeFraction)
+                        .lineLimit(1)
+                        .contentTransition(.numericText(value: Double(diskUsage.availableBytes)))
+                        .animation(.easeInOut(duration: 0.2), value: diskUsage.availableBytes)
                 }
 
                 storageChart(
                     segments: diskChartSegments,
                     totalBytes: diskUsage.capacityBytes,
                     accessibilityLabel: "Disk usage",
-                    accessibilityValue: "\(diskPercentTitle), \(diskUsedTitle)"
+                    accessibilityValue: "\(diskFreeTitle), \(diskUsedTitle)"
                 )
             }
         } else {
@@ -175,8 +176,11 @@ public struct StorageUsageView: View {
         .animation(.easeInOut(duration: 0.25), value: chartAnimationValue(for: segments))
     }
 
-    private var diskPercentTitle: String {
-        "\(Int((diskFreeFraction * 100).rounded()))% free"
+    private var diskFreeTitle: String {
+        guard let diskUsage else {
+            return modelStorageTitle
+        }
+        return "\(byteCountTitle(diskUsage.availableBytes)) free"
     }
 
     private var diskUsedFraction: Double {

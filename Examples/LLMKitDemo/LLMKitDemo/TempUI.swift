@@ -7,6 +7,7 @@
 
 import LLMUISettings
 import SwiftUI
+import LLMUIModels
 
 #Preview {
     NavigationStack {
@@ -19,6 +20,15 @@ import SwiftUI
                 isLowMemoryConstrained: true,
                 recommendation: "Для полной производительности выберите более мощную модель."
             )
+            
+            Section {
+                StorageUsageView(
+                    downloadedModelCount: 3,
+                    totalModelCount: 8,
+                    installedBytes: 2_147_483_648, // 2 GB
+                    partialBytes: 536_870_912 // 512 MB
+                )
+            }
         }
     }
 }

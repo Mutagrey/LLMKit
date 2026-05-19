@@ -13,6 +13,7 @@
 		417866122F9EB0E30029F88C /* DemoAutomationBackgroundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4178660A2F9EB0E30029F88C /* DemoAutomationBackgroundController.swift */; };
 		417866132F9EB0E30029F88C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417866092F9EB0E30029F88C /* ContentView.swift */; };
 		417866142F9EB0E30029F88C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 417866082F9EB0E30029F88C /* Assets.xcassets */; };
+		41EA1AC82FBD135B0083987E /* TempUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41EA1AC72FBD135B0083987E /* TempUI.swift */; };
 		42D000020000000000000001 /* ChatModelToolbarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000001 /* ChatModelToolbarMenu.swift */; };
 		42D000020000000000000002 /* DemoRuntimeConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000002 /* DemoRuntimeConfiguration.swift */; };
 		42D000020000000000000003 /* DemoModelPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D000010000000000000003 /* DemoModelPreflight.swift */; };
@@ -41,6 +42,7 @@
 		4178660B2F9EB0E30029F88C /* DemoConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfiguration.swift; sourceTree = "<group>"; };
 		4178660D2F9EB0E30029F88C /* LLMKitDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMKitDemoApp.swift; sourceTree = "<group>"; };
 		417866152F9EB1650029F88C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		41EA1AC72FBD135B0083987E /* TempUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempUI.swift; sourceTree = "<group>"; };
 		42D000010000000000000001 /* ChatModelToolbarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelToolbarMenu.swift; sourceTree = "<group>"; };
 		42D000010000000000000002 /* DemoRuntimeConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRuntimeConfiguration.swift; sourceTree = "<group>"; };
 		42D000010000000000000003 /* DemoModelPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoModelPreflight.swift; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 			children = (
 				417866152F9EB1650029F88C /* Info.plist */,
 				417866082F9EB0E30029F88C /* Assets.xcassets */,
+				41EA1AC72FBD135B0083987E /* TempUI.swift */,
 				42D000030000000000000001 /* App */,
 				42D000030000000000000003 /* Components */,
 				42D000030000000000000002 /* Configuration */,
@@ -282,6 +285,7 @@
 				42D000020000000000000002 /* DemoRuntimeConfiguration.swift in Sources */,
 				4178660F2F9EB0E30029F88C /* LLMKitDemoApp.swift in Sources */,
 				42D000020000000000000001 /* ChatModelToolbarMenu.swift in Sources */,
+				41EA1AC82FBD135B0083987E /* TempUI.swift in Sources */,
 				42D000020000000000000005 /* AutomatedSessionScreen.swift in Sources */,
 				42D000020000000000000006 /* AutomationComposerSheet.swift in Sources */,
 				42D000020000000000000007 /* ChatSessionsTab.swift in Sources */,
@@ -406,6 +410,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LLMKitDemo/Info.plist;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).automation";
+				INFOPLIST_KEY_CFBundleDisplayName = ZeroAI;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -437,6 +442,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LLMKitDemo/Info.plist;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).automation";
+				INFOPLIST_KEY_CFBundleDisplayName = ZeroAI;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

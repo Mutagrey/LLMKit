@@ -137,22 +137,35 @@ public struct ModelRowView: View {
     @ViewBuilder
     private var trailingContent: some View {
         if isReady {
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(ModelRowMetrics.largeSymbolFont)
-                    .foregroundStyle(.green)
-                    .symbolEffect(.bounce, value: isSelected)
-                    .frame(
-                        width: ModelRowMetrics.largeSymbolSize,
-                        height: ModelRowMetrics.largeSymbolSize
-                    )
-                    .accessibilityLabel("Selected")
-            }
+            selectionIndicator
         } else if let action = actionSpec {
             ModelRowActionButton(spec: action)
         } else if rowErrorMessage == nil {
             statusBadge
         }
+    }
+
+    private var selectionIndicator: some View {
+        ZStack {
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(ModelRowMetrics.largeSymbolFont)
+                    .foregroundStyle(.green)
+                    .symbolEffect(.bounce, value: isSelected)
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.68).combined(with: .opacity),
+                            removal: .scale(scale: 0.82).combined(with: .opacity)
+                        )
+                    )
+                    .accessibilityLabel("Selected")
+            }
+        }
+        .frame(
+            width: ModelRowMetrics.largeSymbolSize,
+            height: ModelRowMetrics.largeSymbolSize
+        )
+        .animation(.snappy(duration: 0.24, extraBounce: 0.18), value: isSelected)
     }
 
     private var statusBadge: some View {

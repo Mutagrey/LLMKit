@@ -54,8 +54,6 @@ public struct LLMSettingsScreen: View {
             )
         } header: {
             Text("Overview")
-        } footer: {
-            Text("Effective values include user settings, selected model limits, and memory clamps.")
         }
     }
 

@@ -1,23 +1,39 @@
 import LLMSettings
 import SwiftUI
 
-struct LLMSettingsOverviewContent: View {
-    let selectedModelName: String?
-    let metadata: String?
-    let effectiveInputTokens: Int
-    let effectiveOutputTokens: Int
-    let isLowMemoryConstrained: Bool
-    let recommendation: String?
+public struct LLMSettingsOverviewContent: View {
+    private let selectedModelName: String?
+    private let metadata: String?
+    private let effectiveInputTokens: Int
+    private let effectiveOutputTokens: Int
+    private let isLowMemoryConstrained: Bool
+    private let recommendation: String?
 
     private let columns = [
-        GridItem(.adaptive(minimum: 94), spacing: 8)
+        GridItem(.adaptive(minimum: 94), spacing: 10)
     ]
 
-    var body: some View {
+    public init(
+        selectedModelName: String?,
+        metadata: String?,
+        effectiveInputTokens: Int,
+        effectiveOutputTokens: Int,
+        isLowMemoryConstrained: Bool,
+        recommendation: String?
+    ) {
+        self.selectedModelName = selectedModelName
+        self.metadata = metadata
+        self.effectiveInputTokens = effectiveInputTokens
+        self.effectiveOutputTokens = effectiveOutputTokens
+        self.isLowMemoryConstrained = isLowMemoryConstrained
+        self.recommendation = recommendation
+    }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             modelSummary
-
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            Divider()
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
                 metricRow(
                     value: LLMSettingsFormatting.tokenCount(effectiveInputTokens),
                     label: "Context",
@@ -37,6 +53,8 @@ struct LLMSettingsOverviewContent: View {
                 )
             }
 
+            Divider()
+            
             if isLowMemoryConstrained {
                 noteRow(
                     systemImage: "exclamationmark.triangle.fill",
@@ -57,7 +75,7 @@ struct LLMSettingsOverviewContent: View {
     }
 
     private var modelSummary: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .center) {
             LLMSettingsChromeIcon(
                 systemImage: selectedModelName == nil ? "questionmark.circle" : "cube.box",
                 tint: .blue
@@ -76,9 +94,10 @@ struct LLMSettingsOverviewContent: View {
     }
 
     private func metricRow(value: String, label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(.headline.monospacedDigit())
+                .font(.subheadline.monospacedDigit())
+                .fontWeight(.semibold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 

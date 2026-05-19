@@ -15,15 +15,18 @@ public struct ExecutionPlanner: Sendable {
     private let matcher: CapabilityMatcher
     private let deviceProfile: DeviceProfile?
     private let runtimeConstraints: RuntimeConstraints
+    private let memoryGuard: LocalRuntimeMemoryGuard
 
     public init(
         matcher: CapabilityMatcher = CapabilityMatcher(),
         deviceProfile: DeviceProfile? = DeviceProfileCollector().currentProfile(),
-        runtimeConstraints: RuntimeConstraints = RuntimeConstraintsCollector().currentConstraints()
+        runtimeConstraints: RuntimeConstraints = RuntimeConstraintsCollector().currentConstraints(),
+        memoryGuard: LocalRuntimeMemoryGuard = LocalRuntimeMemoryGuard()
     ) {
         self.matcher = matcher
         self.deviceProfile = deviceProfile
         self.runtimeConstraints = runtimeConstraints
+        self.memoryGuard = memoryGuard
     }
 
     public func plan(models: [ModelDescriptor], requirements: ExecutionRequirements) -> ExecutionPlan {
@@ -71,6 +74,15 @@ public struct ExecutionPlanner: Sendable {
             reasons.append("offline-only requests cannot use remote models")
         }
 
+        if let deviceProfile,
+           shouldEvaluateLocalRuntimeMemory(for: descriptor),
+           let estimate = localRuntimeMemoryEstimate(for: descriptor) {
+            let decision = memoryGuard.evaluate(estimate: estimate, profile: deviceProfile)
+            if !decision.canLoad {
+                reasons.append(decision.reason ?? "insufficient process memory for local runtime")
+            }
+        }
+
         return reasons
     }
 
@@ -84,5 +96,32 @@ public struct ExecutionPlanner: Sendable {
         let contextComponent = Int64(descriptor.contextWindowTokens ?? 0) * 1_000_000
         let ramComponent = Int64(descriptor.minimumRAMGB ?? 0) * 1_000
         return contextComponent + ramComponent + (descriptor.supportsStructuredOutput ? 1 : 0)
+    }
+
+    private func shouldEvaluateLocalRuntimeMemory(for descriptor: ModelDescriptor) -> Bool {
+        switch descriptor.backend {
+        case .coreML, .mlx, .llamaCpp:
+            true
+        case .foundationModels, .remote, .executorch, .onnxRuntime, .custom:
+            false
+        }
+    }
+
+    private func localRuntimeMemoryEstimate(for descriptor: ModelDescriptor) -> LocalRuntimeMemoryEstimate? {
+        guard let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes,
+              estimatedDownloadSizeBytes > 0 else {
+            return nil
+        }
+        return LocalRuntimeMemoryEstimate(
+            modelMemoryBytes: UInt64(estimatedDownloadSizeBytes),
+            contextMemoryBytes: estimatedContextMemoryBytes(for: descriptor)
+        )
+    }
+
+    private func estimatedContextMemoryBytes(for descriptor: ModelDescriptor) -> UInt64 {
+        guard let contextWindowTokens = descriptor.contextWindowTokens, contextWindowTokens > 0 else {
+            return 0
+        }
+        return UInt64(contextWindowTokens) * 1024
     }
 }

@@ -106,15 +106,7 @@ actor LlamaCppNativeContext {
         path: String,
         configuration: LlamaCppRuntimeConfiguration
     ) throws -> LlamaCppNativeContext {
-        var modelParameters = llama_model_default_params()
-        if configuration.useMetal {
-            modelParameters.n_gpu_layers = 99
-        } else {
-            modelParameters.n_gpu_layers = 0
-        }
-        #if targetEnvironment(simulator)
-        modelParameters.n_gpu_layers = 0
-        #endif
+        let modelParameters = resolvedModelParameters(for: configuration)
 
         guard let model = llama_model_load_from_file(path, modelParameters) else {
             throw LlamaCppNativeError.couldNotInitializeModel(path)
@@ -141,6 +133,13 @@ actor LlamaCppNativeContext {
             ),
             generationLimit: Int32(configuration.contextSize)
         )
+    }
+
+    static func resolvedModelParameters(for configuration: LlamaCppRuntimeConfiguration) -> llama_model_params {
+        var modelParameters = llama_model_default_params()
+        modelParameters.use_mmap = configuration.resolvedUseMMap(isSupported: llama_supports_mmap())
+        modelParameters.n_gpu_layers = Int32(configuration.resolvedGPULayerCount())
+        return modelParameters
     }
 
     func stream(prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {

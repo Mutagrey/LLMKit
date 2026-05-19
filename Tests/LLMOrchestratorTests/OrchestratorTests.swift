@@ -492,6 +492,38 @@ private actor FailingToolService: ToolService {
     #expect(plan.candidates.map(\.id) == ["installed-large"])
 }
 
+@Test func executionPlannerFiltersLocalModelsWhenProcessMemoryIsTooLow() {
+    let compact = ModelDescriptor(
+        id: "compact",
+        displayName: "Compact",
+        family: .llama,
+        backend: .llamaCpp,
+        capabilities: [.chat],
+        estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(128))
+    )
+    let oversized = ModelDescriptor(
+        id: "oversized",
+        displayName: "Oversized",
+        family: .llama,
+        backend: .llamaCpp,
+        capabilities: [.chat],
+        estimatedDownloadSizeBytes: Int64(LocalRuntimeMemoryGuard.megabytes(800))
+    )
+    let planner = ExecutionPlanner(
+        deviceProfile: DeviceProfile(
+            operatingSystemVersion: "iOS Test",
+            physicalMemoryBytes: LocalRuntimeMemoryGuard.megabytes(4096),
+            processorCount: 6,
+            availableProcessMemoryBytes: LocalRuntimeMemoryGuard.megabytes(1024)
+        )
+    )
+    let requirements = ExecutionRequirements(requiredCapabilities: [.chat], executionMode: .offlineOnly)
+
+    let plan = planner.plan(models: [oversized, compact], requirements: requirements)
+
+    #expect(plan.candidates.map(\.id) == ["compact"])
+}
+
 @Test func executionPlannerPrefersLowerFootprintForFastTier() {
     let lightweight = ModelDescriptor(
         id: "light",

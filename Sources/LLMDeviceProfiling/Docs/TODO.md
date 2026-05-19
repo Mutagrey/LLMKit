@@ -1,3 +1,3 @@
 # LLMDeviceProfiling TODO
 
-- Add platform-specific signal collection behind availability checks.
+- Add thermal and memory-pressure snapshots behind platform availability checks.

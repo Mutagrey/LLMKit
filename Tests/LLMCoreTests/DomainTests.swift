@@ -94,6 +94,15 @@ import Testing
     #expect(decoded.allowsFallback == false)
 }
 
+@Test func executionBudgetSeparatesInputAndOutputTokenLimits() {
+    let budget = ExecutionBudget(maxInputTokens: 2048, maxOutputTokens: 256)
+    let requirements = ExecutionRequirements(budget: budget)
+
+    #expect(requirements.budget?.maxInputTokens == 2048)
+    #expect(requirements.budget?.maxOutputTokens == 256)
+    #expect(requirements.budget?.maxInputTokens != requirements.budget?.maxOutputTokens)
+}
+
 @Test func lifecycleStatesAreEquatable() {
     #expect(InstallState.downloading(progress: 0.5) == .downloading(progress: 0.5))
     #expect(LLMError.modelNotInstalled("missing") == .modelNotInstalled("missing"))

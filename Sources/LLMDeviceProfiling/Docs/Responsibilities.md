@@ -1,3 +1,5 @@
 # LLMDeviceProfiling Responsibilities
 
-Owns device profile snapshots and suitability facts. It does not choose backends or execute routing policies.
+Owns device profile snapshots, suitability facts, process-memory signals where available, and pure memory-load
+decisions for local runtimes. It does not choose backends, load models, install artifacts, or execute routing
+policies.

@@ -86,6 +86,32 @@ import Testing
     #expect(prompt.hasSuffix("<|start_header_id|>assistant<|end_header_id|>\n\n"))
 }
 
+@Test func llamaCppRuntimeConfigurationResolvesMMapOnlyWhenSupported() {
+    let enabled = LlamaCppRuntimeConfiguration(useMMap: true)
+    let disabled = LlamaCppRuntimeConfiguration(useMMap: false)
+
+    #expect(enabled.resolvedUseMMap(isSupported: true))
+    #expect(!enabled.resolvedUseMMap(isSupported: false))
+    #expect(!disabled.resolvedUseMMap(isSupported: true))
+}
+
+@Test func llamaCppRuntimeConfigurationDoesNotUseGPULayersOnSimulator() {
+    let configuration = LlamaCppRuntimeConfiguration(useMetal: true, gpuLayerCount: 32)
+
+    #expect(configuration.resolvedGPULayerCount(isSimulator: true) == 0)
+    #expect(configuration.resolvedGPULayerCount(isSimulator: false) == 32)
+    #expect(LlamaCppRuntimeConfiguration(useMetal: false, gpuLayerCount: 32).resolvedGPULayerCount(isSimulator: false) == 0)
+}
+
+@Test func llamaCppRuntimeConfigurationDefaultsAreIPhoneConservative() {
+    let configuration = LlamaCppRuntimeConfiguration.default
+
+    #expect(configuration.contextSize == 2048)
+    #expect(configuration.batchSize == 256)
+    #expect(configuration.maxLoadedModels == 1)
+    #expect(configuration.useMMap)
+}
+
 private actor FakeLlamaCppRuntime: LlamaCppRuntime {
     private let hasFiles: Bool
     private let nativeAvailable: Bool

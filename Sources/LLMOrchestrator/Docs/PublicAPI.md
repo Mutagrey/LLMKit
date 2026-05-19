@@ -11,6 +11,8 @@ RAM, and offline/remote constraint mismatches so host apps can present actionabl
 declared minimum RAM exceeds the current device budget. Free-disk requirements are install-time lifecycle
 constraints, not inference-time routing gates. For `.fast` quality it prefers lower-footprint models, while
 `.best` still prefers higher-capacity candidates that remain eligible.
+When `DeviceProfile.availableProcessMemoryBytes` is present, local runtime candidates with estimated artifact
+sizes are also checked against a backend-neutral process-memory reserve before routing reaches backend load.
 
 `DefaultStructuredGenerationService` forwards stable execution requirements together with the backend-neutral
 `StructuredOutputSchema`. It decodes only strict JSON and performs one prompt-level repair attempt by default, which lets

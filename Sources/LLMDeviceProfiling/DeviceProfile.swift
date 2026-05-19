@@ -1,14 +1,24 @@
 import Foundation
+#if os(iOS) || os(tvOS) || os(watchOS)
+import Darwin
+#endif
 
 public struct DeviceProfile: Hashable, Sendable {
     public let operatingSystemVersion: String
     public let physicalMemoryBytes: UInt64
     public let processorCount: Int
+    public let availableProcessMemoryBytes: UInt64?
 
-    public init(operatingSystemVersion: String, physicalMemoryBytes: UInt64, processorCount: Int) {
+    public init(
+        operatingSystemVersion: String,
+        physicalMemoryBytes: UInt64,
+        processorCount: Int,
+        availableProcessMemoryBytes: UInt64? = nil
+    ) {
         self.operatingSystemVersion = operatingSystemVersion
         self.physicalMemoryBytes = physicalMemoryBytes
         self.processorCount = processorCount
+        self.availableProcessMemoryBytes = availableProcessMemoryBytes
     }
 }
 
@@ -30,7 +40,16 @@ public struct DeviceProfileCollector: Sendable {
         return DeviceProfile(
             operatingSystemVersion: processInfo.operatingSystemVersionString,
             physicalMemoryBytes: processInfo.physicalMemory,
-            processorCount: processInfo.processorCount
+            processorCount: processInfo.processorCount,
+            availableProcessMemoryBytes: Self.availableProcessMemoryBytes()
         )
+    }
+
+    private static func availableProcessMemoryBytes() -> UInt64? {
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        UInt64(os_proc_available_memory())
+        #else
+        nil
+        #endif
     }
 }

@@ -13,3 +13,7 @@ backend-neutral message history if the caller snapshot changes.
 
 Cached MLX `ChatSession` values are reset when a chat attempt fails or is cancelled, and can also be reset explicitly by
 `SessionID` when a host chat surface closes.
+
+For iPhone-class apps, `MLXMemoryPolicy.strictForMemoryConstrainedApps` is the recommended starting policy. It caps the
+MLX memory cache, clears cache after generation and unload, disables retained chat sessions, limits loaded models to one,
+and keeps KV settings in an experimental memory-saving profile.

@@ -3,5 +3,10 @@
 `LLMDeviceProfiling` exposes backend-neutral device and runtime signals for routing inputs.
 
 `DeviceProfileCollector` snapshots stable hardware facts such as operating system version, physical memory,
-and processor count. `RuntimeConstraintsCollector` captures ephemeral execution constraints such as low power
-mode preference and currently available free disk budget for the active volume.
+processor count, and available process memory where Apple exposes that signal. `RuntimeConstraintsCollector`
+captures ephemeral execution constraints such as low power mode preference and currently available free disk
+budget for the active volume.
+
+`LocalRuntimeMemoryGuard` gives orchestration a backend-neutral preflight for local model loading. It compares an
+estimated model/context/working set against process-available memory plus a safety reserve, without owning lifecycle
+or backend runtime state.

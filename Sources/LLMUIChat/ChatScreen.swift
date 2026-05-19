@@ -26,6 +26,7 @@ public struct ChatScreen: View {
                 title: title,
                 transcriptItems: viewModel.transcriptItems,
                 streamingText: viewModel.streamingText,
+                isStreaming: viewModel.isStreaming,
                 lastError: viewModel.lastError,
                 bottomAnchorID: ScrollAnchor.bottom
             )
@@ -37,12 +38,13 @@ public struct ChatScreen: View {
                     draftText: $draftText,
                     isComposerFocused: $isComposerFocused,
                     isStreaming: viewModel.isStreaming,
-                    send: sendDraft,
-                    stop: viewModel.cancelStreaming,
-                    dismissKeyboard: dismissKeyboard
+                    send: sendDraft
                 )
             }
             .navigationTitle(title)
+#if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
             .background(.background)
             .onAppear {
                 scrollToBottom(with: proxy, animated: false)
@@ -51,6 +53,9 @@ public struct ChatScreen: View {
                 scrollToBottom(with: proxy)
             }
             .onChange(of: viewModel.streamingText) { _, _ in
+                scrollToBottom(with: proxy, animated: false)
+            }
+            .onChange(of: viewModel.isStreaming) { _, _ in
                 scrollToBottom(with: proxy, animated: false)
             }
             .onChange(of: viewModel.lastError) { _, _ in

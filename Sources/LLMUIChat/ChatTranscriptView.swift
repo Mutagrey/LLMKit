@@ -6,6 +6,7 @@ struct ChatTranscriptView: View {
     let title: String
     let transcriptItems: [ChatTranscriptItem]
     let streamingText: String
+    let isStreaming: Bool
     let lastError: ChatErrorPresentation?
     let bottomAnchorID: String
 
@@ -35,7 +36,7 @@ struct ChatTranscriptView: View {
     }
 
     private var isEmpty: Bool {
-        transcriptItems.isEmpty && streamingText.isEmpty && lastError == nil
+        transcriptItems.isEmpty && streamingText.isEmpty && !isStreaming && lastError == nil
     }
 
     @ViewBuilder
@@ -57,13 +58,33 @@ struct ChatTranscriptView: View {
                 message: ChatMessage(
                     role: .assistant,
                     content: MessageContent(text: streamingText)
-                ),
-                isStreamingPreview: true
+                )
             )
+        }
+
+        if isStreaming {
+            ChatGeneratingStatusRow()
         }
 
         if let lastError {
             ChatErrorNoticeCard(error: lastError)
         }
+    }
+}
+
+private struct ChatGeneratingStatusRow: View {
+    var body: some View {
+        HStack(spacing: 7) {
+            ProgressView()
+                .controlSize(.mini)
+            Text("Generating response")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.thinMaterial, in: Capsule())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }

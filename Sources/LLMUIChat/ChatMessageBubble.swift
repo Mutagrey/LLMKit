@@ -5,7 +5,6 @@ import SwiftUI
 struct ChatMessageBubble: View {
     let message: ChatMessage
     var runtimeMetricsSummary: RuntimeMetricsSummary? = nil
-    var isStreamingPreview = false
 
     var body: some View {
         HStack {
@@ -25,15 +24,7 @@ struct ChatMessageBubble: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 10)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(alignment: .bottomTrailing) {
-                    if isStreamingPreview {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .padding(.trailing, 8)
-                            .padding(.bottom, 6)
-                    }
-                }
+            .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             if message.role != .user {
                 Spacer(minLength: 44)

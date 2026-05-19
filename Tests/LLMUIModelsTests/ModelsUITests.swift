@@ -398,6 +398,64 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
 }
 
 @MainActor
+@Test func downloadsViewModelInfersPartialProgressFromStorageOnRefresh() async {
+    let descriptor = ModelDescriptor(
+        id: "partial",
+        displayName: "Partial",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [],
+        estimatedDownloadSizeBytes: 1_000
+    )
+    let service = PartialMaintenanceLifecycleService(
+        descriptor: descriptor,
+        state: .notInstalled,
+        partialBytes: 250
+    )
+    let viewModel = ModelDownloadsViewModel(
+        descriptors: [descriptor],
+        lifecycleService: service
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.installState(for: descriptor.id) == .paused(progress: 0.25))
+    #expect(viewModel.progress(for: descriptor.id) == 0.25)
+    #expect(viewModel.progressDetail(for: descriptor.id)?.completedBytes == 250)
+    #expect(viewModel.progressDetail(for: descriptor.id)?.totalBytes == 1_000)
+}
+
+@MainActor
+@Test func downloadsViewModelUsesStateProgressWhenResumeDataStorageIsSmaller() async {
+    let descriptor = ModelDescriptor(
+        id: "resume-data",
+        displayName: "Resume Data",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [],
+        estimatedDownloadSizeBytes: 1_500_000_000
+    )
+    let service = PartialMaintenanceLifecycleService(
+        descriptor: descriptor,
+        state: .paused(progress: 0.1),
+        partialBytes: 0
+    )
+    let viewModel = ModelDownloadsViewModel(
+        descriptors: [descriptor],
+        lifecycleService: service
+    )
+
+    await viewModel.refresh()
+
+    #expect(viewModel.storageBytes(for: descriptor.id) == nil)
+    #expect(viewModel.progress(for: descriptor.id) == 0.1)
+    #expect(viewModel.progressDetail(for: descriptor.id)?.completedBytes == 150_000_000)
+    #expect(viewModel.progressDetail(for: descriptor.id)?.totalBytes == 1_500_000_000)
+    #expect(viewModel.partialStorageBytes == 150_000_000)
+    #expect(viewModel.canDeleteArtifacts(for: descriptor.id))
+}
+
+@MainActor
 @Test func downloadsViewModelCancelInstallWaitsForCleanupAndClearsArtifacts() async throws {
     let partialData = Data("partial".utf8)
     let rootDirectory = FileManager.default.temporaryDirectory

@@ -130,6 +130,8 @@ public struct ModelRowView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
+                    .contentTransition(.numericText(value: subtitleTransitionValue))
+                    .animation(.easeInOut(duration: 0.2), value: subtitleTransitionValue)
             }
         }
     }
@@ -146,26 +148,19 @@ public struct ModelRowView: View {
     }
 
     private var selectionIndicator: some View {
-        ZStack {
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(ModelRowMetrics.largeSymbolFont)
-                    .foregroundStyle(.green)
-                    .symbolEffect(.bounce, value: isSelected)
-                    .transition(
-                        .asymmetric(
-                            insertion: .scale(scale: 0.68).combined(with: .opacity),
-                            removal: .scale(scale: 0.82).combined(with: .opacity)
-                        )
-                    )
-                    .accessibilityLabel("Selected")
-            }
-        }
-        .frame(
-            width: ModelRowMetrics.largeSymbolSize,
-            height: ModelRowMetrics.largeSymbolSize
-        )
-        .animation(.snappy(duration: 0.24, extraBounce: 0.18), value: isSelected)
+        Image(systemName: "checkmark.circle.fill")
+            .font(ModelRowMetrics.largeSymbolFont)
+            .foregroundStyle(.green)
+            .scaleEffect(isSelected ? 1 : 0.64)
+            .opacity(isSelected ? 1 : 0)
+            .symbolEffect(.bounce, value: isSelected)
+            .accessibilityLabel("Selected")
+            .accessibilityHidden(!isSelected)
+            .animation(.snappy(duration: 0.24, extraBounce: 0.18), value: isSelected)
+            .frame(
+                width: ModelRowMetrics.largeSymbolSize,
+                height: ModelRowMetrics.largeSymbolSize
+            )
     }
 
     private var statusBadge: some View {
@@ -240,10 +235,56 @@ public struct ModelRowView: View {
 
     private var descriptorSubtitle: String {
         [
-            byteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes),
+            sizeSubtitle,
             runtimeTitle,
             memoryTitle
         ].joined(separator: " · ")
+    }
+
+    private var sizeSubtitle: String {
+        if installState?.llmUIModelsIsInstalled == true {
+            return byteCountTitle(installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes)
+        }
+
+        if installState?.llmUIModelsIsTransferState == true,
+           let completedBytes = downloadedSubtitleBytes {
+            let prefix = isDownloadedSubtitleEstimated ? "~" : ""
+            return "\(prefix)\(byteCountTitle(completedBytes)) downloaded"
+        }
+
+        return byteCountTitle(descriptor.estimatedDownloadSizeBytes)
+    }
+
+    private var subtitleTransitionValue: Double {
+        Double(subtitleByteValue ?? 0)
+    }
+
+    private var subtitleByteValue: Int64? {
+        if installState?.llmUIModelsIsInstalled == true {
+            return installedSizeBytes ?? descriptor.estimatedDownloadSizeBytes
+        }
+        if installState?.llmUIModelsIsTransferState == true {
+            return downloadedSubtitleBytes ?? descriptor.estimatedDownloadSizeBytes
+        }
+        return descriptor.estimatedDownloadSizeBytes
+    }
+
+    private var downloadedSubtitleBytes: Int64? {
+        guard let installState, installState.llmUIModelsIsTransferState else {
+            return nil
+        }
+        guard let totalBytes = progressDetail?.totalBytes ?? descriptor.estimatedDownloadSizeBytes,
+              totalBytes > 0 else {
+            return progressDetail?.completedBytes
+        }
+
+        let progressBytes = Int64((installState.llmUIModelsProgressFraction * Double(totalBytes)).rounded())
+        let reportedBytes = progressDetail?.completedBytes ?? 0
+        return min(max(progressBytes, reportedBytes), totalBytes)
+    }
+
+    private var isDownloadedSubtitleEstimated: Bool {
+        progressDetail?.isEstimated ?? (progressDetail?.totalBytes == nil)
     }
 
     private var runtimeTitle: String {

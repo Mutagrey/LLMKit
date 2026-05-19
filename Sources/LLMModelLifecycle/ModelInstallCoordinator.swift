@@ -76,18 +76,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     public func storageUsage() async throws -> ModelStorageUsage {
         try await ensureLoadedPersistedRecords()
         var modelBytes: [ModelID: Int64] = [:]
-        var knownDirectoryNames = Set<String>()
         for modelID in records.keys {
             modelBytes[modelID] = try storageUsageWithoutLoading(for: modelID)
-            knownDirectoryNames.insert(Self.safeDirectoryName(for: modelID))
-        }
-
-        for partialDirectory in try partialModelDirectories(excluding: knownDirectoryNames) {
-            let modelID = ModelID(rawValue: partialDirectory.lastPathComponent)
-            let bytes = try storageUsage(in: partialDirectory)
-            if bytes > 0 {
-                modelBytes[modelID] = bytes
-            }
         }
 
         let diskUsage = try diskUsageSnapshot()
@@ -144,6 +134,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         let record = InstalledModelRecord(descriptor: descriptor, installState: .ready, installedAt: Date())
         records[descriptor.id] = record
         try await recordStore?.save(Array(records.values))
+        try? removeProgressSnapshot(for: descriptor.id)
         return record
     }
 
@@ -545,6 +536,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
         tracker.lastReportedProgress = clampedProgress
         await stateMachine.transition(modelID: descriptorID, to: .downloading(progress: clampedProgress))
+        try? storeProgressSnapshot(modelID: descriptorID, progress: progress)
         continuation.yield(.progress(descriptorID, clampedProgress))
         continuation.yield(.progressDetail(descriptorID, progress))
     }
@@ -584,7 +576,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             return 0
         }
 
-        return try storageUsage(in: directory)
+        let artifactBytes = try storageUsage(in: directory)
+        let snapshotBytes = progressSnapshotDownloadedBytes(in: directory)
+        let resumeBytes = try resumeCacheDownloadedBytes(in: directory)
+        return max(artifactBytes, snapshotBytes, resumeBytes)
     }
 
     private func storageUsage(in directory: URL) throws -> Int64 {
@@ -598,6 +593,9 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
         var total: Int64 = 0
         for case let fileURL as URL in enumerator {
+            guard Self.isUserFacingArtifactFile(fileURL) else {
+                continue
+            }
             let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             guard values.isRegularFile == true else {
                 continue
@@ -607,23 +605,122 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         return total
     }
 
-    private func partialModelDirectories(excluding knownDirectoryNames: Set<String>) throws -> [URL] {
-        guard let artifactRootDirectory,
-              FileManager.default.fileExists(atPath: artifactRootDirectory.path) else {
-            return []
+    private func resumeCacheDownloadedBytes(in directory: URL) throws -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: []
+        ) else {
+            return 0
         }
 
-        let contents = try FileManager.default.contentsOfDirectory(
-            at: artifactRootDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        return contents.filter { url in
-            guard !knownDirectoryNames.contains(url.lastPathComponent) else {
-                return false
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard fileURL.lastPathComponent.hasSuffix(".resumeData") else {
+                continue
             }
-            return (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+            total += Self.resumeCacheDownloadedBytes(at: fileURL)
         }
+        return total
+    }
+
+    private func storeProgressSnapshot(modelID: ModelID, progress: ModelInstallProgress) throws {
+        guard let artifactRootDirectory,
+              let completedBytes = progress.completedBytes,
+              completedBytes > 0 else {
+            return
+        }
+        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+            .modelDirectory(for: modelID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let snapshot = InstallProgressSnapshot(
+            completedBytes: completedBytes,
+            totalBytes: progress.totalBytes,
+            fractionCompleted: progress.fractionCompleted,
+            isEstimated: progress.isEstimated
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: progressSnapshotURL(in: directory), options: [.atomic])
+    }
+
+    private func removeProgressSnapshot(for modelID: ModelID) throws {
+        guard let artifactRootDirectory else {
+            return
+        }
+        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+            .modelDirectory(for: modelID)
+        let url = progressSnapshotURL(in: directory)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private func progressSnapshotDownloadedBytes(in directory: URL) -> Int64 {
+        progressSnapshot(in: directory).map { max($0.completedBytes, 0) } ?? 0
+    }
+
+    private func progressSnapshot(in directory: URL) -> InstallProgressSnapshot? {
+        let url = progressSnapshotURL(in: directory)
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(InstallProgressSnapshot.self, from: data)
+    }
+
+    private func progressSnapshotURL(in directory: URL) -> URL {
+        directory.appendingPathComponent(".llmkit-install-progress.json")
+    }
+
+    private static func resumeCacheDownloadedBytes(at fileURL: URL) -> Int64 {
+        guard
+            let data = try? Data(contentsOf: fileURL),
+            let propertyList = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        else {
+            return 0
+        }
+        return resumeCacheDownloadedBytes(in: propertyList)
+    }
+
+    private static func resumeCacheDownloadedBytes(in value: Any) -> Int64 {
+        if let number = value as? NSNumber {
+            return number.int64Value
+        }
+        if let string = value as? String {
+            return Int64(string) ?? Self.byteRangeUpperBound(in: string)
+        }
+        if let dictionary = value as? [String: Any] {
+            var best: Int64 = 0
+            for (key, nestedValue) in dictionary {
+                if key.localizedCaseInsensitiveContains("BytesReceived") ||
+                    key.localizedCaseInsensitiveContains("BytesWritten") {
+                    best = max(best, resumeCacheDownloadedBytes(in: nestedValue))
+                }
+            }
+            return best
+        }
+        if let array = value as? [Any] {
+            return array.map(resumeCacheDownloadedBytes(in:)).max() ?? 0
+        }
+        return 0
+    }
+
+    private static func byteRangeUpperBound(in string: String) -> Int64 {
+        let numbers = string
+            .split { !$0.isNumber }
+            .compactMap { Int64($0) }
+        return numbers.max() ?? 0
+    }
+
+    private static func isUserFacingArtifactFile(_ fileURL: URL) -> Bool {
+        let name = fileURL.lastPathComponent
+        if name.hasPrefix(".") || name.hasSuffix(".resumeData") {
+            return false
+        }
+        return true
     }
 
     private func diskUsageSnapshot() throws -> (availableBytes: Int64?, capacityBytes: Int64?) {
@@ -737,6 +834,13 @@ private struct DownloadPreflightResult: Sendable {
     let totalExpectedBytes: DownloadExpectedBytes?
     let requiredDownloadBytes: Int64?
     let verifiedExistingBytes: [String: Int64]
+}
+
+private struct InstallProgressSnapshot: Codable, Sendable {
+    let completedBytes: Int64
+    let totalBytes: Int64?
+    let fractionCompleted: Double
+    let isEstimated: Bool
 }
 
 private final class DownloadProgressTracker: @unchecked Sendable {

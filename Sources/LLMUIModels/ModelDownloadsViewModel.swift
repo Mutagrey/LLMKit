@@ -65,6 +65,7 @@ public final class ModelDownloadsViewModel {
             replaceModels(try await lifecycleService.installedModels())
             try await refreshInstallStates()
             try await refreshStorageUsage()
+            reconcilePartialArtifactProgress()
         } catch {
             lastErrorMessage = Self.presentationMessage(for: error)
         }
@@ -130,6 +131,7 @@ public final class ModelDownloadsViewModel {
         }
         cancelingModelIDs.remove(modelID)
         try? await refreshStorageUsage()
+        reconcilePartialArtifactProgress()
     }
 
     private func postCancellationState(for modelID: ModelID) async -> InstallState? {
@@ -177,7 +179,7 @@ public final class ModelDownloadsViewModel {
     }
 
     public func clearPartialArtifacts() async {
-        let partialModelIDs = storageUsage.modelBytes.keys.filter { !isInstalled($0) }
+        let partialModelIDs = self.partialModelIDs.filter { partialBytes(for: $0) > 0 }
         for modelID in partialModelIDs {
             await delete(modelID)
         }
@@ -197,16 +199,10 @@ public final class ModelDownloadsViewModel {
         case .notInstalled:
             return "Not installed"
         case .downloading(let progress):
-            let percentTitle = DownloadProgressPresentation.percentTitle(
-                for: progress,
-                isEstimated: installProgress[modelID]?.isEstimated == true
-            )
+            let percentTitle = DownloadProgressPresentation.percentTitle(for: progress)
             return "Downloading \(percentTitle)"
         case .paused(let progress):
-            let percentTitle = DownloadProgressPresentation.percentTitle(
-                for: progress,
-                isEstimated: installProgress[modelID]?.isEstimated == true
-            )
+            let percentTitle = DownloadProgressPresentation.percentTitle(for: progress)
             return "Paused \(percentTitle)"
         case .downloaded:
             return "Downloaded"
@@ -255,7 +251,7 @@ public final class ModelDownloadsViewModel {
         case .failed, .evicted:
             return true
         case .notInstalled, .downloading, .paused, .downloaded, .verifying, .compiling, .ready, .warming, .active, nil:
-            return (storageBytes(for: modelID) ?? 0) > 0
+            return partialBytes(for: modelID) > 0
         }
     }
 
@@ -271,7 +267,9 @@ public final class ModelDownloadsViewModel {
     }
 
     public var partialStorageBytes: Int64 {
-        max(storageUsage.totalBytes - installedStorageBytes, 0)
+        partialModelIDs
+            .map { partialBytes(for: $0) }
+            .reduce(0, +)
     }
 
     public func isInstalled(_ modelID: ModelID) -> Bool {
@@ -294,6 +292,17 @@ public final class ModelDownloadsViewModel {
         case .notInstalled, .paused, .ready, .warming, .active, .failed, .evicted, nil:
             return false
         }
+    }
+
+    private var partialModelIDs: Set<ModelID> {
+        Set(storageUsage.modelBytes.keys)
+            .union(installProgress.keys)
+            .union(installStates.keys)
+            .filter { !isInstalled($0) }
+    }
+
+    private func partialBytes(for modelID: ModelID) -> Int64 {
+        max(storageUsage.modelBytes[modelID] ?? 0, installProgress[modelID]?.completedBytes ?? 0)
     }
 
     private func upsert(_ record: InstalledModelRecord) {
@@ -337,6 +346,7 @@ public final class ModelDownloadsViewModel {
                 installProgress[descriptor.id] = nil
             }
             try? await refreshStorageUsage()
+            reconcilePartialArtifactProgress()
         } else {
             let message = Self.presentationMessage(for: error)
             installStates[descriptor.id] = .failed(message)
@@ -396,6 +406,75 @@ public final class ModelDownloadsViewModel {
             availableBytes: baseUsage.availableBytes,
             capacityBytes: baseUsage.capacityBytes
         )
+    }
+
+    private func reconcilePartialArtifactProgress() {
+        guard maintenanceService != nil else {
+            return
+        }
+
+        for descriptor in descriptors {
+            let modelID = descriptor.id
+            let storedBytes = storageUsage.modelBytes[modelID] ?? 0
+            let state = installStates[modelID] ?? .notInstalled
+
+            switch state {
+            case .notInstalled where storedBytes > 0:
+                guard let detail = inferredProgressDetail(for: descriptor, progress: nil, storedBytes: storedBytes) else {
+                    continue
+                }
+                installStates[modelID] = .paused(progress: detail.fractionCompleted)
+                installProgress[modelID] = detail
+            case .downloading(let progress), .paused(let progress):
+                if let detail = inferredProgressDetail(for: descriptor, progress: progress, storedBytes: storedBytes) {
+                    installProgress[modelID] = detail
+                }
+            case .notInstalled, .downloaded, .verifying, .compiling, .ready, .warming, .active, .failed, .evicted:
+                break
+            }
+        }
+    }
+
+    private func inferredProgressDetail(
+        for descriptor: ModelDescriptor,
+        progress: Double?,
+        storedBytes: Int64
+    ) -> ModelInstallProgress? {
+        guard let expected = expectedDownloadSize(for: descriptor), expected.bytes > 0 else {
+            return nil
+        }
+
+        let stateFraction = progress.map(DownloadProgressPresentation.normalizedFraction)
+        let storedFraction = Double(storedBytes) / Double(expected.bytes)
+        let fraction = min(max(stateFraction ?? storedFraction, storedFraction, 0), 1)
+        guard fraction > 0 else {
+            return nil
+        }
+
+        let inferredBytes = Int64((fraction * Double(expected.bytes)).rounded())
+        let completedBytes = min(max(storedBytes, inferredBytes), expected.bytes)
+        return ModelInstallProgress(
+            fractionCompleted: fraction,
+            completedBytes: completedBytes,
+            totalBytes: expected.bytes,
+            isEstimated: expected.isEstimated
+        )
+    }
+
+    private func expectedDownloadSize(for descriptor: ModelDescriptor) -> (bytes: Int64, isEstimated: Bool)? {
+        if let artifacts = descriptor.source?.artifacts, !artifacts.isEmpty {
+            let knownBytes = artifacts.compactMap(\.byteCount)
+            let totalBytes = knownBytes.reduce(Int64(0), +)
+            if knownBytes.count == artifacts.count, totalBytes > 0 {
+                return (totalBytes, false)
+            }
+        }
+
+        if let estimatedDownloadSizeBytes = descriptor.estimatedDownloadSizeBytes, estimatedDownloadSizeBytes > 0 {
+            return (estimatedDownloadSizeBytes, true)
+        }
+
+        return nil
     }
 
     private static func presentationMessage(for error: Error) -> String {

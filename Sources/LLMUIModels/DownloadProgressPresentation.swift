@@ -3,11 +3,11 @@ enum DownloadProgressPresentation {
         guard value.isFinite else {
             return 0
         }
-        let fraction = value >= 2 && value <= 100 ? value / 100 : value
+        let fraction = value > 1 && value <= 100 ? value / 100 : value
         return min(max(fraction, 0), 1)
     }
 
-    static func percentTitle(for value: Double, isEstimated: Bool) -> String {
+    static func percentTitle(for value: Double) -> String {
         let percent = Int((normalizedFraction(value) * 100).rounded())
         return "\(percent)%"
     }

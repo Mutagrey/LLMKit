@@ -67,5 +67,8 @@ instead of always downloading the full manifest again.
 `ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage
 summaries. When initialized with a `recordStore`, it lazily restores records before answering state, install, delete, or storage
 queries so app startup does not require async container construction.
-Storage summaries include installed bytes, partial/resume bytes left in model artifact directories, and optional disk
-available/capacity totals for compact host UI summaries.
+Storage summaries include installed record bytes and disk capacity data. Descriptor-scoped `storageUsage(for:)` reports
+partial artifact bytes for a known `ModelID`; while downloading, the coordinator persists a small hidden progress snapshot
+with bytes received so progress and partial totals survive app restart even when `URLSession` keeps the partial transfer in
+temporary storage. When only `URLSession` resume cache exists, it uses the cache's recorded bytes-received value, not the
+sidecar file size, so hosts do not present metadata KB values as downloaded model size.

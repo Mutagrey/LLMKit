@@ -196,6 +196,32 @@ private struct ProgressReportingArtifactDownloader: ProgressReportingModelArtifa
     }
 }
 
+private struct FailingProgressReportingArtifactDownloader: ProgressReportingModelArtifactDownloading {
+    let expectedByteCount: Int64
+    let checkpoint: Int64
+
+    func download(_ artifact: ModelArtifact, to destination: URL) async throws -> ModelArtifactDownloadResult {
+        try await download(artifact, to: destination) { _ in }
+    }
+
+    func download(
+        _ artifact: ModelArtifact,
+        to destination: URL,
+        onProgress: @escaping @Sendable (ModelArtifactDownloadProgress) async -> Void
+    ) async throws -> ModelArtifactDownloadResult {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        await onProgress(ModelArtifactDownloadProgress(
+            artifactID: artifact.id,
+            bytesWritten: checkpoint,
+            expectedTotalBytes: expectedByteCount
+        ))
+        throw LLMError.cancelled
+    }
+}
+
 private actor DownloadedArtifactLog {
     private(set) var artifactIDs: [String] = []
     private(set) var startedArtifacts: [String] = []
@@ -389,6 +415,49 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(progressValues.contains(0.2))
     #expect(progressValues.contains(0.55))
     #expect(progressValues.contains(1))
+}
+
+@Test func modelInstallCoordinatorRestoresPartialBytesFromProgressSnapshot() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-progress-snapshot",
+        displayName: "Qwen Progress Snapshot",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [
+                ModelArtifact(
+                    id: "weights",
+                    url: URL(string: "https://example.com/model.safetensors")!,
+                    relativePath: "model.safetensors",
+                    byteCount: 1_000
+                )
+            ]
+        )
+    )
+    let coordinator = ModelInstallCoordinator(
+        artifactRootDirectory: rootDirectory,
+        artifactDownloader: FailingProgressReportingArtifactDownloader(
+            expectedByteCount: 1_000,
+            checkpoint: 250
+        )
+    )
+
+    do {
+        for try await _ in coordinator.install(descriptor) {}
+        Issue.record("Expected cancelled install.")
+    } catch let error as LLMError {
+        #expect(error == .cancelled)
+    }
+
+    let restoredCoordinator = ModelInstallCoordinator(artifactRootDirectory: rootDirectory)
+
+    #expect(try await restoredCoordinator.storageUsage().totalBytes == 0)
+    #expect(try await restoredCoordinator.storageUsage(for: descriptor.id) == 250)
 }
 
 @Test func modelInstallCoordinatorDoesNotExposeArtifactCountsAsBytes() async throws {
@@ -941,12 +1010,96 @@ private struct PartialCacheArtifactDownloader: ModelArtifactDownloading, ModelAr
     #expect(await log.cleanedSnapshot().isEmpty)
 
     let usage = try await coordinator.storageUsage()
-    #expect(usage.totalBytes == Int64(Data("resume".utf8).count))
+    #expect(usage.totalBytes == 0)
 
     try await coordinator.deleteInstalledModel(descriptor.id)
 
     #expect(!FileManager.default.fileExists(atPath: resumeDataURL.path))
     #expect(try await coordinator.storageUsage().totalBytes == 0)
+}
+
+@Test func modelInstallCoordinatorStorageUsageIgnoresResumeCacheAndSafeNameAliases() async throws {
+    let partialData = Data("partial-weights".utf8)
+    let resumeData = Data("resume-token".utf8)
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors",
+        byteCount: 128
+    )
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-partial",
+        displayName: "Qwen Partial",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [artifact]
+        )
+    )
+    let resolver = ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+    let artifactURL = try resolver.artifactURL(modelID: descriptor.id, artifact: artifact)
+    let resumeDataURL = artifactURL
+        .deletingLastPathComponent()
+        .appendingPathComponent(".model.safetensors.resumeData")
+    try FileManager.default.createDirectory(
+        at: artifactURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try partialData.write(to: artifactURL, options: [.atomic])
+    try resumeData.write(to: resumeDataURL, options: [.atomic])
+
+    let coordinator = ModelInstallCoordinator(artifactRootDirectory: rootDirectory)
+
+    #expect(try await coordinator.storageUsage().totalBytes == 0)
+    #expect(try await coordinator.storageUsage(for: descriptor.id) == Int64(partialData.count))
+}
+
+@Test func modelInstallCoordinatorReadsDownloadedBytesFromResumeCache() async throws {
+    let rootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LLMKitTests-\(UUID().uuidString)", isDirectory: true)
+    let artifact = ModelArtifact(
+        id: "weights",
+        url: URL(string: "https://example.com/model.safetensors")!,
+        relativePath: "model.safetensors",
+        byteCount: 1_500_000_000
+    )
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-resume-only",
+        displayName: "Qwen Resume Only",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [.chat],
+        source: ModelSource(
+            provider: .huggingFace,
+            repository: "example/model",
+            artifacts: [artifact]
+        )
+    )
+    let artifactURL = try ModelArtifactLocationResolver(rootDirectory: rootDirectory)
+        .artifactURL(modelID: descriptor.id, artifact: artifact)
+    let resumeDataURL = artifactURL
+        .deletingLastPathComponent()
+        .appendingPathComponent(".model.safetensors.resumeData")
+    let resumeData = try PropertyListSerialization.data(
+        fromPropertyList: ["NSURLSessionResumeBytesReceived": 150_000_000],
+        format: .binary,
+        options: 0
+    )
+    try FileManager.default.createDirectory(
+        at: resumeDataURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try resumeData.write(to: resumeDataURL, options: [.atomic])
+
+    let coordinator = ModelInstallCoordinator(artifactRootDirectory: rootDirectory)
+
+    #expect(try await coordinator.storageUsage().totalBytes == 0)
+    #expect(try await coordinator.storageUsage(for: descriptor.id) == 150_000_000)
 }
 
 @Test func modelInstallCoordinatorFailsVerificationWhenArtifactChecksumMismatches() async throws {

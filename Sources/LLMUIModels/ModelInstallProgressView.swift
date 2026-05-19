@@ -19,6 +19,8 @@ public struct ModelInstallProgressView: View {
                 Text(transferTitle ?? statusTitle)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText(value: transferTransitionValue))
+                    .animation(.easeInOut(duration: 0.2), value: transferTransitionValue)
                 Spacer(minLength: 8)
                 Text(progressTitle)
                     .font(.caption.monospacedDigit())
@@ -53,6 +55,10 @@ public struct ModelInstallProgressView: View {
         Double(progressValue)
     }
 
+    private var transferTransitionValue: Double {
+        Double(transferCompletedBytes ?? 0)
+    }
+
     private var statusTitle: String {
         state.llmUIModelsProgressStatusTitle
     }
@@ -60,10 +66,7 @@ public struct ModelInstallProgressView: View {
     private var progressTitle: String {
         switch state {
         case .downloading(let progress), .paused(let progress):
-            return DownloadProgressPresentation.percentTitle(
-                for: progress,
-                isEstimated: progressDetail?.isEstimated == true
-            )
+            return DownloadProgressPresentation.percentTitle(for: progress)
         case .notInstalled:
             return "0%"
         case .evicted:
@@ -79,18 +82,30 @@ public struct ModelInstallProgressView: View {
         guard isTransferState else {
             return nil
         }
-        if let progressDetail,
-           let completedBytes = progressDetail.completedBytes,
-           let totalBytes = progressDetail.totalBytes,
-           totalBytes > 0 {
-            return "\(byteCountTitle(for: completedBytes)) of \(byteCountTitle(for: totalBytes))"
-        }
-        guard let estimatedTotalBytes, estimatedTotalBytes > 0 else {
+        guard let totalBytes = transferTotalBytes, totalBytes > 0 else {
             return nil
         }
-        let progress = progressValue
-        let writtenBytes = Int64((Double(progress) * Double(estimatedTotalBytes)).rounded())
-        return "\(byteCountTitle(for: writtenBytes)) of \(byteCountTitle(for: estimatedTotalBytes))"
+        let completedBytes = transferCompletedBytes ?? 0
+        return "\(byteCountTitle(for: completedBytes)) of \(byteCountTitle(for: totalBytes))"
+    }
+
+    private var transferCompletedBytes: Int64? {
+        guard let totalBytes = transferTotalBytes else {
+            return progressDetail?.completedBytes
+        }
+        let progressBytes = Int64((Double(progressValue) * Double(totalBytes)).rounded())
+        let reportedBytes = progressDetail?.completedBytes ?? 0
+        return min(max(progressBytes, reportedBytes), totalBytes)
+    }
+
+    private var transferTotalBytes: Int64? {
+        if let totalBytes = progressDetail?.totalBytes, totalBytes > 0 {
+            return totalBytes
+        }
+        if let estimatedTotalBytes, estimatedTotalBytes > 0 {
+            return estimatedTotalBytes
+        }
+        return nil
     }
 
     private var statusColor: Color {

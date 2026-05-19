@@ -21,6 +21,10 @@ lifecycle layer exposes it. Raw `NSError` payloads, resume data, and presigned d
 When the lifecycle service also conforms to `ModelLifecycleMaintenanceService`, the view model exposes installed storage totals
 and delete/clear actions without owning file paths or persistence details. Storage totals include configured descriptors with
 partial artifacts, so failed downloads can still expose cleanup affordances.
+When lifecycle state or storage indicates a partial download, refresh also reconstructs compact progress presentation from the
+descriptor's known or estimated download size so rows can show progress immediately after reopening.
+Partial storage totals include both descriptor-scoped artifact bytes and lifecycle progress bytes, using the larger value per
+model so resume-only downloads still contribute to the visible partial total without double-counting sidecar metadata.
 `ModelDownloadsViewModel.beginInstall(_:)` and `cancelInstall(_:)` let hosts drive install lifecycle from UI without
 holding task handles in view code. Cancel waits for lifecycle cancellation handling before allowing another install for the
 same model; under the default lifecycle policy, cancellation surfaces as `.paused(progress:)` while preserving hidden resume

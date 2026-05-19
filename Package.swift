@@ -116,7 +116,8 @@ let package = Package(
             name: "LLMKitUI",
             targets: [
                 "LLMUIChat",
-                "LLMUIDownloads"
+                "LLMUIDownloads",
+                "LLMUIObservability"
             ]
         ),
         .library(
@@ -140,7 +141,8 @@ let package = Package(
                 "LLMBackendLlamaCpp",
                 "LLMBackendRemote",
                 "LLMUIChat",
-                "LLMUIDownloads"
+                "LLMUIDownloads",
+                "LLMUIObservability"
             ]
         ),
     ],
@@ -317,7 +319,8 @@ let package = Package(
                 "LLMOrchestrator",
                 "LLMSessions",
                 "LLMTools",
-                "LLMObservability"
+                "LLMObservability",
+                "LLMUIObservability"
             ],
             exclude: ["Docs"]
         ),
@@ -327,6 +330,14 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMModelLifecycle",
+                "LLMObservability"
+            ],
+            exclude: ["Docs"]
+        ),
+        .target(
+            name: "LLMUIObservability",
+            dependencies: [
+                "LLMCore",
                 "LLMObservability"
             ],
             exclude: ["Docs"]
@@ -406,6 +417,10 @@ let package = Package(
         .testTarget(
             name: "LLMUIDownloadsTests",
             dependencies: ["LLMUIDownloads"]
+        ),
+        .testTarget(
+            name: "LLMUIObservabilityTests",
+            dependencies: ["LLMUIObservability"]
         ),
         .testTarget(
             name: "LLMArchitectureTests",

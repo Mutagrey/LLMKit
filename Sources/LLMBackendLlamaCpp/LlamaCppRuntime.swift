@@ -11,7 +11,7 @@ protocol LlamaCppRuntime: Sendable {
     func unloadAll() async
     func resetChatSession(modelID: ModelID, sessionID: SessionID) async
     func resetChatSessions(sessionID: SessionID) async
-    func stream(prompt: String, model descriptor: ModelDescriptor, maxTokens: Int?) async throws -> AsyncThrowingStream<String, Error>
+    func stream(prompt: String, model descriptor: ModelDescriptor, maxTokens: Int?) async throws -> AsyncThrowingStream<LlamaCppGeneratedText, Error>
 }
 
 actor LlamaCppLocalRuntime: LlamaCppRuntime {
@@ -79,7 +79,7 @@ actor LlamaCppLocalRuntime: LlamaCppRuntime {
         prompt: String,
         model descriptor: ModelDescriptor,
         maxTokens: Int?
-    ) async throws -> AsyncThrowingStream<String, Error> {
+    ) async throws -> AsyncThrowingStream<LlamaCppGeneratedText, Error> {
         try await loadModel(descriptor)
         guard let context = contexts[descriptor.id] else {
             throw LLMError.unavailable

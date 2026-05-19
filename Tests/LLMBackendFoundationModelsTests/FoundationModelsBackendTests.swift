@@ -102,6 +102,30 @@ import Testing
     #expect(completedText == "hello")
 }
 
+@Test func foundationModelsGenerationRecordsLatencyMetricsWithoutTokensPerSecondOrContent() async throws {
+    let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.completion, .streaming])
+    let sink = TestMetricsSink()
+    let backend = FoundationModelsBackend(
+        runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true),
+        runtime: FakeFoundationModelsRuntime(generationDeltas: ["private output"]),
+        metricsSink: sink
+    )
+
+    for try await _ in backend.generate(BackendGenerationRequest(
+        request: GenerationRequest(prompt: "private prompt"),
+        model: descriptor
+    )) {}
+
+    let event = try #require(await sink.snapshot().last)
+    let metadataText = (Array(event.metadata.keys) + Array(event.metadata.values)).joined(separator: " ")
+
+    #expect(event.name == "foundationModels.generation.completed")
+    #expect(event.metadata["runtime.generation_time_ms"] != nil)
+    #expect(event.metadata["runtime.tokens_per_second"] == nil)
+    #expect(!metadataText.contains("private prompt"))
+    #expect(!metadataText.contains("private output"))
+}
+
 @Test func foundationModelsChatFailsWhenRuntimeUnavailable() async throws {
     let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.chat])
     let backend = FoundationModelsBackend(runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: false, reason: "not ready"))
@@ -145,6 +169,30 @@ import Testing
     #expect(deltas == ["he", "llo"])
     #expect(completedMessage?.role == .assistant)
     #expect(completedMessage?.content.text == "hello")
+}
+
+@Test func foundationModelsChatRecordsLatencyMetricsWithoutTokensPerSecondOrContent() async throws {
+    let descriptor = ModelDescriptor(id: "foundation", displayName: "Foundation", family: .appleFoundation, backend: .foundationModels, capabilities: [.chat, .streaming])
+    let sink = TestMetricsSink()
+    let backend = FoundationModelsBackend(
+        runtimeAvailability: FoundationModelsRuntimeAvailability(isAvailable: true),
+        runtime: FakeFoundationModelsRuntime(chatDeltas: ["private answer"]),
+        metricsSink: sink
+    )
+    let request = ChatRequest(messages: [
+        ChatMessage(role: .user, content: MessageContent(text: "private prompt"))
+    ])
+
+    for try await _ in backend.chat(BackendChatRequest(request: request, model: descriptor)) {}
+
+    let event = try #require(await sink.snapshot().last)
+    let metadataText = (Array(event.metadata.keys) + Array(event.metadata.values)).joined(separator: " ")
+
+    #expect(event.name == "foundationModels.chat.completed")
+    #expect(event.metadata["runtime.generation_time_ms"] != nil)
+    #expect(event.metadata["runtime.tokens_per_second"] == nil)
+    #expect(!metadataText.contains("private prompt"))
+    #expect(!metadataText.contains("private answer"))
 }
 
 @Test func foundationModelsStreamDeltaReducerConvertsCumulativeSnapshotsToDeltas() {
@@ -220,5 +268,17 @@ private struct FakeFoundationModelsRuntime: FoundationModelsRuntime {
             }
             continuation.finish()
         }
+    }
+}
+
+private actor TestMetricsSink: MetricsSink {
+    private var events: [TelemetryEvent] = []
+
+    func record(_ event: TelemetryEvent) async {
+        events.append(event)
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        events
     }
 }

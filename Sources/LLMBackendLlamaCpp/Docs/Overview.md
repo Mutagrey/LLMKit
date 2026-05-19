@@ -12,3 +12,7 @@ needs runtime diagnostics before it should be reported as proven.
 
 KV cache policy is metadata-only in this pass. The backend reports requested and effective policies, but does not enable
 experimental q8/q4 cache types until native parameter wiring and device validation are added.
+
+When configured with a `MetricsSink`, the backend records numeric load and generation runtime metrics only. Throughput is
+calculated from the native sampled-token count, not from streamed text chunks. Telemetry metadata must not include prompt
+text, generated text, chat message content, or tool payloads.

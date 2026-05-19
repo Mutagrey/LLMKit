@@ -89,6 +89,34 @@ import Testing
     }
 }
 
+@Test func mlxBackendRecordsRuntimeMetricsWithTokensPerSecondWithoutPromptContent() async throws {
+    let descriptor = ModelDescriptor(id: "mlx", displayName: "MLX", family: .qwen, backend: .mlx, capabilities: [.completion])
+    let sink = TestMetricsSink()
+    let backend = MLXBackend(
+        runtime: FakeMLXRuntime(events: [
+            .chunk("assistant private output"),
+            .info(generationTimeMilliseconds: 20, tokensPerSecond: 42.5)
+        ]),
+        metricsSink: sink
+    )
+
+    for try await _ in backend.generate(BackendGenerationRequest(
+        request: GenerationRequest(prompt: "private prompt"),
+        model: descriptor
+    )) {}
+
+    let events = await sink.snapshot()
+    let metadataText = events.flatMap { event in
+        Array(event.metadata.keys) + Array(event.metadata.values)
+    }.joined(separator: " ")
+    let generationEvent = try #require(events.last)
+
+    #expect(events.map(\.name) == ["mlx.model_load.completed", "mlx.generation.completed"])
+    #expect(generationEvent.metadata["runtime.tokens_per_second"] == "42.5")
+    #expect(!metadataText.contains("private prompt"))
+    #expect(!metadataText.contains("assistant private output"))
+}
+
 @Test func mlxBackendReportsAvailableWhenModelDirectoryExists() async throws {
     let rootDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("LLMKitMLXTests-\(UUID().uuidString)", isDirectory: true)
@@ -137,4 +165,71 @@ import Testing
     #expect(prompt.history.first?.role.rawValue == "system")
     #expect(prompt.prompt.role.rawValue == "user")
     #expect(prompt.prompt.content == "latest")
+}
+
+private actor FakeMLXRuntime: MLXRuntime {
+    private let events: [MLXRuntimeGenerationEvent]
+
+    init(events: [MLXRuntimeGenerationEvent] = [.chunk("ok")]) {
+        self.events = events
+    }
+
+    func hasLocalFiles(for descriptor: ModelDescriptor) -> Bool {
+        true
+    }
+
+    func loadModel(_ descriptor: ModelDescriptor) async throws {}
+
+    func unload(modelID: ModelID) async {}
+
+    func unloadAll() async {}
+
+    func updateMemoryPolicy(_ memoryPolicy: MLXMemoryPolicy) async {}
+
+    func resetChatSession(modelID: ModelID, sessionID: SessionID) async {}
+
+    func resetChatSessions(sessionID: SessionID) async {}
+
+    func stream(
+        prompt: String,
+        model descriptor: ModelDescriptor,
+        maxTokens: Int?
+    ) async throws -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
+        stream()
+    }
+
+    func stream(
+        messages: [ChatMessage],
+        sessionID: SessionID?,
+        model descriptor: ModelDescriptor,
+        maxTokens: Int?
+    ) async throws -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
+        stream()
+    }
+
+    func recordChatCompletion(modelID: ModelID, sessionID: SessionID?, requestMessageCount: Int) async {}
+
+    func finishGenerationCleanup() async {}
+
+    private func stream() -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
+        let events = self.events
+        return AsyncThrowingStream { continuation in
+            for event in events {
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+    }
+}
+
+private actor TestMetricsSink: MetricsSink {
+    private var events: [TelemetryEvent] = []
+
+    func record(_ event: TelemetryEvent) async {
+        events.append(event)
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        events
+    }
 }

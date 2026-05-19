@@ -17,3 +17,7 @@ Cached MLX `ChatSession` values are reset when a chat attempt fails or is cancel
 For iPhone-class apps, `MLXMemoryPolicy.strictForMemoryConstrainedApps` is the recommended starting policy. It caps the
 MLX memory cache, clears cache after generation and unload, disables retained chat sessions, limits loaded models to one,
 and keeps KV settings in an experimental memory-saving profile.
+
+When configured with a `MetricsSink`, the backend records numeric load and generation runtime metrics only. `tokensPerSecond`
+comes from MLX `Generation.info`; telemetry metadata must not include prompt text, generated text, chat message content,
+or tool payloads.

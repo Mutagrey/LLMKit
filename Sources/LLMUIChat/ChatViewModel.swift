@@ -27,6 +27,9 @@ public final class ChatViewModel {
     private let beforeSend: (@MainActor @Sendable () async throws -> Void)?
 
     @ObservationIgnored
+    private let runtimeMetricsProvider: (@Sendable () async -> [TelemetryEvent])?
+
+    @ObservationIgnored
     private var sendTask: Task<Void, Never>?
 
     public init(
@@ -35,15 +38,17 @@ public final class ChatViewModel {
         requirements: ExecutionRequirements = ExecutionRequirements(requiredCapabilities: [.chat]),
         sessionID: SessionID? = nil,
         onMessageAppended: (@MainActor @Sendable (ChatMessage) -> Void)? = nil,
-        beforeSend: (@MainActor @Sendable () async throws -> Void)? = nil
+        beforeSend: (@MainActor @Sendable () async throws -> Void)? = nil,
+        runtimeMetricsProvider: (@Sendable () async -> [TelemetryEvent])? = nil
     ) {
         self.messages = messages
-        self.transcriptItems = messages.map(ChatTranscriptItem.message)
+        self.transcriptItems = messages.map { ChatTranscriptItem.message($0) }
         self.chatService = chatService
         self.requirements = requirements
         self.sessionID = sessionID
         self.onMessageAppended = onMessageAppended
         self.beforeSend = beforeSend
+        self.runtimeMetricsProvider = runtimeMetricsProvider
         self.isStreaming = false
         self.streamingText = ""
         self.lastError = nil
@@ -104,6 +109,7 @@ public final class ChatViewModel {
             isStreaming = true
             streamingText = ""
             lastError = nil
+            let initialRuntimeMetricIDs = await currentRuntimeMetricIDs()
 
             var accumulator = StreamedTextAccumulator()
             let request = ChatRequest(messages: messages, requirements: requirements, sessionID: sessionID)
@@ -114,7 +120,10 @@ public final class ChatViewModel {
                     accumulator.append(text)
                     streamingText = accumulator.text
                 case .completed(let result):
-                    appendMessage(result.message)
+                    appendMessage(
+                        result.message,
+                        runtimeMetrics: await runtimeMetrics(after: initialRuntimeMetricIDs)
+                    )
                     streamingText = ""
                 case .failed(let error):
                     throw error
@@ -128,7 +137,10 @@ public final class ChatViewModel {
             }
 
             if !accumulator.isEmpty, messages.last?.role != .assistant {
-                appendMessage(ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)))
+                appendMessage(
+                    ChatMessage(role: .assistant, content: MessageContent(text: accumulator.text)),
+                    runtimeMetrics: await runtimeMetrics(after: initialRuntimeMetricIDs)
+                )
             }
         } catch is CancellationError {
             lastError = nil
@@ -143,10 +155,24 @@ public final class ChatViewModel {
         sendTask = nil
     }
 
-    private func appendMessage(_ message: ChatMessage) {
+    private func appendMessage(_ message: ChatMessage, runtimeMetrics: [TelemetryEvent] = []) {
         messages.append(message)
-        transcriptItems.append(.message(message))
+        transcriptItems.append(.message(message, runtimeMetrics: runtimeMetrics))
         onMessageAppended?(message)
+    }
+
+    private func currentRuntimeMetricIDs() async -> Set<TelemetryEvent.ID> {
+        guard let runtimeMetricsProvider else {
+            return []
+        }
+        return Set(await runtimeMetricsProvider().map(\.id))
+    }
+
+    private func runtimeMetrics(after initialIDs: Set<TelemetryEvent.ID>) async -> [TelemetryEvent] {
+        guard let runtimeMetricsProvider else {
+            return []
+        }
+        return await runtimeMetricsProvider().filter { !initialIDs.contains($0.id) }
     }
 
     private func upsertToolCall(_ invocation: ToolInvocation) {

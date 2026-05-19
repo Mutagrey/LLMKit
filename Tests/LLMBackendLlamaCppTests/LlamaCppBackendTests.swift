@@ -95,6 +95,58 @@ import Testing
     }
 }
 
+@Test func llamaCppBackendRecordsLoadAndGenerationRuntimeMetricsWithoutPromptContent() async throws {
+    let descriptor = ggufDescriptor()
+    let sink = TestMetricsSink()
+    let backend = LlamaCppBackend(
+        runtime: FakeLlamaCppRuntime(hasFiles: true, streamDeltas: ["assistant private output"]),
+        metricsSink: sink
+    )
+
+    for try await _ in backend.generate(BackendGenerationRequest(
+        request: GenerationRequest(prompt: "private prompt"),
+        model: descriptor
+    )) {}
+
+    let events = await sink.snapshot()
+    let metadataText = events.flatMap { event in
+        Array(event.metadata.keys) + Array(event.metadata.values)
+    }.joined(separator: " ")
+
+    #expect(events.map(\.name) == ["llamaCpp.model_load.completed", "llamaCpp.generation.completed"])
+    #expect(!metadataText.contains("private prompt"))
+    #expect(!metadataText.contains("assistant private output"))
+    #expect(events.allSatisfy { event in
+        event.metadata.values.allSatisfy { Int($0) != nil || Double($0) != nil }
+    })
+}
+
+@Test func llamaCppBackendRecordsTokensPerSecondOnlyFromGeneratedTokenCount() async throws {
+    let descriptor = ggufDescriptor()
+    let sink = TestMetricsSink()
+    let backend = LlamaCppBackend(
+        runtime: FakeLlamaCppRuntime(
+            hasFiles: true,
+            streamEvents: [
+                LlamaCppGeneratedText(text: "a", generatedTokenCount: 1),
+                LlamaCppGeneratedText(text: "b", generatedTokenCount: 2)
+            ],
+            streamDelayNanoseconds: 2_000_000
+        ),
+        metricsSink: sink
+    )
+
+    for try await _ in backend.generate(BackendGenerationRequest(
+        request: GenerationRequest(prompt: "private prompt"),
+        model: descriptor
+    )) {}
+
+    let generationEvent = try #require(await sink.snapshot().last)
+
+    #expect(generationEvent.metadata["runtime.tokens_per_second"] != nil)
+    #expect(generationEvent.metadata.keys.contains("runtime.tokens_per_second"))
+}
+
 @Test func llamaCppPromptFormatterUsesLlamaChatHeaders() throws {
     let prompt = try LlamaCppPromptFormatter().prompt(from: [
         ChatMessage(role: .system, content: MessageContent(text: "system")),
@@ -200,12 +252,17 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
     private let hasFiles: Bool
     private let nativeAvailable: Bool
     private let streamError: LLMError?
+    private let streamEvents: [LlamaCppGeneratedText]
+    private let streamDelayNanoseconds: UInt64?
     private let report: LlamaCppRuntimeReport
 
     init(
         hasFiles: Bool,
         nativeAvailable: Bool = true,
         streamError: LLMError? = nil,
+        streamDeltas: [String] = ["ok"],
+        streamEvents: [LlamaCppGeneratedText]? = nil,
+        streamDelayNanoseconds: UInt64? = nil,
         report: LlamaCppRuntimeReport = LlamaCppRuntimeReport.resolved(
             configuration: .default,
             supportsMMap: true,
@@ -217,6 +274,10 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
         self.hasFiles = hasFiles
         self.nativeAvailable = nativeAvailable
         self.streamError = streamError
+        self.streamEvents = streamEvents ?? streamDeltas.enumerated().map { index, delta in
+            LlamaCppGeneratedText(text: delta, generatedTokenCount: index + 1)
+        }
+        self.streamDelayNanoseconds = streamDelayNanoseconds
         self.report = report
     }
 
@@ -246,14 +307,35 @@ private actor FakeLlamaCppRuntime: LlamaCppRuntime {
         prompt: String,
         model descriptor: ModelDescriptor,
         maxTokens: Int?
-    ) async throws -> AsyncThrowingStream<String, Error> {
+    ) async throws -> AsyncThrowingStream<LlamaCppGeneratedText, Error> {
         if let streamError {
             throw streamError
         }
+        let streamEvents = self.streamEvents
+        let streamDelayNanoseconds = self.streamDelayNanoseconds
         return AsyncThrowingStream { continuation in
-            continuation.yield("ok")
-            continuation.finish()
+            Task {
+                for event in streamEvents {
+                    if let streamDelayNanoseconds {
+                        try? await Task.sleep(nanoseconds: streamDelayNanoseconds)
+                    }
+                    continuation.yield(event)
+                }
+                continuation.finish()
+            }
         }
+    }
+}
+
+private actor TestMetricsSink: MetricsSink {
+    private var events: [TelemetryEvent] = []
+
+    func record(_ event: TelemetryEvent) async {
+        events.append(event)
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        events
     }
 }
 

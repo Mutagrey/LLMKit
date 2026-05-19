@@ -142,6 +142,14 @@ model load time, warmup time, time-to-first-token, generation duration, throughp
 sanitized metadata projection is safe for `TelemetryEvent.metadata` and must not include prompt text, generated text,
 message content, or tool payloads.
 
-Backends may emit these metrics through existing `MetricsSink`/`TelemetryEvent` plumbing once they can measure the values
-without changing generation semantics. This pass defines the data shape only; it does not claim full runtime coverage for
-GGUF or MLX.
+The llama.cpp, MLX, and Foundation Models backends accept an optional `MetricsSink` and emit completion events with
+sanitized numeric metadata. llama.cpp throughput is calculated from native sampled-token count; MLX throughput is taken
+only from MLX `Generation.info`; Foundation Models leaves throughput unset because the adapter does not observe native
+generated token counts. This pass does not claim native Metal proof or approximate throughput when token counts are not
+available.
+
+Host apps should create one `MetricsCollector` or custom `MetricsSink` and pass it into each backend constructor they
+compose. `LLMKitFactory` does not inject metrics automatically because it accepts already-created backend instances.
+`LLMUIObservability` can render sanitized runtime events without importing backend targets. `LLMUIChat` can attach new
+runtime events from a host-provided metrics snapshot provider to the assistant message and render a compact metrics line
+inside the message bubble.

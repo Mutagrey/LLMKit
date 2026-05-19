@@ -7,3 +7,6 @@ Tool request and completion rendering stays presentation-only; execution, policy
 The optional pre-send validation hook is host-supplied state gating only; model selection diagnostics and catalog policy still remain outside this module.
 
 The close hook may request backend runtime cleanup through `ChatService`, but it does not know which backend owns that state.
+
+Runtime metrics rendering is limited to sanitized telemetry already emitted by backends; this module does not measure
+runtime performance itself.

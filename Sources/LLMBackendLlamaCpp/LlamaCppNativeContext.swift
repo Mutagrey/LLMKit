@@ -93,6 +93,7 @@ actor LlamaCppNativeContext {
     private var isDone = false
     private var currentPosition: Int32 = 0
     private var generationLimit: Int32
+    private var generatedTokenCount = 0
 
     private init(
         storage: LlamaCppNativeStorage,
@@ -152,16 +153,13 @@ actor LlamaCppNativeContext {
         return modelParameters
     }
 
-    func stream(prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
+    func stream(prompt: String, maxTokens: Int?) -> AsyncThrowingStream<LlamaCppGeneratedText, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     try startCompletion(prompt: prompt, maxTokens: maxTokens)
                     while !Task.isCancelled {
-                        let delta = try nextToken()
-                        if !delta.isEmpty {
-                            continuation.yield(delta)
-                        }
+                        continuation.yield(try nextToken())
                         if finished {
                             break
                         }
@@ -189,6 +187,7 @@ actor LlamaCppNativeContext {
         stopTokenIDs = chatStopTokenIDs()
         pendingUTF8Bytes = []
         isDone = false
+        generatedTokenCount = 0
         llama_memory_clear(llama_get_memory(storage.context), true)
         llama_sampler_reset(storage.sampler)
         let contextSize = Int(llama_n_ctx(storage.context))
@@ -232,12 +231,12 @@ actor LlamaCppNativeContext {
         }
     }
 
-    private func nextToken() throws -> String {
+    private func nextToken() throws -> LlamaCppGeneratedText {
         if currentPosition >= generationLimit {
             isDone = true
             let trailingText = decodeUTF8(pendingUTF8Bytes)
             pendingUTF8Bytes.removeAll()
-            return trailingText
+            return LlamaCppGeneratedText(text: trailingText, generatedTokenCount: generatedTokenCount)
         }
 
         let tokenID = llama_sampler_sample(storage.sampler, storage.context, storage.batch.n_tokens - 1)
@@ -245,8 +244,9 @@ actor LlamaCppNativeContext {
             isDone = true
             let trailingText = decodeUTF8(pendingUTF8Bytes)
             pendingUTF8Bytes.removeAll()
-            return trailingText
+            return LlamaCppGeneratedText(text: trailingText, generatedTokenCount: generatedTokenCount)
         }
+        generatedTokenCount += 1
 
         pendingUTF8Bytes.append(contentsOf: tokenToPiece(token: tokenID))
         let text: String
@@ -269,7 +269,7 @@ actor LlamaCppNativeContext {
         guard llama_decode(storage.context, storage.batch) == 0 else {
             throw LlamaCppNativeError.decodeFailed
         }
-        return text
+        return LlamaCppGeneratedText(text: text, generatedTokenCount: generatedTokenCount)
     }
 
     private func tokenize(text: String, addSpecial: Bool, parseSpecial: Bool) -> [llama_token] {

@@ -12,4 +12,7 @@ For generation requests that carry a backend-neutral `StructuredOutputSchema`, t
 to Foundation Models guided generation with `GenerationSchema`. When mapping succeeds, the backend returns the
 generated structured content as JSON text to preserve the package's backend-neutral response shape.
 
+When configured with a `MetricsSink`, the backend records numeric generation and chat latency metrics only. Throughput is
+left unset because the current adapter receives text deltas, not native generated token counts.
+
 When the Foundation Models framework is unavailable, the OS is too old, Apple Intelligence is disabled, the device is ineligible, or the model is not ready, the backend reports unavailable without leaking Apple SDK types to shared modules.

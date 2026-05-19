@@ -6,7 +6,7 @@ import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
-actor MLXLocalRuntime {
+actor MLXLocalRuntime: MLXRuntime {
     private let resolver: ModelArtifactLocationResolver
     private var memoryPolicy: MLXMemoryPolicy
     private var containers: [ModelID: ModelContainer] = [:]
@@ -53,6 +53,10 @@ actor MLXLocalRuntime {
         return container
     }
 
+    func loadModel(_ descriptor: ModelDescriptor) async throws {
+        _ = try await loadContainer(for: descriptor)
+    }
+
     func unload(modelID: ModelID) {
         containers[modelID] = nil
         chatSessions = chatSessions.filter { $0.key.modelID != modelID }
@@ -77,13 +81,13 @@ actor MLXLocalRuntime {
         prompt: String,
         model descriptor: ModelDescriptor,
         maxTokens: Int?
-    ) async throws -> AsyncThrowingStream<String, Error> {
+    ) async throws -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
         let container = try await loadContainer(for: descriptor)
         let session = ChatSession(
             container,
             generateParameters: generateParameters(maxTokens: maxTokens)
         )
-        return session.streamResponse(to: prompt)
+        return streamEvents(from: session.streamDetails(to: prompt, images: [], videos: []))
     }
 
     func stream(
@@ -91,7 +95,7 @@ actor MLXLocalRuntime {
         sessionID: SessionID?,
         model descriptor: ModelDescriptor,
         maxTokens: Int?
-    ) async throws -> AsyncThrowingStream<String, Error> {
+    ) async throws -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
         let container = try await loadContainer(for: descriptor)
         let mapped = try MLXChatMessageMapper().prompt(from: messages)
         let generateParameters = generateParameters(maxTokens: maxTokens)
@@ -102,12 +106,12 @@ actor MLXLocalRuntime {
                 history: mapped.history,
                 generateParameters: generateParameters
             )
-            return session.streamResponse(
+            return streamEvents(from: session.streamDetails(
                 to: mapped.prompt.content,
                 role: mapped.prompt.role,
                 images: [],
                 videos: []
-            )
+            ))
         }
 
         let key = MLXChatSessionKey(modelID: descriptor.id, sessionID: sessionID)
@@ -127,12 +131,12 @@ actor MLXLocalRuntime {
             )
         }
 
-        return session.streamResponse(
+        return streamEvents(from: session.streamDetails(
             to: mapped.prompt.content,
             role: mapped.prompt.role,
             images: [],
             videos: []
-        )
+        ))
     }
 
     func recordChatCompletion(modelID: ModelID, sessionID: SessionID?, requestMessageCount: Int) {
@@ -206,6 +210,36 @@ actor MLXLocalRuntime {
             frequencyContextSize: defaults.frequencyContextSize,
             prefillStepSize: memoryPolicy.prefillStepSize ?? defaults.prefillStepSize
         )
+    }
+
+    private func streamEvents(
+        from stream: AsyncThrowingStream<Generation, Error>
+    ) -> AsyncThrowingStream<MLXRuntimeGenerationEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await generation in stream {
+                        switch generation {
+                        case .chunk(let text):
+                            continuation.yield(.chunk(text))
+                        case .info(let info):
+                            continuation.yield(.info(
+                                generationTimeMilliseconds: max(0, Int((info.generateTime * 1_000).rounded())),
+                                tokensPerSecond: info.tokensPerSecond.isFinite ? info.tokensPerSecond : nil
+                            ))
+                        case .toolCall:
+                            continue
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
     }
 }
 

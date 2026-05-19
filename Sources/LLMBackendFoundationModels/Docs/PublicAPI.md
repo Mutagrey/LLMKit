@@ -9,6 +9,9 @@ Public API is limited to generic backend conformers and availability helpers.
 Foundation Models chat mapping remains backend-neutral: tool definitions and tool result references are folded into prompt text until a dedicated native tool-calling surface is adopted in this target.
 
 For plain generation and chat, `FoundationModelsBackend` emits incremental `.delta` events from Foundation Models `streamResponse` snapshots. The public stream event shape is unchanged.
+Callers may pass an optional `MetricsSink`; emitted generation and chat telemetry uses `LLMRuntimeMetrics.sanitizedMetadata()`
+and includes latency fields only. `tokensPerSecond` is not populated because the Foundation Models adapter does not observe
+native generated token counts.
 
 Structured generation metadata is preserved on `GenerationRequest`. When a backend-neutral `StructuredOutputSchema`
 can be mapped to Foundation Models guided generation, the adapter now uses native `GenerationSchema` APIs and returns

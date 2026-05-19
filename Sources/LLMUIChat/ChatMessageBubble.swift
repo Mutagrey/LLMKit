@@ -1,8 +1,10 @@
 import LLMCore
+import LLMUIObservability
 import SwiftUI
 
 struct ChatMessageBubble: View {
     let message: ChatMessage
+    var runtimeMetricsSummary: RuntimeMetricsSummary? = nil
     var isStreamingPreview = false
 
     var body: some View {
@@ -11,12 +13,18 @@ struct ChatMessageBubble: View {
                 Spacer(minLength: 44)
             }
 
-            Text(message.content.text)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
+            VStack(alignment: bubbleContentAlignment, spacing: 5) {
+                Text(message.content.text)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+
+                if let runtimeMetricsSummary, !runtimeMetricsSummary.isEmpty {
+                    RuntimeMetricsInlineSummaryView(summary: runtimeMetricsSummary)
+                }
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
                 .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(alignment: .bottomTrailing) {
                     if isStreamingPreview {
@@ -35,6 +43,10 @@ struct ChatMessageBubble: View {
     }
 
     private var alignment: Alignment {
+        message.role == .user ? .trailing : .leading
+    }
+
+    private var bubbleContentAlignment: HorizontalAlignment {
         message.role == .user ? .trailing : .leading
     }
 

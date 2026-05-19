@@ -114,6 +114,29 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
 }
 
 @MainActor
+@Test func chatViewModelAttachesNewRuntimeMetricsToAssistantMessage() async {
+    let metric = TelemetryEvent(name: "mlx.generation.completed", metadata: [
+        "runtime.generation_time_ms": "200",
+        "runtime.tokens_per_second": "18.0"
+    ])
+    let sequence = RuntimeMetricsSequence(event: metric)
+    let viewModel = ChatViewModel(
+        chatService: CompletingChatService(),
+        runtimeMetricsProvider: { await sequence.snapshot() }
+    )
+
+    await viewModel.send("hi")
+
+    guard case .message(let message, let runtimeMetrics)? = viewModel.transcriptItems.last?.content else {
+        Issue.record("Expected assistant transcript item with runtime metrics.")
+        return
+    }
+
+    #expect(message.role == .assistant)
+    #expect(runtimeMetrics == [metric])
+}
+
+@MainActor
 @Test func chatViewModelIgnoresBlankMessages() async {
     let viewModel = ChatViewModel(chatService: StreamingChatService())
 
@@ -220,5 +243,21 @@ private final class RecordingChatService: ChatService, @unchecked Sendable {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+private actor RuntimeMetricsSequence {
+    private let event: TelemetryEvent
+    private var snapshotCount = 0
+
+    init(event: TelemetryEvent) {
+        self.event = event
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        defer {
+            snapshotCount += 1
+        }
+        return snapshotCount == 0 ? [] : [event]
     }
 }

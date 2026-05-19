@@ -3,17 +3,22 @@ import LLMCore
 import LLMModelLifecycle
 import LLMObservability
 import LLMProtocols
+#if os(iOS) || os(tvOS) || os(watchOS)
+import Darwin
+#endif
 
 public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendModelUnloading {
     public let backendKind: BackendKind = .mlx
-    private let runtime: MLXLocalRuntime?
+    private let runtime: (any MLXRuntime)?
     private let supportMatrix: MLXModelSupportMatrix
+    private let metricsSink: (any MetricsSink)?
 
     public init(
         runtimeAvailable: Bool = false,
         modelRootDirectory: URL? = ModelArtifactLocationResolver.defaultRootDirectory(),
         supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix(),
-        memoryPolicy: MLXMemoryPolicy = .default
+        memoryPolicy: MLXMemoryPolicy = .default,
+        metricsSink: (any MetricsSink)? = nil
     ) {
         if runtimeAvailable, Self.canCreateLocalRuntime, let modelRootDirectory {
             self.runtime = MLXLocalRuntime(
@@ -24,6 +29,17 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
             self.runtime = nil
         }
         self.supportMatrix = supportMatrix
+        self.metricsSink = metricsSink
+    }
+
+    init(
+        runtime: any MLXRuntime,
+        supportMatrix: MLXModelSupportMatrix = MLXModelSupportMatrix(),
+        metricsSink: (any MetricsSink)? = nil
+    ) {
+        self.runtime = runtime
+        self.supportMatrix = supportMatrix
+        self.metricsSink = metricsSink
     }
 
     private static var canCreateLocalRuntime: Bool {
@@ -64,7 +80,17 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
         guard let runtime else {
             throw LLMError.unavailable
         }
-        try await runtime.loadContainer(for: descriptor)
+        let startedAt = Date()
+        let memoryBeforeLoadBytes = Self.availableProcessMemoryBytes()
+        try await runtime.loadModel(descriptor)
+        await recordRuntimeMetrics(
+            name: "mlx.model_load.completed",
+            metrics: LLMRuntimeMetrics(
+                modelLoadTimeMilliseconds: Self.elapsedMilliseconds(since: startedAt),
+                memoryBeforeLoadBytes: memoryBeforeLoadBytes,
+                memoryAfterLoadBytes: Self.availableProcessMemoryBytes()
+            )
+        )
         return LoadedModelHandle(id: descriptor.id, backend: descriptor.backend)
     }
 
@@ -161,6 +187,7 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
         }
 
         do {
+            _ = try await loadModel(model)
             let stream = try await runtime.stream(
                 prompt: prompt,
                 model: model,
@@ -168,7 +195,11 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
             )
             let output = try await collectSanitizedText(from: stream, onDelta: onDelta)
             await runtime.finishGenerationCleanup()
-            return output
+            await recordRuntimeMetrics(
+                name: "mlx.generation.completed",
+                metrics: output.metrics(memoryAfterGenerationBytes: Self.availableProcessMemoryBytes())
+            )
+            return output.text
         } catch {
             await runtime.finishGenerationCleanup()
             throw error
@@ -187,6 +218,7 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
         }
 
         do {
+            _ = try await loadModel(model)
             let stream = try await runtime.stream(
                 messages: messages,
                 sessionID: sessionID,
@@ -195,7 +227,11 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
             )
             let output = try await collectSanitizedText(from: stream, onDelta: onDelta)
             await runtime.finishGenerationCleanup()
-            return output
+            await recordRuntimeMetrics(
+                name: "mlx.generation.completed",
+                metrics: output.metrics(memoryAfterGenerationBytes: Self.availableProcessMemoryBytes())
+            )
+            return output.text
         } catch {
             await runtime.finishGenerationCleanup()
             throw error
@@ -203,14 +239,31 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
     }
 
     private func collectSanitizedText(
-        from stream: AsyncThrowingStream<String, Error>,
+        from stream: AsyncThrowingStream<MLXRuntimeGenerationEvent, Error>,
         onDelta: (String) -> Void
-    ) async throws -> String {
+    ) async throws -> CollectedRuntimeText {
+        let startedAt = Date()
         var sanitizer = MLXStreamOutputSanitizer()
         var output = ""
-        for try await delta in stream {
+        var timeToFirstTokenMilliseconds: Int?
+        var generationTimeMilliseconds: Int?
+        var tokensPerSecond: Double?
+
+        for try await event in stream {
+            if let eventGenerationTimeMilliseconds = event.generationTimeMilliseconds {
+                generationTimeMilliseconds = eventGenerationTimeMilliseconds
+            }
+            if let eventTokensPerSecond = event.tokensPerSecond {
+                tokensPerSecond = eventTokensPerSecond
+            }
+            guard let delta = event.text else {
+                continue
+            }
             let outcome = sanitizer.append(delta)
             if !outcome.visibleText.isEmpty {
+                if timeToFirstTokenMilliseconds == nil {
+                    timeToFirstTokenMilliseconds = Self.elapsedMilliseconds(since: startedAt)
+                }
                 output += outcome.visibleText
                 onDelta(outcome.visibleText)
             }
@@ -221,11 +274,38 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
 
         let trailingText = sanitizer.finish()
         if !trailingText.isEmpty {
+            if timeToFirstTokenMilliseconds == nil {
+                timeToFirstTokenMilliseconds = Self.elapsedMilliseconds(since: startedAt)
+            }
             output += trailingText
             onDelta(trailingText)
         }
 
-        return output
+        return CollectedRuntimeText(
+            text: output,
+            timeToFirstTokenMilliseconds: timeToFirstTokenMilliseconds,
+            generationTimeMilliseconds: generationTimeMilliseconds ?? Self.elapsedMilliseconds(since: startedAt),
+            tokensPerSecond: tokensPerSecond
+        )
+    }
+
+    private func recordRuntimeMetrics(name: String, metrics: LLMRuntimeMetrics) async {
+        guard let metricsSink else {
+            return
+        }
+        await metricsSink.record(TelemetryEvent(name: name, metadata: metrics.sanitizedMetadata()))
+    }
+
+    private static func elapsedMilliseconds(since start: Date) -> Int {
+        max(0, Int((Date().timeIntervalSince(start) * 1_000).rounded()))
+    }
+
+    private static func availableProcessMemoryBytes() -> UInt64? {
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        UInt64(os_proc_available_memory())
+        #else
+        nil
+        #endif
     }
 
     private func mapRuntimeError(_ error: Error) -> LLMError {
@@ -244,3 +324,19 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
 }
 
 public enum LLMBackendMLXNamespace {}
+
+private struct CollectedRuntimeText {
+    let text: String
+    let timeToFirstTokenMilliseconds: Int?
+    let generationTimeMilliseconds: Int?
+    let tokensPerSecond: Double?
+
+    func metrics(memoryAfterGenerationBytes: UInt64?) -> LLMRuntimeMetrics {
+        LLMRuntimeMetrics(
+            timeToFirstTokenMilliseconds: timeToFirstTokenMilliseconds,
+            generationTimeMilliseconds: generationTimeMilliseconds,
+            tokensPerSecond: tokensPerSecond,
+            memoryAfterGenerationBytes: memoryAfterGenerationBytes
+        )
+    }
+}

@@ -1,4 +1,5 @@
 import LLMCore
+import LLMUIObservability
 import SwiftUI
 
 struct ChatTranscriptView: View {
@@ -41,8 +42,11 @@ struct ChatTranscriptView: View {
     private var transcriptContent: some View {
         ForEach(transcriptItems) { item in
             switch item.content {
-            case .message(let message):
-                ChatMessageBubble(message: message)
+            case .message(let message, let runtimeMetrics):
+                ChatMessageBubble(
+                    message: message,
+                    runtimeMetricsSummary: RuntimeMetricsSummary(events: runtimeMetrics)
+                )
             case .tool(let toolCall):
                 ChatToolActivityCard(toolCall: toolCall)
             }

@@ -1,6 +1,6 @@
 # LLMUISettings Responsibilities
 
-Owns SwiftUI presentation for `LLMRuntimeSettings`, section visibility, card navigation helpers, formatting helpers, and
+Owns SwiftUI presentation for `LLMRuntimeSettings`, section visibility, settings navigation helpers, formatting helpers, and
 host action hooks.
 
 It does not choose models, download artifacts, apply runtime changes directly, inspect storage paths, or import backend

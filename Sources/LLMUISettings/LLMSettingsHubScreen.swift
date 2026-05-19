@@ -34,49 +34,38 @@ public struct LLMSettingsHubScreen<OverviewContent: View, LinksContent: View>: V
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                LLMSettingsChromeCard {
-                    HStack(alignment: .top, spacing: 12) {
+        Form {
+            Section {
+                VStack(alignment: .leading) {
+                    HStack(alignment: .top) {
                         LLMSettingsChromeIcon(systemImage: overviewSystemImage, tint: overviewTint)
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading) {
                             Text(overviewTitle)
-                                .font(.headline)
+                                .font(.subheadline.weight(.semibold))
                                 .lineLimit(2)
 
                             if let overviewSubtitle {
                                 Text(overviewSubtitle)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-
-                        Spacer(minLength: 8)
                     }
 
                     overviewContent
                 }
+            }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(groupsTitle)
-                        .font(.headline)
-
-                    LLMSettingsChromeCard(spacing: 14) {
-                        linksContent
-                    }
-
-                    if let groupsFooter {
-                        Text(groupsFooter)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            Section {
+                linksContent
+            } header: {
+                Text(groupsTitle)
+            } footer: {
+                if let groupsFooter {
+                    Text(groupsFooter)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 18)
         }
         .navigationTitle(title)
     }
@@ -118,29 +107,6 @@ public struct LLMSettingsNavigationLink<Destination: View>: View {
                 tint: tint
             )
         }
-        .buttonStyle(.plain)
-    }
-}
-
-struct LLMSettingsChromeCard<Content: View>: View {
-    private let spacing: CGFloat
-    private let content: Content
-
-    init(spacing: CGFloat = 16, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: spacing) {
-            content
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.045))
-        )
     }
 }
 
@@ -150,24 +116,7 @@ struct LLMSettingsChromeIcon: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: 32, height: 32)
-            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-struct LLMSettingsBadge: View {
-    let text: String
-    let tint: Color
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.12), in: Capsule())
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(tint)
     }
 }
@@ -180,22 +129,21 @@ struct LLMSettingsNavigationRow: View {
     let tint: Color
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack {
             LLMSettingsChromeIcon(systemImage: systemImage, tint: tint)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .font(.subheadline)
                     .foregroundStyle(.primary)
 
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            Spacer()
 
             if let value {
                 Text(value)
@@ -204,11 +152,6 @@ struct LLMSettingsNavigationRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
-        .contentShape(Rectangle())
     }
 }

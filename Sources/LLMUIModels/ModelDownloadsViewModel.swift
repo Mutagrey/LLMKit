@@ -323,12 +323,11 @@ public final class ModelDownloadsViewModel {
     private func handleInstallEvent(_ event: ModelInstallEvent) async {
         switch event {
         case .stateChanged(let id, let state):
-            installStates[id] = state
+            installStates[id] = stateForPresentation(modelID: id, incomingState: state)
         case .progress(let id, let progress):
-            installStates[id] = .downloading(progress: progress)
+            updateDownloadingProgress(modelID: id, progress: progress)
         case .progressDetail(let id, let detail):
-            installStates[id] = .downloading(progress: detail.fractionCompleted)
-            installProgress[id] = detail
+            updateProgressDetail(modelID: id, detail: detail)
         case .completed(let record):
             installStates[record.descriptor.id] = record.installState
             installProgress[record.descriptor.id] = nil
@@ -343,6 +342,40 @@ public final class ModelDownloadsViewModel {
             installTasks[id] = nil
             try? await refreshStorageUsage()
         }
+    }
+
+    private func stateForPresentation(modelID: ModelID, incomingState: InstallState) -> InstallState {
+        guard case .downloading(let progress) = incomingState else {
+            return incomingState
+        }
+        return .downloading(progress: mergedDownloadProgress(modelID: modelID, incomingProgress: progress))
+    }
+
+    private func updateDownloadingProgress(modelID: ModelID, progress: Double) {
+        installStates[modelID] = .downloading(progress: mergedDownloadProgress(
+            modelID: modelID,
+            incomingProgress: progress
+        ))
+    }
+
+    private func updateProgressDetail(modelID: ModelID, detail: ModelInstallProgress) {
+        let existingProgress = progress(for: modelID) ?? 0
+        let incomingProgress = DownloadProgressPresentation.normalizedFraction(detail.fractionCompleted)
+        guard installProgress[modelID] != nil, existingProgress > incomingProgress else {
+            installProgress[modelID] = detail
+            installStates[modelID] = .downloading(progress: incomingProgress)
+            return
+        }
+
+        installStates[modelID] = .downloading(progress: existingProgress)
+    }
+
+    private func mergedDownloadProgress(modelID: ModelID, incomingProgress: Double) -> Double {
+        let normalizedIncoming = DownloadProgressPresentation.normalizedFraction(incomingProgress)
+        guard installProgress[modelID] != nil else {
+            return normalizedIncoming
+        }
+        return max(progress(for: modelID) ?? 0, normalizedIncoming)
     }
 
     private func handleInstallError(_ error: Error, descriptor: ModelDescriptor) async {

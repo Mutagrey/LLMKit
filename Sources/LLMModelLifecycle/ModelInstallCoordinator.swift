@@ -12,6 +12,9 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private let interruptionPolicy: ModelInstallInterruptionPolicy
     private let diskSpaceProvider: any ModelInstallDiskSpaceProviding
     private var hasLoadedPersistedRecords: Bool
+    private var progressStore: InstallProgressStore? {
+        artifactRootDirectory.map(InstallProgressStore.init(rootDirectory:))
+    }
 
     public init(
         records: [InstalledModelRecord] = [],
@@ -54,7 +57,15 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
     public func state(for modelID: ModelID) async throws -> InstallState {
         try await ensureLoadedPersistedRecords()
-        return await stateMachine.state(for: modelID)
+        let state = await stateMachine.state(for: modelID)
+        guard state == .notInstalled, records[modelID] == nil, let progressStore else {
+            return state
+        }
+        if let restoredState = try progressStore.restoredState(for: modelID) {
+            await stateMachine.transition(modelID: modelID, to: restoredState)
+            return restoredState
+        }
+        return state
     }
 
     public func deleteInstalledModel(_ modelID: ModelID) async throws {
@@ -133,7 +144,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         let record = InstalledModelRecord(descriptor: descriptor, installState: .ready, installedAt: Date())
         records[descriptor.id] = record
         try await recordStore?.save(Array(records.values))
-        try? removeProgressSnapshot(for: descriptor.id)
+        try? progressStore?.remove(modelID: descriptor.id)
         return record
     }
 
@@ -147,11 +158,13 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         guard let artifactRootDirectory else {
             throw LLMError.downloadFailed("No artifact root directory configured for \(descriptor.id.rawValue).")
         }
+        let progressStore = InstallProgressStore(rootDirectory: artifactRootDirectory)
 
         let preflight = try preflightDownload(
             for: descriptor,
             artifacts: source.artifacts,
-            artifactRootDirectory: artifactRootDirectory
+            artifactRootDirectory: artifactRootDirectory,
+            progressStore: progressStore
         )
         try ensureSufficientDiskSpace(
             for: descriptor,
@@ -159,15 +172,19 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
             requiredBytes: preflight.requiredDownloadBytes
         )
 
-        await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: 0))
-        continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0)))
-
         let tracker = DownloadProgressTracker(
             totalExpectedBytes: preflight.totalExpectedBytes?.bytes,
             isTotalEstimated: preflight.totalExpectedBytes?.isEstimated ?? true,
             totalArtifacts: source.artifacts.count
         )
         let resolver = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
+        var hasPublishedDownloadState = false
+
+        if preflight.restoredDownloadedBytes == 0, preflight.verifiedExistingBytes.isEmpty {
+            await stateMachine.transition(modelID: descriptor.id, to: .downloading(progress: 0))
+            continuation.yield(.stateChanged(descriptor.id, .downloading(progress: 0)))
+            hasPublishedDownloadState = true
+        }
 
         for artifact in source.artifacts {
             try Task.checkCancellation()
@@ -178,31 +195,30 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                 modelID: descriptor.id,
                 artifactRootDirectory: artifactRootDirectory
             ) {
-                tracker.completedArtifacts += 1
-                tracker.completedBytes += artifact.byteCount ?? restoredBytes
-                let resumedProgress = progressValue(
-                    completedBytes: tracker.completedBytes,
-                    currentArtifactBytes: 0,
-                    totalExpectedBytes: tracker.totalExpectedBytes,
-                    fallbackArtifactCount: tracker.totalArtifacts,
-                    completedArtifacts: tracker.completedArtifacts
-                )
-                let resumedDetail = progressDetail(
-                    progress: resumedProgress,
-                    completedBytes: tracker.completedBytes,
-                    currentArtifactBytes: 0,
-                    totalExpectedBytes: tracker.totalExpectedBytes,
-                    fallbackArtifactCount: tracker.totalArtifacts,
-                    usesByteProgress: tracker.totalExpectedBytes != nil,
-                    isTotalEstimated: tracker.isTotalEstimated
-                )
+                let resumedDetail = tracker.restoreCompletedArtifact(artifact, bytes: restoredBytes)
                 try await publishDownloadProgressIfNeeded(
                     descriptorID: descriptor.id,
                     continuation: continuation,
                     progress: resumedDetail,
-                    tracker: tracker
+                    tracker: tracker,
+                    includeStateChange: !hasPublishedDownloadState
                 )
+                hasPublishedDownloadState = true
                 continue
+            }
+
+            if let partialDetail = tracker.restorePartialArtifact(
+                artifact,
+                bytes: preflight.restoredDownloadedBytes - tracker.completedBytes
+            ) {
+                try await publishDownloadProgressIfNeeded(
+                    descriptorID: descriptor.id,
+                    continuation: continuation,
+                    progress: partialDetail,
+                    tracker: tracker,
+                    includeStateChange: !hasPublishedDownloadState
+                )
+                hasPublishedDownloadState = true
             }
 
             let result: ModelArtifactDownloadResult
@@ -219,24 +235,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                 result = try await artifactDownloader.download(artifact, to: destination)
             }
 
-            tracker.completedArtifacts += 1
-            tracker.completedBytes += tracker.artifactExpectedBytes[artifact.id] ?? artifact.byteCount ?? result.bytesWritten
-            let overallProgress = progressValue(
-                completedBytes: tracker.completedBytes,
-                currentArtifactBytes: 0,
-                totalExpectedBytes: tracker.totalExpectedBytes,
-                fallbackArtifactCount: tracker.totalArtifacts,
-                completedArtifacts: tracker.completedArtifacts
-            )
-            let overallDetail = progressDetail(
-                progress: overallProgress,
-                completedBytes: tracker.completedBytes,
-                currentArtifactBytes: 0,
-                totalExpectedBytes: tracker.totalExpectedBytes,
-                fallbackArtifactCount: tracker.totalArtifacts,
-                usesByteProgress: tracker.totalExpectedBytes != nil,
-                isTotalEstimated: tracker.isTotalEstimated
-            )
+            let overallDetail = tracker.completeArtifact(artifact, resultBytes: result.bytesWritten)
             try await publishDownloadProgressIfNeeded(
                 descriptorID: descriptor.id,
                 continuation: continuation,
@@ -252,8 +251,10 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private func preflightDownload(
         for descriptor: ModelDescriptor,
         artifacts: [ModelArtifact],
-        artifactRootDirectory: URL
+        artifactRootDirectory: URL,
+        progressStore: InstallProgressStore
     ) throws -> DownloadPreflightResult {
+        let restoredDownloadedBytes = try progressStore.restoredDownloadedBytes(for: descriptor.id)
         var verifiedExistingBytes: [String: Int64] = [:]
         for artifact in artifacts {
             if let bytes = try resumeExistingArtifactIfPossible(
@@ -270,7 +271,8 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         return DownloadPreflightResult(
             totalExpectedBytes: totalExpectedBytes,
             requiredDownloadBytes: totalExpectedBytes.map { max($0.bytes - verifiedBytes, 0) },
-            verifiedExistingBytes: verifiedExistingBytes
+            verifiedExistingBytes: verifiedExistingBytes,
+            restoredDownloadedBytes: restoredDownloadedBytes
         )
     }
 
@@ -358,7 +360,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     private func progressFraction(for state: InstallState) -> Double {
         switch state {
         case .downloading(let progress), .paused(let progress):
-            return DownloadProgressPresentation.normalizedFraction(progress)
+            return DownloadProgressTracker.normalizedFraction(progress)
         case .downloaded, .verifying, .compiling:
             return 1
         case .notInstalled, .ready, .warming, .active, .failed, .evicted:
@@ -446,27 +448,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         artifactProgress: ModelArtifactDownloadProgress,
         tracker: DownloadProgressTracker
     ) async {
-        if let expectedTotalBytes = artifactProgress.expectedTotalBytes, expectedTotalBytes > 0 {
-            tracker.artifactExpectedBytes[artifactProgress.artifactID] = expectedTotalBytes
-        }
-
-        let totalExpectedBytes = progressTotalBytes(from: tracker)
-        let progress = progressValue(
-            completedBytes: tracker.completedBytes,
-            currentArtifactBytes: artifactProgress.bytesWritten,
-            totalExpectedBytes: totalExpectedBytes,
-            fallbackArtifactCount: tracker.totalArtifacts,
-            completedArtifacts: tracker.completedArtifacts
-        )
-        let progressDetail = progressDetail(
-            progress: progress,
-            completedBytes: tracker.completedBytes,
-            currentArtifactBytes: artifactProgress.bytesWritten,
-            totalExpectedBytes: totalExpectedBytes,
-            fallbackArtifactCount: tracker.totalArtifacts,
-            usesByteProgress: totalExpectedBytes != nil,
-            isTotalEstimated: tracker.totalExpectedBytes == nil ? false : tracker.isTotalEstimated
-        )
+        let progressDetail = tracker.updateArtifactProgress(artifactProgress)
 
         try? await publishDownloadProgressIfNeeded(
             descriptorID: descriptorID,
@@ -476,79 +458,29 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         )
     }
 
-    private func progressDetail(
-        progress: Double,
-        completedBytes: Int64,
-        currentArtifactBytes: Int64,
-        totalExpectedBytes: Int64?,
-        fallbackArtifactCount: Int,
-        usesByteProgress: Bool,
-        isTotalEstimated: Bool
-    ) -> ModelInstallProgress {
-        let clampedProgress = min(max(progress, 0), 1)
-        if usesByteProgress, let totalExpectedBytes, totalExpectedBytes > 0 {
-            let writtenBytes = min(completedBytes + currentArtifactBytes, totalExpectedBytes)
-            return ModelInstallProgress(
-                fractionCompleted: clampedProgress,
-                completedBytes: writtenBytes,
-                totalBytes: totalExpectedBytes,
-                isEstimated: isTotalEstimated
-            )
-        }
-
-        return ModelInstallProgress(
-            fractionCompleted: clampedProgress,
-            completedBytes: nil,
-            totalBytes: nil,
-            isEstimated: true
-        )
-    }
-
-    private func progressValue(
-        completedBytes: Int64,
-        currentArtifactBytes: Int64,
-        totalExpectedBytes: Int64?,
-        fallbackArtifactCount: Int,
-        completedArtifacts: Int
-    ) -> Double {
-        if let totalExpectedBytes, totalExpectedBytes > 0 {
-            let writtenBytes = min(completedBytes + currentArtifactBytes, totalExpectedBytes)
-            return min(Double(writtenBytes) / Double(totalExpectedBytes), 1)
-        }
-
-        let completedUnit = Double(completedArtifacts)
-        let currentUnit = currentArtifactBytes > 0 ? 0.9 : 0
-        let totalUnits = Double(max(fallbackArtifactCount, 1))
-        return min((completedUnit + currentUnit) / totalUnits, 1)
-    }
-
     private func publishDownloadProgressIfNeeded(
         descriptorID: ModelID,
         continuation: AsyncThrowingStream<ModelInstallEvent, Error>.Continuation,
         progress: ModelInstallProgress,
-        tracker: DownloadProgressTracker
+        tracker: DownloadProgressTracker,
+        includeStateChange: Bool = false
     ) async throws {
         let clampedProgress = min(max(progress.fractionCompleted, 0), 1)
-        guard clampedProgress >= 1 || clampedProgress - tracker.lastReportedProgress >= 0.01 else {
+        let shouldPublishProgress = clampedProgress >= 1 || clampedProgress - tracker.lastReportedProgress >= 0.01
+        if includeStateChange || shouldPublishProgress {
+            await stateMachine.transition(modelID: descriptorID, to: .downloading(progress: clampedProgress))
+        }
+        if includeStateChange {
+            continuation.yield(.stateChanged(descriptorID, .downloading(progress: clampedProgress)))
+        }
+        guard shouldPublishProgress else {
             return
         }
 
         tracker.lastReportedProgress = clampedProgress
-        await stateMachine.transition(modelID: descriptorID, to: .downloading(progress: clampedProgress))
-        try? storeProgressSnapshot(modelID: descriptorID, progress: progress)
+        try? progressStore?.store(modelID: descriptorID, progress: progress)
         continuation.yield(.progress(descriptorID, clampedProgress))
         continuation.yield(.progressDetail(descriptorID, progress))
-    }
-
-    private func progressTotalBytes(from tracker: DownloadProgressTracker) -> Int64? {
-        if let totalExpectedBytes = tracker.totalExpectedBytes {
-            return totalExpectedBytes
-        }
-        guard tracker.artifactExpectedBytes.count == tracker.totalArtifacts else {
-            return nil
-        }
-        let total = tracker.artifactExpectedBytes.values.reduce(0, +)
-        return total > 0 ? total : nil
     }
 
     private func ensureLoadedPersistedRecords() async throws {
@@ -565,189 +497,11 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
     }
 
     private func storageUsageWithoutLoading(for modelID: ModelID) throws -> Int64 {
-        guard let artifactRootDirectory else {
-            return 0
-        }
-
-        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
-            .modelDirectory(for: modelID)
-        guard FileManager.default.fileExists(atPath: directory.path) else {
-            return 0
-        }
-
-        let artifactBytes = try storageUsage(in: directory)
-        let snapshotBytes = progressSnapshotDownloadedBytes(in: directory)
-        let resumeBytes = try resumeCacheDownloadedBytes(in: directory)
-        return max(artifactBytes, snapshotBytes, resumeBytes)
-    }
-
-    private func storageUsage(in directory: URL) throws -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-            options: []
-        ) else {
-            return 0
-        }
-
-        var total: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            guard Self.isUserFacingArtifactFile(fileURL) else {
-                continue
-            }
-            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            guard values.isRegularFile == true else {
-                continue
-            }
-            total += Int64(values.fileSize ?? 0)
-        }
-        return total
-    }
-
-    private func resumeCacheDownloadedBytes(in directory: URL) throws -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: []
-        ) else {
-            return 0
-        }
-
-        var total: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            guard fileURL.lastPathComponent.hasSuffix(".resumeData") else {
-                continue
-            }
-            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
-            guard values.isRegularFile == true else {
-                continue
-            }
-            total += Self.resumeCacheDownloadedBytes(at: fileURL)
-        }
-        return total
-    }
-
-    private func storeProgressSnapshot(modelID: ModelID, progress: ModelInstallProgress) throws {
-        guard let artifactRootDirectory,
-              let completedBytes = progress.completedBytes,
-              completedBytes > 0 else {
-            return
-        }
-        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
-            .modelDirectory(for: modelID)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let snapshot = InstallProgressSnapshot(
-            completedBytes: completedBytes,
-            totalBytes: progress.totalBytes,
-            fractionCompleted: progress.fractionCompleted,
-            isEstimated: progress.isEstimated
-        )
-        let data = try JSONEncoder().encode(snapshot)
-        try data.write(to: progressSnapshotURL(in: directory), options: [.atomic])
-    }
-
-    private func removeProgressSnapshot(for modelID: ModelID) throws {
-        guard let artifactRootDirectory else {
-            return
-        }
-        let directory = ModelArtifactLocationResolver(rootDirectory: artifactRootDirectory)
-            .modelDirectory(for: modelID)
-        let url = progressSnapshotURL(in: directory)
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-    }
-
-    private func progressSnapshotDownloadedBytes(in directory: URL) -> Int64 {
-        progressSnapshot(in: directory).map { max($0.completedBytes, 0) } ?? 0
-    }
-
-    private func progressSnapshot(in directory: URL) -> InstallProgressSnapshot? {
-        let url = progressSnapshotURL(in: directory)
-        guard let data = try? Data(contentsOf: url) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(InstallProgressSnapshot.self, from: data)
-    }
-
-    private func progressSnapshotURL(in directory: URL) -> URL {
-        directory.appendingPathComponent(".llmkit-install-progress.json")
-    }
-
-    private static func resumeCacheDownloadedBytes(at fileURL: URL) -> Int64 {
-        guard
-            let data = try? Data(contentsOf: fileURL),
-            let propertyList = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-        else {
-            return 0
-        }
-        return resumeCacheDownloadedBytes(in: propertyList)
-    }
-
-    private static func resumeCacheDownloadedBytes(in value: Any) -> Int64 {
-        if let number = value as? NSNumber {
-            return number.int64Value
-        }
-        if let string = value as? String {
-            return Int64(string) ?? Self.byteRangeUpperBound(in: string)
-        }
-        if let dictionary = value as? [String: Any] {
-            var best: Int64 = 0
-            for (key, nestedValue) in dictionary {
-                if key.localizedCaseInsensitiveContains("BytesReceived") ||
-                    key.localizedCaseInsensitiveContains("BytesWritten") {
-                    best = max(best, resumeCacheDownloadedBytes(in: nestedValue))
-                }
-            }
-            return best
-        }
-        if let array = value as? [Any] {
-            return array.map(resumeCacheDownloadedBytes(in:)).max() ?? 0
-        }
-        return 0
-    }
-
-    private static func byteRangeUpperBound(in string: String) -> Int64 {
-        let numbers = string
-            .split { !$0.isNumber }
-            .compactMap { Int64($0) }
-        return numbers.max() ?? 0
-    }
-
-    private static func isUserFacingArtifactFile(_ fileURL: URL) -> Bool {
-        let name = fileURL.lastPathComponent
-        if name.hasPrefix(".") || name.hasSuffix(".resumeData") {
-            return false
-        }
-        return true
+        try progressStore?.storageUsage(for: modelID) ?? 0
     }
 
     private func diskUsageSnapshot() throws -> (availableBytes: Int64?, capacityBytes: Int64?) {
-        guard let artifactRootDirectory else {
-            return (nil, nil)
-        }
-        let probeURL = Self.existingVolumeProbeURL(for: artifactRootDirectory)
-        let values = try probeURL.resourceValues(forKeys: [
-            .volumeAvailableCapacityForImportantUsageKey,
-            .volumeAvailableCapacityKey,
-            .volumeTotalCapacityKey
-        ])
-        return (
-            values.volumeAvailableCapacityForImportantUsage ?? values.volumeAvailableCapacity.map(Int64.init),
-            values.volumeTotalCapacity.map(Int64.init)
-        )
-    }
-
-    private static func existingVolumeProbeURL(for url: URL) -> URL {
-        var probeURL = url
-        while !FileManager.default.fileExists(atPath: probeURL.path) {
-            let parent = probeURL.deletingLastPathComponent()
-            guard parent.path != probeURL.path else {
-                return FileManager.default.temporaryDirectory
-            }
-            probeURL = parent
-        }
-        return probeURL
+        try progressStore?.diskUsageSnapshot() ?? (nil, nil)
     }
 
     private static func mapInstallError(_ error: Error) -> LLMError {
@@ -814,53 +568,5 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
     private static func byteCountTitle(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-}
-
-private struct DownloadExpectedBytes: Sendable {
-    let bytes: Int64
-    let isEstimated: Bool
-}
-
-private struct DownloadPreflightResult: Sendable {
-    let totalExpectedBytes: DownloadExpectedBytes?
-    let requiredDownloadBytes: Int64?
-    let verifiedExistingBytes: [String: Int64]
-}
-
-private struct InstallProgressSnapshot: Codable, Sendable {
-    let completedBytes: Int64
-    let totalBytes: Int64?
-    let fractionCompleted: Double
-    let isEstimated: Bool
-}
-
-private final class DownloadProgressTracker: @unchecked Sendable {
-    let totalExpectedBytes: Int64?
-    let isTotalEstimated: Bool
-    let totalArtifacts: Int
-    var completedBytes: Int64
-    var artifactExpectedBytes: [String: Int64]
-    var completedArtifacts: Int
-    var lastReportedProgress: Double
-
-    init(totalExpectedBytes: Int64?, isTotalEstimated: Bool, totalArtifacts: Int) {
-        self.totalExpectedBytes = totalExpectedBytes
-        self.isTotalEstimated = isTotalEstimated
-        self.totalArtifacts = totalArtifacts
-        self.completedBytes = 0
-        self.artifactExpectedBytes = [:]
-        self.completedArtifacts = 0
-        self.lastReportedProgress = 0
-    }
-}
-
-private enum DownloadProgressPresentation {
-    static func normalizedFraction(_ value: Double) -> Double {
-        guard value.isFinite else {
-            return 0
-        }
-        let fraction = value >= 2 && value <= 100 ? value / 100 : value
-        return min(max(fraction, 0), 1)
     }
 }

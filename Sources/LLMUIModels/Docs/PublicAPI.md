@@ -32,5 +32,7 @@ sanitized storage aliases. If no total size is known, rows still surface the par
 holding task handles in view code. Cancel waits for lifecycle cancellation handling before allowing another install for the
 same model; under the default lifecycle policy, cancellation surfaces as `.paused(progress:)` while preserving hidden resume
 data so retry can continue the interrupted transfer without exposing resume files to UI.
+When a resumed install restarts, the view model keeps restored partial progress monotonic if an early lifecycle event reports
+a lower download fraction before richer progress detail arrives.
 `clearPartialArtifacts()` and `clearInstalledModels()` provide host-triggered bulk cleanup affordances while still routing
 all deletion through `ModelLifecycleMaintenanceService`.

@@ -62,6 +62,10 @@ select `.removeAllArtifacts` still get `.notInstalled` after cleanup.
 Before downloading each declared artifact, the coordinator now checks whether a matching file is already present on disk
 and reuses it when size and checksum validation pass, so repeated installs after restart can resume from completed files
 instead of always downloading the full manifest again.
+When a retry starts with a saved progress snapshot or resume cache, the coordinator restores that progress before emitting
+the download start state, so hosts do not briefly regress to 0%. Resumed transfer callbacks are counted as either absolute
+artifact bytes or bytes relative to the restored baseline based on the first non-zero callback, preventing double-counting
+after pause/resume.
 
 `InstalledModelRecordStore` persists installed model records through the backend-neutral `ManifestStore` contract. `ModelInstallCoordinator.persisted(recordStore:)` restores both installed records and `state(for:)` answers from that store.
 `ModelInstallCoordinator` also conforms to `ModelLifecycleMaintenanceService` for user-requested deletion and storage usage
@@ -71,3 +75,4 @@ Storage summaries include installed record bytes and disk capacity data. Descrip
 partial artifact bytes for a known `ModelID`; while downloading, the coordinator persists a small hidden progress snapshot
 with bytes received so partial totals survive app restart. When only `URLSession` resume cache exists, it uses the cache's
 recorded bytes-received value, not the sidecar file size, so hosts do not present metadata KB values as downloaded model size.
+When no installed record exists, `state(for:)` can restore `.paused(progress:)` from that lifecycle-owned progress state.

@@ -323,8 +323,6 @@ public struct MLXBackend: ModelBackend, BackendChatSessionResetting, BackendMode
     }
 }
 
-public enum LLMBackendMLXNamespace {}
-
 private struct CollectedRuntimeText {
     let text: String
     let timeToFirstTokenMilliseconds: Int?

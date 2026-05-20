@@ -12,4 +12,4 @@ without leaking lifecycle logic into views.
 `ModelRowView` accepts backend-neutral descriptor, status, install state, progress, selection, install, cancel, delete, and
 details actions without owning model lifecycle or selection policy.
 `StorageUsageView` provides a compact reusable summary for downloaded model count, installed bytes, partial bytes, and optional
-disk free/capacity usage through `ModelStorageSummary`.
+disk free/capacity usage through `ModelStorageSummary`, using the shared `LLMUIStorage` stacked storage bar.

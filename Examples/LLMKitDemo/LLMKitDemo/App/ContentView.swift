@@ -25,6 +25,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             ChatSessionsTab(
                 viewModel: viewModel,
+                downloadsViewModel: downloadsViewModel,
                 skillStore: skillStore,
                 configuration: configuration,
                 openModels: {
@@ -69,7 +70,7 @@ struct ContentView: View {
 
     private func refreshAll() async {
         await viewModel.refresh()
-        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
         await downloadsViewModel.refresh()
     }
 }

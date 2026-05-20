@@ -6,6 +6,7 @@ import SwiftUI
 struct NewManualChatSheet: View {
     let viewModel: DemoViewModel
     let skillStore: DemoPromptSkillStore
+    let statusText: (ModelDescriptor) -> String
     let onCreate: (SessionID) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -17,10 +18,12 @@ struct NewManualChatSheet: View {
     init(
         viewModel: DemoViewModel,
         skillStore: DemoPromptSkillStore,
+        statusText: @escaping (ModelDescriptor) -> String,
         onCreate: @escaping (SessionID) -> Void
     ) {
         self.viewModel = viewModel
         self.skillStore = skillStore
+        self.statusText = statusText
         self.onCreate = onCreate
         self._selectedModelID = State(initialValue: viewModel.selectedModelID)
         self._selection = State(initialValue: skillStore.defaultSelection)
@@ -38,7 +41,7 @@ struct NewManualChatSheet: View {
                     }
 
                     if let descriptor = selectedModel {
-                        LabeledContent("Status", value: viewModel.statusText(for: descriptor))
+                        LabeledContent("Status", value: statusText(descriptor))
                     }
                 }
 

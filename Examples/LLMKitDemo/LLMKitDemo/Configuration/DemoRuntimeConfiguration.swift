@@ -92,7 +92,7 @@ struct DemoRuntimeConfiguration: Sendable {
             catalog: catalog,
             catalogStatusProvider: remoteCatalog,
             backends: resolvedBackends,
-            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
+            downloadableModels: fallbackManifest.models.filter(Self.isDownloadManaged(_:)),
             sessionStore: sessionStore,
             metricsCollector: metricsCollector
         )
@@ -139,7 +139,7 @@ struct DemoRuntimeConfiguration: Sendable {
             catalog: liveCatalog,
             catalogStatusProvider: liveCatalog,
             backends: resolvedBackends,
-            downloadableModels: fallbackManifest.models.filter { $0.tags.contains("downloadable") },
+            downloadableModels: fallbackManifest.models.filter(Self.isDownloadManaged(_:)),
             sessionStore: sessionStore,
             metricsCollector: metricsCollector
         )
@@ -170,5 +170,9 @@ struct DemoRuntimeConfiguration: Sendable {
             return nil
         }
         return SessionFileStore(paths: StoragePaths(rootDirectory: rootDirectory))
+    }
+
+    private static func isDownloadManaged(_ descriptor: ModelDescriptor) -> Bool {
+        descriptor.source?.artifacts.isEmpty == false || descriptor.tags.contains("downloadable")
     }
 }

@@ -45,10 +45,17 @@ public final class ModelDownloadsViewModel {
         self.installProgress = [:]
     }
 
-    public func updateDescriptors(_ descriptors: [ModelDescriptor]) {
+    public func updateDescriptors(_ descriptors: [ModelDescriptor]) async {
         self.descriptors = descriptors
         for descriptor in descriptors where installStates[descriptor.id] == nil {
             installStates[descriptor.id] = .notInstalled
+        }
+        reconcilePartialArtifactProgress()
+        do {
+            try await refreshStorageUsage()
+            self.reconcilePartialArtifactProgress()
+        } catch {
+            lastErrorMessage = Self.presentationMessage(for: error)
         }
     }
 
@@ -394,10 +401,21 @@ public final class ModelDownloadsViewModel {
         let trackedIDs = Set(descriptors.map(\.id))
             .union(models.map(\.descriptor.id))
             .union(installStates.keys)
-        for modelID in trackedIDs where modelBytes[modelID] == nil {
+        for modelID in trackedIDs {
+            let alias = Self.storageAlias(for: modelID)
+            if alias != modelID, modelBytes[modelID] != nil {
+                modelBytes[alias] = nil
+                continue
+            }
+            guard modelBytes[modelID] == nil else {
+                continue
+            }
             let bytes = try await maintenanceService.storageUsage(for: modelID)
             if bytes > 0 {
                 modelBytes[modelID] = bytes
+                if alias != modelID {
+                    modelBytes[alias] = nil
+                }
             }
         }
         storageUsage = ModelStorageUsage(
@@ -440,11 +458,19 @@ public final class ModelDownloadsViewModel {
         progress: Double?,
         storedBytes: Int64
     ) -> ModelInstallProgress? {
+        let stateFraction = progress.map(DownloadProgressPresentation.normalizedFraction)
         guard let expected = expectedDownloadSize(for: descriptor), expected.bytes > 0 else {
-            return nil
+            guard storedBytes > 0 || (stateFraction ?? 0) > 0 else {
+                return nil
+            }
+            return ModelInstallProgress(
+                fractionCompleted: stateFraction ?? 0,
+                completedBytes: storedBytes > 0 ? storedBytes : nil,
+                totalBytes: nil,
+                isEstimated: true
+            )
         }
 
-        let stateFraction = progress.map(DownloadProgressPresentation.normalizedFraction)
         let storedFraction = Double(storedBytes) / Double(expected.bytes)
         let fraction = min(max(stateFraction ?? storedFraction, storedFraction, 0), 1)
         guard fraction > 0 else {
@@ -525,6 +551,12 @@ public final class ModelDownloadsViewModel {
             return "Cancelled."
         }
     }
-}
 
-public enum LLMUIModelsNamespace {}
+    private static func storageAlias(for modelID: ModelID) -> ModelID {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let rawValue = modelID.rawValue.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? String(scalar) : "_"
+        }.joined()
+        return ModelID(rawValue: rawValue)
+    }
+}

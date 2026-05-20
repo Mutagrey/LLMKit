@@ -579,6 +579,17 @@ Rules:
 - consumes lifecycle/status streams only
 - never touches backend SDK directly
 
+### LLMUIStorage
+Reusable SwiftUI storage visualization primitives shared by UI modules.
+
+Contains:
+- `StorageUsageBarView`
+- `StorageUsageBarSegment`
+
+Rules:
+- consumes host-provided byte segments only
+- must not import lifecycle, storage services, networking, orchestration, or backend targets
+
 ---
 
 ## Starter package products
@@ -688,6 +699,7 @@ let package = Package(
         .library(
             name: "LLMKitUI",
             targets: [
+                "LLMUIStorage",
                 "LLMUIChat",
                 "LLMUIModels"
             ]
@@ -711,6 +723,7 @@ let package = Package(
                 "LLMBackendCoreML",
                 "LLMBackendMLX",
                 "LLMBackendRemote",
+                "LLMUIStorage",
                 "LLMUIChat",
                 "LLMUIModels"
             ]
@@ -845,6 +858,9 @@ let package = Package(
             ]
         ),
         .target(
+            name: "LLMUIStorage"
+        ),
+        .target(
             name: "LLMUIChat",
             dependencies: [
                 "LLMCore",
@@ -861,7 +877,8 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMModelLifecycle",
-                "LLMObservability"
+                "LLMObservability",
+                "LLMUIStorage"
             ]
         ),
 
@@ -1235,7 +1252,6 @@ Only then start backend adapters.
 At minimum, each module should start with:
 
 - `ModuleNameExports.swift`
-- `ModuleNameNamespace.swift` if a namespace pattern is used
 - one `README`-like doc under `Docs/`
 - 1–3 core types only
 

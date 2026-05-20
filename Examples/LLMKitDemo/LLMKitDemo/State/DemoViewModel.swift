@@ -9,7 +9,6 @@ import Observation
 final class DemoViewModel {
     private(set) var models: [ModelDescriptor]
     private(set) var availability: [ModelID: BackendAvailability]
-    private(set) var installStates: [ModelID: InstallState]
     private(set) var sessions: [SessionOverview]
     private(set) var catalogStatus: ModelCatalogStatus
     private(set) var isRefreshing: Bool
@@ -48,7 +47,6 @@ final class DemoViewModel {
         self.configuration = configuration
         self.models = []
         self.availability = [:]
-        self.installStates = [:]
         self.sessions = []
         self.catalogStatus = .local
         self.isRefreshing = false
@@ -89,7 +87,7 @@ final class DemoViewModel {
     }
 
     var downloadableModels: [ModelDescriptor] {
-        models.filter { $0.tags.contains("downloadable") }
+        models.filter(Self.isDownloadManaged(_:))
     }
 
     var chatSelectableModels: [ModelDescriptor] {
@@ -113,7 +111,6 @@ final class DemoViewModel {
             } else {
                 catalogStatus = .local
             }
-            try await refreshInstallStates()
             await refreshAvailability()
             normalizeSelectedModel()
             try await refreshSessions()
@@ -264,24 +261,11 @@ final class DemoViewModel {
     }
 
     func statusText(for descriptor: ModelDescriptor) -> String {
-        if descriptor.tags.contains("system-managed") {
-            return availabilityText(for: descriptor)
-        }
-
-        if let installState = installStates[descriptor.id] {
-            return installText(for: installState)
-        }
-
         return availabilityText(for: descriptor)
     }
 
     func isReadyForChat(_ descriptor: ModelDescriptor) -> Bool {
         availability[descriptor.id]?.status == .available
-    }
-
-    private func refreshInstallStates() async throws {
-        let records = try await configuration.container.lifecycle.installedModels()
-        installStates = Dictionary(uniqueKeysWithValues: records.map { ($0.descriptor.id, $0.installState) })
     }
 
     private func refreshAvailability() async {
@@ -325,32 +309,9 @@ final class DemoViewModel {
         }
     }
 
-    private func installText(for state: InstallState) -> String {
-        switch state {
-        case .notInstalled:
-            return "Not installed"
-        case .downloading(let progress):
-            return "Downloading \(Int((progress * 100).rounded()))%"
-        case .paused(let progress):
-            return "Paused \(Int((progress * 100).rounded()))%"
-        case .downloaded:
-            return "Downloaded"
-        case .verifying:
-            return "Verifying"
-        case .compiling:
-            return "Compiling"
-        case .ready:
-            return "Ready"
-        case .warming:
-            return "Warming"
-        case .active:
-            return "Active"
-        case .failed(let message):
-            return "Failed: \(message)"
-        case .evicted(let reason):
-            return "Evicted: \(String(describing: reason))"
-        }
-    }
-
     private static let settingsKey = DemoRuntimeSettingsMigration.settingsKey
+
+    private static func isDownloadManaged(_ descriptor: ModelDescriptor) -> Bool {
+        descriptor.source?.artifacts.isEmpty == false || descriptor.tags.contains("downloadable")
+    }
 }

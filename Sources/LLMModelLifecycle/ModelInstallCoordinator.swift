@@ -96,11 +96,7 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
 
     public nonisolated func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
         AsyncThrowingStream { continuation in
-            let taskHolder = InstallTaskHolder()
-            continuation.onTermination = { _ in
-                taskHolder.cancel()
-            }
-            taskHolder.set(Task {
+            let task = Task {
                 do {
                     let record = try await completeInstall(descriptor, continuation: continuation)
                     continuation.yield(.stateChanged(descriptor.id, .ready))
@@ -108,18 +104,21 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
                     continuation.finish()
                 } catch {
                     let llmError = Self.mapInstallError(error)
-                if llmError == .cancelled {
-                    try? await handleCancellation(for: descriptor)
-                    let cancellationState = await installStateAfterCancellation(for: descriptor.id)
-                    await stateMachine.transition(modelID: descriptor.id, to: cancellationState)
-                    continuation.yield(.stateChanged(descriptor.id, cancellationState))
-                } else {
-                    await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
-                    continuation.yield(.failed(descriptor.id, llmError))
+                    if llmError == .cancelled {
+                        try? await handleCancellation(for: descriptor)
+                        let cancellationState = await installStateAfterCancellation(for: descriptor.id)
+                        await stateMachine.transition(modelID: descriptor.id, to: cancellationState)
+                        continuation.yield(.stateChanged(descriptor.id, cancellationState))
+                    } else {
+                        await stateMachine.transition(modelID: descriptor.id, to: .failed(Self.description(for: llmError)))
+                        continuation.yield(.failed(descriptor.id, llmError))
                     }
                     continuation.finish(throwing: llmError)
                 }
-            })
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
         }
     }
 
@@ -751,13 +750,6 @@ public actor ModelInstallCoordinator: ModelLifecycleService, ModelLifecycleMaint
         return probeURL
     }
 
-    private static func safeDirectoryName(for modelID: ModelID) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        return modelID.rawValue.unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? String(scalar) : "_"
-        }.joined()
-    }
-
     private static func mapInstallError(_ error: Error) -> LLMError {
         if let llmError = error as? LLMError {
             return llmError
@@ -860,24 +852,6 @@ private final class DownloadProgressTracker: @unchecked Sendable {
         self.artifactExpectedBytes = [:]
         self.completedArtifacts = 0
         self.lastReportedProgress = 0
-    }
-}
-
-private final class InstallTaskHolder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var task: Task<Void, Never>?
-
-    func set(_ task: Task<Void, Never>) {
-        lock.lock()
-        self.task = task
-        lock.unlock()
-    }
-
-    func cancel() {
-        lock.lock()
-        let task = self.task
-        lock.unlock()
-        task?.cancel()
     }
 }
 

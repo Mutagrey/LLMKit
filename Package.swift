@@ -116,6 +116,7 @@ let package = Package(
             name: "LLMKitUI",
             targets: [
                 "LLMSettings",
+                "LLMUIStorage",
                 "LLMUIChat",
                 "LLMUIModels",
                 "LLMUIObservability",
@@ -126,6 +127,7 @@ let package = Package(
             name: "LLMKitSettings",
             targets: [
                 "LLMSettings",
+                "LLMUIStorage",
                 "LLMUISettings"
             ]
         ),
@@ -150,6 +152,7 @@ let package = Package(
                 "LLMBackendMLX",
                 "LLMBackendLlamaCpp",
                 "LLMBackendRemote",
+                "LLMUIStorage",
                 "LLMUIChat",
                 "LLMUIModels",
                 "LLMUIObservability",
@@ -332,6 +335,10 @@ let package = Package(
             exclude: ["Docs"]
         ),
         .target(
+            name: "LLMUIStorage",
+            exclude: ["Docs"]
+        ),
+        .target(
             name: "LLMUIChat",
             dependencies: [
                 "LLMCore",
@@ -350,7 +357,8 @@ let package = Package(
                 "LLMCore",
                 "LLMProtocols",
                 "LLMModelLifecycle",
-                "LLMObservability"
+                "LLMObservability",
+                "LLMUIStorage"
             ],
             exclude: ["Docs"]
         ),
@@ -366,7 +374,8 @@ let package = Package(
             name: "LLMUISettings",
             dependencies: [
                 "LLMCore",
-                "LLMSettings"
+                "LLMSettings",
+                "LLMUIStorage"
             ],
             exclude: ["Docs"]
         ),

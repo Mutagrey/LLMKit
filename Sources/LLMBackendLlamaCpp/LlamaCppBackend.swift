@@ -251,5 +251,3 @@ public struct LlamaCppBackend: ModelBackend, BackendChatSessionResetting, Backen
         return .executionFailed(String(describing: error))
     }
 }
-
-public enum LLMBackendLlamaCppNamespace {}

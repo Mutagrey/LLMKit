@@ -1375,6 +1375,9 @@ Module: `LLMUIModels`
 - show installed model states
 - allow manual install/remove if app wants that UI
 
+Shared storage visualization may live in a small optional UI primitive module such as `LLMUIStorage` when multiple UI modules
+need the same backend-neutral storage bar without depending on model lifecycle UI.
+
 ### 26.3 Prompt UI helpers
 
 Module: `LLMUIPrompts`

@@ -175,5 +175,3 @@ public struct FoundationModelsBackend: ModelBackend {
         }
     }
 }
-
-public enum LLMBackendFoundationModelsNamespace {}

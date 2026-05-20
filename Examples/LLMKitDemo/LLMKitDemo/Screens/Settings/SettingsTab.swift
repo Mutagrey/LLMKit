@@ -35,7 +35,7 @@ struct SettingsTab: View {
         LLMSettingsContext(
             selectedModelName: viewModel.selectedModel?.displayName,
             selectedModelBackendTitle: viewModel.selectedModel.map { ModelFormatting.backendTitle($0.backend) },
-            selectedModelStatus: viewModel.selectedModel.map { viewModel.statusText(for: $0) },
+            selectedModelStatus: viewModel.selectedModel.map(statusText(for:)),
             selectedModelContextWindowTokens: viewModel.selectedModel?.contextWindowTokens,
             catalogSourceTitle: catalogSourceTitle,
             catalogMessage: catalogMessage,
@@ -94,6 +94,13 @@ struct SettingsTab: View {
         return message
     }
 
+    private func statusText(for descriptor: ModelDescriptor) -> String {
+        if viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) {
+            return downloadsViewModel.statusText(for: descriptor.id)
+        }
+        return viewModel.statusText(for: descriptor)
+    }
+
     @MainActor
     private func clearChatSessions() async {
         let sessionIDs = viewModel.sessions.map(\.id)
@@ -108,7 +115,7 @@ struct SettingsTab: View {
     @MainActor
     private func refreshStorageState() async {
         await viewModel.refresh()
-        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
         await downloadsViewModel.refresh()
     }
 }

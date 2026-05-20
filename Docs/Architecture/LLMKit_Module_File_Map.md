@@ -140,14 +140,11 @@ Sources/LLMCore/
 │  ├─ PrivacyMode.swift
 │  ├─ SafetyAction.swift
 │  └─ ExecutionBudget.swift
-├─ Errors/
+└─ Errors/
 │  ├─ LLMError.swift
 │  ├─ BackendError.swift
 │  ├─ ValidationError.swift
 │  └─ StorageError.swift
-└─ Support/
-   ├─ LLMFeatureFlags.swift
-   └─ LLMCoreNamespace.swift
 ```
 
 ### Notes
@@ -204,13 +201,11 @@ Sources/LLMProtocols/
 │  ├─ MetricsSink.swift
 │  ├─ LoggerSink.swift
 │  └─ TraceEmitter.swift
-├─ Safety/
+└─ Safety/
 │  ├─ SafetyPolicyEvaluating.swift
 │  ├─ InputGuarding.swift
 │  ├─ OutputGuarding.swift
 │  └─ ToolPermissionEvaluating.swift
-└─ Support/
-   └─ LLMProtocolsNamespace.swift
 ```
 
 ---
@@ -235,8 +230,7 @@ Sources/LLMSessions/
 ├─ SessionCompressor.swift
 ├─ SessionTruncationPolicy.swift
 ├─ ContextWindowManager.swift
-├─ SessionMutation.swift
-└─ LLMSessionsNamespace.swift
+└─ SessionMutation.swift
 ```
 
 ### Notes
@@ -266,8 +260,7 @@ Sources/LLMPrompting/
 ├─ DeveloperPromptProvider.swift
 ├─ TaskPromptPreset.swift
 ├─ PromptDebugSnapshot.swift
-├─ PromptLocalization.swift
-└─ LLMPromptingNamespace.swift
+└─ PromptLocalization.swift
 ```
 
 ### Notes
@@ -295,8 +288,7 @@ Sources/LLMTools/
 ├─ ToolExecutionCoordinator.swift
 ├─ ToolResultNormalizer.swift
 ├─ ToolExecutionContext.swift
-├─ ToolExecutionPolicy.swift
-└─ LLMToolsNamespace.swift
+└─ ToolExecutionPolicy.swift
 ```
 
 ### Notes
@@ -322,8 +314,7 @@ Sources/LLMSafety/
 ├─ TokenBudgetPolicy.swift
 ├─ ToolPermissionPolicy.swift
 ├─ PrivacyModeEvaluator.swift
-├─ SafetyDecision.swift
-└─ LLMSafetyNamespace.swift
+└─ SafetyDecision.swift
 ```
 
 ---
@@ -346,8 +337,7 @@ Sources/LLMObservability/
 ├─ FallbackTrace.swift
 ├─ DebugSnapshotEmitter.swift
 ├─ ObservabilityConfiguration.swift
-├─ LoggingPolicy.swift
-└─ LLMObservabilityNamespace.swift
+└─ LoggingPolicy.swift
 ```
 
 ### Notes
@@ -373,8 +363,7 @@ Sources/LLMStorage/
 ├─ SecureMetadataStore.swift
 ├─ StoragePaths.swift
 ├─ AtomicWriteCoordinator.swift
-├─ DiskUsageSnapshot.swift
-└─ LLMStorageNamespace.swift
+└─ DiskUsageSnapshot.swift
 ```
 
 ---
@@ -396,8 +385,7 @@ Sources/LLMDeviceProfiling/
 ├─ ThermalStateSnapshot.swift
 ├─ BatteryStateSnapshot.swift
 ├─ ExecutionBudgetSnapshot.swift
-├─ DeviceProfileCollector.swift
-└─ LLMDeviceProfilingNamespace.swift
+└─ DeviceProfileCollector.swift
 ```
 
 ---
@@ -419,8 +407,7 @@ Sources/LLMNetworking/
 ├─ RetryPolicy.swift
 ├─ AuthHeaderProvider.swift
 ├─ RemoteEndpoint.swift
-├─ RemoteTransportError.swift
-└─ LLMNetworkingNamespace.swift
+└─ RemoteTransportError.swift
 ```
 
 ---
@@ -448,8 +435,7 @@ Sources/LLMModelLifecycle/
 ├─ InstalledModelIndex.swift
 ├─ InstallStateMachine.swift
 ├─ InstallProgress.swift
-├─ StorageQuotaPolicy.swift
-└─ LLMModelLifecycleNamespace.swift
+└─ StorageQuotaPolicy.swift
 ```
 
 ### Notes
@@ -486,8 +472,7 @@ Sources/LLMOrchestrator/
 ├─ DefaultLanguageGenerationService.swift
 ├─ DefaultChatService.swift
 ├─ DefaultStructuredGenerationService.swift
-├─ DefaultEmbeddingService.swift
-└─ LLMOrchestratorNamespace.swift
+└─ DefaultEmbeddingService.swift
 ```
 
 ### Notes
@@ -513,8 +498,7 @@ Sources/LLMBackendFoundationModels/
 ├─ FoundationModelsSessionAdapter.swift
 ├─ FoundationModelsToolBridge.swift
 ├─ FoundationModelsStructuredOutputBridge.swift
-├─ FoundationModelsErrorMapper.swift
-└─ LLMBackendFoundationModelsNamespace.swift
+└─ FoundationModelsErrorMapper.swift
 ```
 
 ### Notes
@@ -540,8 +524,7 @@ Sources/LLMBackendCoreML/
 ├─ CoreMLResponseMapper.swift
 ├─ CoreMLModelCompatibilityChecker.swift
 ├─ CoreMLWarmupStrategy.swift
-├─ CoreMLErrorMapper.swift
-└─ LLMBackendCoreMLNamespace.swift
+└─ CoreMLErrorMapper.swift
 ```
 
 ### Notes
@@ -566,8 +549,7 @@ Sources/LLMBackendMLX/
 ├─ MLXResponseMapper.swift
 ├─ MLXModelSupportMatrix.swift
 ├─ MLXQuantizationSupport.swift
-├─ MLXErrorMapper.swift
-└─ LLMBackendMLXNamespace.swift
+└─ MLXErrorMapper.swift
 ```
 
 ### Notes
@@ -594,8 +576,7 @@ Sources/LLMBackendRemote/
 ├─ RemoteResponseMapper.swift
 ├─ RemoteStreamingAdapter.swift
 ├─ RemoteErrorMapper.swift
-├─ RemoteConfiguration.swift
-└─ LLMBackendRemoteNamespace.swift
+└─ RemoteConfiguration.swift
 ```
 
 ### Notes
@@ -629,8 +610,7 @@ Sources/LLMUIChat/
 ├─ AttachmentDraft.swift
 ├─ ChatInputPolicy.swift
 ├─ ChatTheme.swift
-├─ MarkdownMessageRenderer.swift
-└─ LLMUIChatNamespace.swift
+└─ MarkdownMessageRenderer.swift
 ```
 
 ### Notes
@@ -656,8 +636,22 @@ Sources/LLMUIModels/
 ├─ ModelDownloadsViewModel.swift
 ├─ StorageUsageView.swift
 ├─ ModelStorageSummary.swift
-├─ ModelFormatting.swift
-└─ LLMUIModelsNamespace.swift
+└─ ModelFormatting.swift
+```
+
+---
+
+# Sources/LLMUIStorage
+
+## Purpose
+Reusable backend-neutral storage visualization primitives for UI modules.
+
+## Initial files
+
+```text
+Sources/LLMUIStorage/
+├─ Docs/
+└─ StorageUsageBarView.swift
 ```
 
 ---

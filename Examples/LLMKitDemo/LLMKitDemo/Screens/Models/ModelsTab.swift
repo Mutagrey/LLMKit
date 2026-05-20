@@ -34,7 +34,7 @@ struct ModelsTab: View {
                 refreshAction: refreshAll
             )
             .task(id: downloadableModelsKey) {
-                downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+                await downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
             }
             .task(id: installLifecycleKey) {
                 guard !viewModel.downloadableModels.isEmpty else {
@@ -82,7 +82,7 @@ struct ModelsTab: View {
 
     private func refreshAll() async {
         await viewModel.refresh()
-        downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
+        await downloadsViewModel.updateDescriptors(viewModel.downloadableModels)
         await downloadsViewModel.refresh()
     }
 }

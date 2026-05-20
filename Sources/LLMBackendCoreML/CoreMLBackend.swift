@@ -53,5 +53,3 @@ public struct CoreMLModelCompatibilityChecker: Sendable {
         descriptor.backend == .coreML
     }
 }
-
-public enum LLMBackendCoreMLNamespace {}

@@ -12,6 +12,7 @@ struct LLMSettingsDetailScreen: View {
     let actions: LLMSettingsActions
 
     @State var showsResetConfirmation = false
+    @State var pendingStorageCleanupAction: LLMSettingsStorageCleanupAction?
 
     private let normalizer: LLMSettingsNormalizer
 
@@ -54,6 +55,28 @@ struct LLMSettingsDetailScreen: View {
             }
         } message: {
             Text("This resets routing, token limits, local memory, MLX, and GGUF runtime settings.")
+        }
+        .alert(
+            pendingStorageCleanupAction?.title ?? "Clear Storage?",
+            isPresented: Binding(
+                get: { pendingStorageCleanupAction != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingStorageCleanupAction = nil
+                    }
+                }
+            ),
+            presenting: pendingStorageCleanupAction
+        ) { cleanupAction in
+            Button(cleanupAction.confirmationButtonTitle, role: .destructive) {
+                pendingStorageCleanupAction = nil
+                Task { await performStorageCleanup(cleanupAction) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingStorageCleanupAction = nil
+            }
+        } message: { cleanupAction in
+            Text(cleanupAction.message)
         }
     }
 

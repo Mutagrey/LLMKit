@@ -1,6 +1,6 @@
-import Charts
 import Foundation
 import SwiftUI
+import LLMUIStorage
 
 public struct StorageUsageView: View {
     private let downloadedModelCount: Int
@@ -108,7 +108,7 @@ public struct StorageUsageView: View {
                         .animation(.easeInOut(duration: 0.2), value: diskUsage.availableBytes)
                 }
 
-                storageChart(
+                StorageUsageBarView(
                     segments: diskChartSegments,
                     totalBytes: diskUsage.capacityBytes,
                     accessibilityLabel: "Disk usage",
@@ -129,7 +129,7 @@ public struct StorageUsageView: View {
                         .animation(.easeInOut(duration: 0.2), value: modelStorageBytes)
                 }
 
-                storageChart(
+                StorageUsageBarView(
                     segments: modelChartSegments,
                     totalBytes: max(modelStorageBytes, 1),
                     accessibilityLabel: "Model storage",
@@ -139,55 +139,11 @@ public struct StorageUsageView: View {
         }
     }
 
-    private func storageChart(
-        segments: [StorageChartSegment],
-        totalBytes: Int64,
-        accessibilityLabel: String,
-        accessibilityValue: String
-    ) -> some View {
-        Chart(segments) { segment in
-            BarMark(
-                x: .value("Storage Size", Double(segment.bytes))
-            )
-            .foregroundStyle(by: .value("Storage Category", segment.title))
-            .accessibilityLabel(segment.title)
-            .accessibilityValue(byteCountTitle(segment.bytes))
-        }
-        .chartXScale(domain: 0...max(Double(totalBytes), 1))
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartYScale(range: .plotDimension(endPadding: -8))
-        .chartLegend(.hidden)
-        .chartForegroundStyleScale([
-            "Installed": Color.blue.opacity(0.9),
-            "Partial": Color.orange.opacity(0.9),
-            "Other used": Color.gray.opacity(0.68),
-            "Free": Color.secondary.opacity(0.18)
-        ])
-        .chartPlotStyle { plotArea in
-            plotArea
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .frame(height: 25)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(accessibilityValue)
-        .animation(.easeInOut(duration: 0.25), value: chartAnimationValue(for: segments))
-    }
-
     private var diskFreeTitle: String {
         guard let diskUsage else {
             return modelStorageTitle
         }
         return "\(byteCountTitle(diskUsage.availableBytes)) free"
-    }
-
-    private var diskUsedFraction: Double {
-        guard let diskUsage else {
-            return 0
-        }
-        return min(max(Double(diskUsage.usedBytes) / Double(diskUsage.capacityBytes), 0), 1)
     }
 
     private var diskFreeFraction: Double {
@@ -243,24 +199,24 @@ public struct StorageUsageView: View {
         )
     }
 
-    private var diskChartSegments: [StorageChartSegment] {
+    private var diskChartSegments: [StorageUsageBarSegment] {
         guard let diskUsage else {
             return []
         }
         let modelBytes = scaledModelBytes(toFit: diskUsage.usedBytes)
         let otherUsedBytes = max(diskUsage.usedBytes - modelBytes.installed - modelBytes.partial, 0)
         return chartSegments([
-            ("Other used", otherUsedBytes),
-            ("Installed", modelBytes.installed),
-            ("Partial", modelBytes.partial),
-            ("Free", diskUsage.availableBytes)
+            ("Other used", otherUsedBytes, .gray.opacity(0.68)),
+            ("Installed", modelBytes.installed, .blue.opacity(0.9)),
+            ("Partial", modelBytes.partial, .orange.opacity(0.9)),
+            ("Free", diskUsage.availableBytes, .secondary.opacity(0.18))
         ])
     }
 
-    private var modelChartSegments: [StorageChartSegment] {
+    private var modelChartSegments: [StorageUsageBarSegment] {
         chartSegments([
-            ("Installed", positiveInstalledBytes),
-            ("Partial", positivePartialBytes)
+            ("Installed", positiveInstalledBytes, .blue.opacity(0.9)),
+            ("Partial", positivePartialBytes, .orange.opacity(0.9))
         ])
     }
 
@@ -293,22 +249,17 @@ public struct StorageUsageView: View {
         return (installed, max(usedBytes - installed, 0))
     }
 
-    private func chartSegments(_ parts: [(title: String, bytes: Int64)]) -> [StorageChartSegment] {
+    private func chartSegments(_ parts: [(title: String, bytes: Int64, tint: Color)]) -> [StorageUsageBarSegment] {
         return parts.compactMap { part in
             let bytes = max(part.bytes, 0)
             guard bytes > 0 else {
                 return nil
             }
-            return StorageChartSegment(
+            return StorageUsageBarSegment(
                 title: part.title,
-                bytes: bytes
+                bytes: bytes,
+                tint: part.tint
             )
-        }
-    }
-
-    private func chartAnimationValue(for segments: [StorageChartSegment]) -> Double {
-        segments.reduce(0) { partialResult, segment in
-            partialResult + Double(segment.bytes)
         }
     }
 
@@ -321,13 +272,4 @@ private struct DiskStorageUsage {
     let availableBytes: Int64
     let capacityBytes: Int64
     let usedBytes: Int64
-}
-
-private struct StorageChartSegment: Identifiable {
-    let title: String
-    let bytes: Int64
-
-    var id: String {
-        title
-    }
 }

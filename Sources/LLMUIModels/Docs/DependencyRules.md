@@ -1,3 +1,4 @@
 # LLMUIModels Dependency Rules
 
-May import `LLMCore`, `LLMProtocols`, `LLMModelLifecycle`, and `LLMObservability`. Must not import backend targets or networking directly.
+May import `LLMCore`, `LLMProtocols`, `LLMModelLifecycle`, `LLMObservability`, and `LLMUIStorage` for shared storage
+visualization. Must not import backend targets or networking directly.

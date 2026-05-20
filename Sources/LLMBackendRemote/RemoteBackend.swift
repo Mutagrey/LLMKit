@@ -332,8 +332,6 @@ public struct RemoteBackend: ModelBackend {
     }
 }
 
-public enum LLMBackendRemoteNamespace {}
-
 private struct RemoteSSEStreamParser {
     private var bufferedData = Data()
     private let parser = SSEParser()

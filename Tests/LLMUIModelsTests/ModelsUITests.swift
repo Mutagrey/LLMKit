@@ -201,6 +201,36 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
     }
 }
 
+private struct AliasPartialLifecycleService: ModelLifecycleMaintenanceService {
+    let descriptor: ModelDescriptor
+    let alias: ModelID
+    let partialBytes: Int64
+
+    func installedModels() async throws -> [InstalledModelRecord] {
+        []
+    }
+
+    func install(_ descriptor: ModelDescriptor) -> AsyncThrowingStream<ModelInstallEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func state(for modelID: ModelID) async throws -> InstallState {
+        .notInstalled
+    }
+
+    func deleteInstalledModel(_ modelID: ModelID) async throws {}
+
+    func storageUsage() async throws -> ModelStorageUsage {
+        ModelStorageUsage(totalBytes: partialBytes, modelBytes: [alias: partialBytes])
+    }
+
+    func storageUsage(for modelID: ModelID) async throws -> Int64 {
+        modelID == descriptor.id ? partialBytes : 0
+    }
+}
+
 @MainActor
 @Test func downloadsViewModelReplacesModels() {
     let descriptor = ModelDescriptor(id: "model", displayName: "Model", family: .custom("test"), backend: .coreML, capabilities: [])
@@ -423,6 +453,86 @@ private actor PartialMaintenanceLifecycleService: ModelLifecycleMaintenanceServi
     #expect(viewModel.progress(for: descriptor.id) == 0.25)
     #expect(viewModel.progressDetail(for: descriptor.id)?.completedBytes == 250)
     #expect(viewModel.progressDetail(for: descriptor.id)?.totalBytes == 1_000)
+}
+
+@MainActor
+@Test func downloadsViewModelRestoresPartialProgressWhenDescriptorsArriveAfterStorageRefresh() async throws {
+    let descriptor = ModelDescriptor(
+        id: "late-descriptor-partial",
+        displayName: "Late Descriptor Partial",
+        family: .custom("test"),
+        backend: .coreML,
+        capabilities: [],
+        estimatedDownloadSizeBytes: 1_000
+    )
+    let service = PartialMaintenanceLifecycleService(
+        descriptor: descriptor,
+        state: .notInstalled,
+        partialBytes: 250
+    )
+    let viewModel = ModelDownloadsViewModel(lifecycleService: service)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.partialStorageBytes == 0)
+    #expect(viewModel.installState(for: descriptor.id) == .notInstalled)
+    #expect(viewModel.progressDetail(for: descriptor.id) == nil)
+
+    await viewModel.updateDescriptors([descriptor])
+
+    #expect(viewModel.installState(for: descriptor.id) == .paused(progress: 0.25))
+    #expect(viewModel.progressDetail(for: descriptor.id)?.completedBytes == 250)
+    #expect(viewModel.partialStorageBytes == 250)
+}
+
+@MainActor
+@Test func downloadsViewModelDeduplicatesSanitizedPartialStorageAliases() async {
+    let descriptor = ModelDescriptor(
+        id: "mlx/qwen-partial",
+        displayName: "Qwen Partial",
+        family: .qwen,
+        backend: .mlx,
+        capabilities: [],
+        estimatedDownloadSizeBytes: 1_000
+    )
+    let service = AliasPartialLifecycleService(
+        descriptor: descriptor,
+        alias: ModelID(rawValue: "mlx_qwen-partial"),
+        partialBytes: 250
+    )
+    let viewModel = ModelDownloadsViewModel(descriptors: [descriptor], lifecycleService: service)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.storageBytes(for: descriptor.id) == 250)
+    #expect(viewModel.partialStorageBytes == 250)
+    #expect(viewModel.storageUsage.totalBytes == 250)
+    #expect(viewModel.storageUsage.modelBytes[ModelID(rawValue: "mlx_qwen-partial")] == nil)
+    #expect(viewModel.installState(for: descriptor.id) == .paused(progress: 0.25))
+}
+
+@MainActor
+@Test func downloadsViewModelShowsPartialArtifactsWithoutKnownTotalSize() async {
+    let descriptor = ModelDescriptor(
+        id: "unknown-size-partial",
+        displayName: "Unknown Size Partial",
+        family: .custom("test"),
+        backend: .mlx,
+        capabilities: []
+    )
+    let service = PartialMaintenanceLifecycleService(
+        descriptor: descriptor,
+        state: .notInstalled,
+        partialBytes: 250
+    )
+    let viewModel = ModelDownloadsViewModel(descriptors: [descriptor], lifecycleService: service)
+
+    await viewModel.refresh()
+
+    #expect(viewModel.installState(for: descriptor.id) == .paused(progress: 0))
+    #expect(viewModel.progressDetail(for: descriptor.id)?.completedBytes == 250)
+    #expect(viewModel.progressDetail(for: descriptor.id)?.totalBytes == nil)
+    #expect(viewModel.partialStorageBytes == 250)
 }
 
 @MainActor

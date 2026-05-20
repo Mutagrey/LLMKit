@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ChatSessionsTab: View {
     let viewModel: DemoViewModel
+    let downloadsViewModel: ModelDownloadsViewModel
     let skillStore: DemoPromptSkillStore
     let configuration: DemoRuntimeConfiguration
     let openModels: () -> Void
@@ -40,12 +41,12 @@ struct ChatSessionsTab: View {
                     ChatModelToolbarMenu(
                         models: viewModel.chatSelectableModels,
                         selectedModel: viewModel.selectedModel,
-                        selectedStatusText: viewModel.selectedModel.map(viewModel.statusText(for:)) ?? "No model selected",
+                        selectedStatusText: viewModel.selectedModel.map(statusText(for:)) ?? "No model selected",
                         isRefreshing: viewModel.isRefreshing
                     ) { descriptor in
                         viewModel.selectedModelID = descriptor.id
                     } statusText: { descriptor in
-                        viewModel.statusText(for: descriptor)
+                        statusText(for: descriptor)
                     }
                 }
 
@@ -80,6 +81,7 @@ struct ChatSessionsTab: View {
                 NewManualChatSheet(
                     viewModel: viewModel,
                     skillStore: skillStore,
+                    statusText: statusText(for:),
                     onCreate: { sessionID in
                         path.append(sessionID)
                     }
@@ -94,6 +96,13 @@ struct ChatSessionsTab: View {
 
     private var automatedSessions: [SessionOverview] {
         viewModel.sessions.filter { $0.kind == .automatedConversation }
+    }
+
+    private func statusText(for descriptor: ModelDescriptor) -> String {
+        if viewModel.downloadableModels.contains(where: { $0.id == descriptor.id }) {
+            return downloadsViewModel.statusText(for: descriptor.id)
+        }
+        return viewModel.statusText(for: descriptor)
     }
 
     private func sessionsSection(_ title: String, sessions: [SessionOverview]) -> some View {
